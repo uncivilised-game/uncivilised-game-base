@@ -6,6 +6,7 @@
 // --- Side-effect imports (run on load) ---
 import './state.js';       // initializes safeStorage, visitor ID, canvas refs
 import './assets.js';      // preloads terrain tiles, portraits, improvement images
+import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
 import { SAVE_KEY, GAME_VERSION } from './constants.js';
@@ -20,9 +21,9 @@ import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, h
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
 import { endTurn, showTurnSummary, showGameOver } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
-import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction } from './diplomacy.js';
-import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './game-mods.js';
-import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './ai.js';
+import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded } from './diplomacy-api.js';
+import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
+import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
 import { getAvailableImprovements, startImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary } from './events.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
@@ -36,6 +37,11 @@ import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassabl
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
+
+// --- Log diplomacy module status ---
+if (!isDiplomacyLoaded()) {
+  console.log('%c[Uncivilised] Running without diplomacy module — AI leaders will not respond', 'color: #888');
+}
 
 // --- Wire up lazy render callback for asset preloader ---
 setRenderCallback(render);

@@ -4,74 +4,81 @@
 
 ## Project Identity
 
-**Uncivilised** — a browser-based 4X strategy game with LLM-powered diplomacy. Built by Jamie (contact@uncivilized.fun) using Perplexity Computer (which uses Claude under the hood). The repo is being reviewed/maintained by Giovanni (Gio), founder of Fragcolor, who is evaluating the project as a potential collaboration.
+**Uncivilised** (base game) — a browser-based 4X strategy game. This is the **open-source** repo containing the complete game engine. The AI diplomacy system lives in a separate private repo (`uncivilised-diplomacy`) and plugs in at build time.
 
-**Live URL:** [uncivilized.fun](https://uncivilized.fun)  
-**Created:** March 2026  
+**Live URL:** [uncivilized.fun](https://uncivilized.fun)
+**Created:** March 2026
 **Game version:** 5 (`GAME_VERSION = 5` in both `src/constants.js` and `server.py`)
 
-## What This Project Is
+## Architecture: Plugin Split
 
-A Civilization-style browser game where the core differentiator is **AI-powered diplomacy with emergent game modification**. Six AI faction leaders (powered by Claude Sonnet) can:
+The codebase was split into two repos:
 
-1. Negotiate with personality-driven dialogue (alliances, trades, threats, marriages, betrayals)
-2. **Dynamically create new game content** through a `game_mod` action system — new units, buildings, techs, resources, map reveals, stat buffs, combat bonuses, and events can be injected into the running game as a result of diplomatic conversation
-3. Command their units to execute commitments (attack factions, defend cities, pay tribute)
+- **This repo** (`uncivilised-game-base`) — open source, contains the full game engine
+- **Private repo** (`uncivilised-diplomacy`) — AI diplomacy, game mods, AI faction logic
 
-The game mod system is the novel part. Everything else is a competent Civ clone.
+### How the Plugin Works
 
-## Architecture Overview
+1. `src/diplomacy-api.js` defines the plugin interface with no-op stubs for all diplomacy functions
+2. All modules import diplomacy functions from `diplomacy-api.js` (never directly from diplomacy files)
+3. `esbuild.config.mjs` checks for `../uncivilised-diplomacy/src/plugin.js` at build time
+4. If found: generates `src/_diplomacy-plugin.gen.js` that imports the plugin and calls `init(registerDiplomacyPlugin)`
+5. If not found: generates a no-op loader — game works without diplomacy
 
-### Frontend (100% client-side)
+### Plugin Interface (`src/diplomacy-api.js`)
 
-The frontend is split into **27 ES modules** under `src/`, bundled by esbuild into `game.js` (a build artifact, gitignored). Key modules:
+Exports these wrapper functions that delegate to the plugin:
 
-| Module | Lines | Purpose |
-|--------|-------|---------|
-| `src/constants.js` | ~420 | Game data: terrain, units, buildings, techs, factions |
-| `src/render.js` | ~1060 | Canvas2D hex rendering, visibility, minimap |
-| `src/terrain-render.js` | ~520 | Painterly terrain detail (noise, splotches, trees) |
-| `src/ui-panels.js` | ~1250 | Build, research, civics, victory, selection panels |
-| `src/diplomacy.js` | ~960 | Chat UI, AI action processing, trade routes |
-| `src/ai.js` | ~720 | AI faction turn logic, commitments |
-| `src/turn.js` | ~770 | End-of-turn processing, income, maintenance |
-| `src/map.js` | ~675 | Map generation (tectonic plates → biomes → rivers) |
-| `src/combat.js` | ~675 | Combat resolution, promotions, city attacks |
-| `src/units.js` | ~530 | Unit creation, selection, movement, pathfinding |
-| `src/state.js` | ~135 | Shared mutable state (game, canvas, camera, drag) |
-| `src/main.js` | ~365 | Entry point, wires modules, exposes window globals |
-| `src/input.js` | ~275 | Mouse/touch/keyboard handlers, camera, zoom |
-| `src/improvements.js` | ~345 | Worker actions, tile improvements, settlers |
-| `src/events.js` | ~490 | Event log, toasts, notifications, rumours |
-| `src/game-mods.js` | ~320 | Dynamic game modification from diplomacy |
-| `src/save-load.js` | ~180 | Save/load (localStorage + API fallback) |
-| `src/leaderboard.js` | ~460 | Leaderboard, username, competition tracking |
-| `src/discovery.js` | ~215 | Fog of war, faction discovery, first contact |
-| `src/minor-factions.js` | ~280 | Barbarian camps, mystic sects, nomadic tribes |
-| `src/resource-icons.js` | ~780 | Canvas-drawn resource icons |
+**From diplomacy.js:** `getRelationLabel`, `establishTradeRoute`, `cancelTradeRoute`, `renderDiplomacyPanel`, `renderDiplomacyList`, `renderRankingsView`, `openChat`, `renderDiplomacyActions`, `renderChatMarkdown`, `updateDiploActions`, `appendChatMessage`, `appendChatAction`, `sendChatMessage`, `showDiplomacyProposal`, `processCharacterAction`
 
-**Build tooling:**
-- `esbuild.config.mjs` — bundles `src/main.js` → `game.js` (IIFE format, with sourcemaps)
+**From game-mods.js:** `applyGameMod`, `showModBanner`, `getModCombatBonus`, `getModYieldBonus`
+
+**From ai.js:** `processAITurns`, `processBarbarianTurns`, `processAICommitments`, `moveAIUnitToward`
+
+### Import Convention
+
+The diplomacy repo's files use `@game/` prefixed imports to reference base-game modules:
+```js
+import { FACTIONS } from '@game/constants.js';
+import { game } from '@game/state.js';
+```
+esbuild resolves these via the `alias` config in `esbuild.config.mjs`.
+
+## Frontend Architecture
+
+ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitignored). Key modules:
+
+| Module | Purpose |
+|--------|---------|
+| `src/constants.js` | Game data: terrain, units, buildings, techs, factions |
+| `src/render.js` | Canvas2D hex rendering, visibility, minimap |
+| `src/terrain-render.js` | Painterly terrain detail (noise, splotches, trees) |
+| `src/ui-panels.js` | Build, research, civics, victory, selection panels |
+| `src/diplomacy-api.js` | Plugin interface — stubs + registerDiplomacyPlugin() |
+| `src/turn.js` | End-of-turn processing, income, maintenance |
+| `src/map.js` | Map generation (tectonic plates -> biomes -> rivers) |
+| `src/combat.js` | Combat resolution, promotions, city attacks |
+| `src/units.js` | Unit creation, selection, movement, pathfinding |
+| `src/state.js` | Shared mutable state (game, canvas, camera, drag) |
+| `src/main.js` | Entry point, wires modules, exposes window globals |
+| `src/input.js` | Mouse/touch/keyboard handlers, camera, zoom |
+| `src/improvements.js` | Worker actions, tile improvements, settlers |
+| `src/events.js` | Event log, toasts, notifications, rumours |
+| `src/save-load.js` | Save/load (localStorage + API fallback) |
+| `src/discovery.js` | Fog of war, faction discovery, first contact |
+
+**Build:**
 - `npm run build` — one-shot build
 - `npm run watch` — rebuild on file changes
 - `npm run dev` — watch + serve via `server.py`
 
-Other frontend files:
-- **`style.css`** — All styling, dark theme with gold accents
-- **`index.html`** — Title screen + game screen, all panels as hidden divs
+## Backend (Python FastAPI)
 
-### Backend (Python FastAPI)
-
-Two copies exist (they're near-identical, `api/index.py` is the Vercel production version):
-
-- **`server.py`** — local dev server (run with `python server.py`, serves on port 8000)
-- **`api/index.py`** — Vercel serverless function
-
-Both provide:
+Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel production).
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/chat` | POST | AI diplomacy — sends player message + game state to Claude, returns response + parsed action |
+| `/api/chat` | POST | AI diplomacy (requires diplomacy plugin + ANTHROPIC_API_KEY) |
 | `/api/characters` | GET | List available AI leaders |
 | `/api/save` | POST | Save game state (keyed by visitor_id) |
 | `/api/load` | GET | Load game state |
@@ -79,71 +86,16 @@ Both provide:
 | `/api/claim-username` | POST | Register a unique username |
 | `/api/check-username/:name` | GET | Check username availability |
 | `/api/profile/:name` | GET | Player profile + recent games |
-| `/api/waitlist` | POST | Add email to waitlist + send welcome |
-| `/api/waitlist/count` | GET | Waitlist count |
 | `/api/session/start` | POST | Track game session start |
 | `/api/session/end` | POST | Track game session end |
 | `/api/feedback` | POST | In-game feedback with AI categorization |
 | `/api/health` | GET | Health check |
 
-### Database (Supabase)
+Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live in server.py. The frontend handles them being unavailable gracefully (try/catch). These may move to the diplomacy repo in the future.
 
-Tables (inferred from code, schema not in repo):
+## Database (Supabase)
 
-- `players` — username, username_lower, email, games_played, best_score, total_score, last_active
-- `leaderboard` — player_name, score, turns_played, victory_type, factions_eliminated, cities_count, game_version, competition_id, created_at
-- `game_saves` — visitor_id (unique), game_state (JSON), updated_at
-- `game_sessions` — visitor_id, game_mode, started_at, ended_at, turns_played, outcome
-- `waitlist` — email, source, created_at
-- `diplomacy_interactions` — visitor_id, character_id, player_message, ai_reply, action_type, action_data, turn
-- `feedback` — visitor_id, player_name, message, category, priority, ai_summary, ai_response, game_state_snapshot, status
-- `competitions` — id, name, status, starts_at, ends_at
-- `active_games` — player_name, competition_id, game_id, sessions_used, max_sessions, turn, score, finished, started_at, last_session_at
-
-## The Diplomacy Engine (Core Innovation)
-
-### How It Works
-
-1. Player opens chat with an AI leader
-2. Player types message (or clicks a diplomatic action template button)
-3. Frontend sends to `/api/chat`:
-   ```json
-   {
-     "character_id": "shadow_kael",
-     "message": "I propose an alliance...",
-     "game_state": { "turn": 15, "gold": 200, "military": 25, ... },
-     "conversation_history": [ ... last 8 messages ... ]
-   }
-   ```
-4. Backend builds a massive system prompt (~3000 tokens) containing:
-   - Character personality profile
-   - Current game state context
-   - Interaction rules
-   - Complete list of available ACTION types (30+ diplomatic actions)
-   - Complete list of game_mod types (12 mod categories)
-   - Rules for when to use game_mods
-5. Claude Sonnet responds in-character with optional `[ACTION: {...}]` tag
-6. Backend parses the action via regex: `r'\[ACTION:\s*(\{.*?\})\s*\]'`
-7. Frontend's `processCharacterAction()` interprets the action and modifies game state
-8. For `game_mod` actions, `applyGameMod()` dynamically extends `UNIT_TYPES`, `BUILDINGS`, `TECHNOLOGIES`, `RESOURCES` at runtime
-
-### game_mod Types
-
-| Mod Type | What It Does |
-|----------|-------------|
-| `new_unit` | Adds to `UNIT_TYPES` + `UNIT_UNLOCKS` dynamically |
-| `new_building` | Pushes to `BUILDINGS` array |
-| `new_tech` | Pushes to `TECHNOLOGIES` array |
-| `new_resource` | Adds to `RESOURCES` + places deposits on map |
-| `reveal_map` | Calls `revealAround(col, row, radius)` |
-| `stat_buff` | Directly modifies `game.military`, `game.goldPerTurn`, etc. |
-| `gold_grant` | Adds gold |
-| `combat_bonus` | Pushed to `game.combatBonuses[]`, applied in `resolveCombat()` |
-| `yield_bonus` | Pushed to `game.yieldBonuses[]`, applied in `getTileYields()` |
-| `spawn_units` | Creates player units near capital |
-| `event` | Pushed to `game.activeEvents[]` with turn-based expiry |
-
-Mods are tracked in `game.appliedMods[]` and restored on save/load via `restoreMods()`.
+Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `diplomacy_interactions`, `feedback`, `competitions`, `active_games`. Schema is not in the repo — inferred from code.
 
 ## Key Constants & Config
 
@@ -151,13 +103,20 @@ Mods are tracked in `game.appliedMods[]` and restored on save/load via `restoreM
 - `HEX_SIZE = 36` — hex radius in pixels
 - `MAX_TURNS = 100` — game length
 - `GAME_VERSION = 5` — save format version
-- Model: `claude-sonnet-4-20250514`, `max_tokens=200`
-- Conversation history: last 8 messages sent to API
-- Envoys: 3 base per turn + culture/tech bonuses (starting a NEW conversation costs 1 envoy, continuing is free)
+
+## Code Patterns to Know
+
+- **`game` state** — the entire game state is one mutable object in `src/state.js`, accessible as `window.G` for debugging
+- **`window.*` globals** — functions called from HTML `onclick` attributes must be assigned to `window` in `src/main.js` (esbuild wraps in IIFE)
+- **`safeStorage`** — wrapper around localStorage that gracefully handles sandboxed iframes (`src/state.js`)
+- **`migrateTiles(state)`** — save migration in `src/save-load.js`, adds missing fields for backward compat
+- **`restoreMods(state)`** — in `src/save-load.js`, re-injects dynamically created content (units, buildings, etc.) from `state.appliedMods[]` into constants on load. This stays in the base repo because it's save-format compatibility, not the diplomacy engine itself.
+- **`addEvent(text, type)`** — logs to the in-game event log panel (`src/events.js`)
+- **`logAction(category, detail, metadata)`** — logs to `game.gameLog[]` for analytics (`src/events.js`)
+- **`showToast(title, message)`** — ephemeral toast notifications (`src/events.js`)
 
 ## Security Issues (Must Fix)
 
-⚠️ **Hardcoded secrets in source code:**
 - `server.py` line 29-30: Supabase service key as default
 - `server.py` line 42: Resend API key as default
 - `api/index.py` lines 24-28: Same keys duplicated
@@ -167,36 +126,33 @@ The service key gives full database read/write access. These must be environment
 ## Deployment
 
 Deployed on Vercel:
-- `vercel.json` runs `npm run build` to bundle `src/` → `game.js` at deploy time
+- `vercel.json` runs `npm run build` to bundle `src/` -> `game.js` at deploy time
 - `api/index.py` runs as a serverless Python function
-- `vercel.json` rewrites `/api/*` → `api/index.py`
-- `Cache-Control: no-store` on `game.js` to prevent stale code
+- `vercel.json` rewrites `/api/*` -> `api/index.py`
 
-**Local dev:** run `npm run dev` (or `npm run watch` + `python server.py` separately)
+**Local dev:** `npm run dev` (or `npm run watch` + `python server.py` separately)
 
-## Code Patterns to Know
+## Working with the Diplomacy Module
 
-- **`game` state** — the entire game state is one mutable object in `src/state.js`, accessible as `window.G` for debugging
-- **`window.*` globals** — functions called from HTML `onclick` attributes must be assigned to `window` in `src/main.js` (since esbuild wraps everything in an IIFE)
-- **`safeStorage`** — wrapper around localStorage that gracefully handles sandboxed iframes (`src/state.js`)
-- **`migrateTiles(state)`** — save migration function in `src/save-load.js`, adds missing fields for backward compat
-- **`addEvent(text, type)`** — logs to the in-game event log panel (`src/events.js`)
-- **`logAction(category, detail, metadata)`** — logs to `game.gameLog[]` for analytics (`src/events.js`)
-- **`showModBanner(icon, desc, source)`** — floating notification when game is modified (`src/game-mods.js`)
-- **`showToast(title, message)`** — ephemeral toast notifications (`src/events.js`)
-- **`showCompletionNotification(type, name, desc)`** — completion prompt with "choose next" options (`src/events.js`)
+**Important for AI assistants:** This repo is only half the codebase. The AI diplomacy system (chat UI, game mods, AI faction logic) lives in a separate private repo called `uncivilised-diplomacy`.
 
-## What Needs Work (If Continuing Development)
+When a task involves diplomacy, game mods, or AI faction behavior:
 
-1. ~~**Modularize `game.js`**~~ — Done. Split into 27 ES modules under `src/`, bundled by esbuild.
-2. **Move to structured output** — replace regex `[ACTION: {...}]` parsing with Claude's tool_use / structured output
-3. **Persistent conversation memory** — current 8-message window is too short for meaningful diplomatic relationships
-4. **Balance guardrails** — AI can currently create overpowered content via game_mods
-5. **Multi-agent diplomacy** — factions should negotiate with each other, not just react to player
-6. **Performance** — terrain renderer needs caching/offscreen canvas, visibility computation is O(map_size × units)
-7. **Tests** — zero tests exist
-8. **TypeScript** — if this grows, the untyped codebase will become unmaintainable
+1. **Check if the diplomacy repo is present:** look for `../uncivilised-diplomacy/src/plugin.js`
+2. **If not found:** ask the user whether they have the diplomacy repo available and where it's located, or whether the task should be scoped to just the base game
+3. **If found:** the diplomacy files are at `../uncivilised-diplomacy/src/` — read `diplomacy.js`, `game-mods.js`, and `ai.js` there
+4. **Never recreate** `diplomacy.js`, `game-mods.js`, or `ai.js` in this repo — they belong in the private repo
 
-## Context: Why Gio Has This Repo
+When modifying `src/diplomacy-api.js` (the plugin interface):
+- Any new function added here must also be implemented in the diplomacy repo's `src/plugin.js` registration
+- Keep stubs as no-ops that return sensible defaults (0 for numbers, empty objects, etc.)
+- The wrapper pattern (`export function foo(...args) { return _plugin.foo(...args); }`) ensures late plugin registration works
 
-Jamie pitched this to Gio (March 22, 2026) as a potential collaboration. The original pitch doc ("Open Civ: Zero-Friction Play & AI-Native Creation") was a much grander vision involving blockchain marketplaces and AI-generated mod ecosystems. After discussion, the scope narrowed to: **the diplomacy engine as the product, game as open source**. Gio's assessment: the game_mod system is genuinely novel, the rest is a competent Civ clone. The question is whether this becomes a middleware product, an API service, or just a cool open-source game.
+When modifying modules that the diplomacy repo imports from (constants, state, hex, events, render, map, units, discovery, leaderboard, combat):
+- Changing or removing exports from these modules will break the diplomacy build
+- The diplomacy repo imports them via `@game/` aliases (e.g., `@game/constants.js`)
+- If you add a new export that diplomacy needs, it's available automatically via the alias
+
+## Context
+
+Jamie built this as a Civ-style game with AI-powered diplomacy. Gio (Fragcolor) is evaluating it for collaboration. The decision was: **diplomacy engine stays private, game goes open source**. This repo is the open-source half.
