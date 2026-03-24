@@ -1,0 +1,179 @@
+import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
+import { updateActiveGameProgress } from './leaderboard.js';
+
+function migrateTiles(state) {
+  if (!state.tradeRoutes) state.tradeRoutes = [];
+  if (state.maxTradeRoutes === undefined) state.maxTradeRoutes = 1;
+  if (state.happiness === undefined) state.happiness = 5;
+  // Ensure units have promotion fields
+  if (state.units) {
+    for (const u of state.units) {
+      if (u.xp === undefined) u.xp = 0;
+      if (!u.promotions) u.promotions = [];
+      if (u.pendingPromotion === undefined) u.pendingPromotion = false;
+    }
+  }
+
+  if (!state.civics) state.civics = [];
+  if (state.currentCivic === undefined) state.currentCivic = null;
+  if (state.civicProgress === undefined) state.civicProgress = 0;
+  if (state.culturePerTurn === undefined) state.culturePerTurn = 1;
+  if (!state.greatPeopleProgress) state.greatPeopleProgress = { science: 0, production: 0, gold: 0, military: 0, culture: 0 };
+  if (!state.greatPeopleEarned) state.greatPeopleEarned = [];
+  if (state.pantheon === undefined) state.pantheon = null;
+  if (state.religion === undefined) state.religion = null;
+
+  if (!state.government) state.government = 'chiefdom';
+  if (state.governmentCooldown === undefined) state.governmentCooldown = 0;
+  if (!state.wonders) state.wonders = [];
+  if (state.currentWonderBuild === undefined) state.currentWonderBuild = null;
+  if (state.wonderBuildProgress === undefined) state.wonderBuildProgress = 0;
+
+  if (state.currentUnitBuild === undefined) state.currentUnitBuild = null;
+  if (state.unitBuildProgress === undefined) state.unitBuildProgress = 0;
+  if (state.factionCities) {
+    for (const fc of Object.values(state.factionCities)) {
+      if (fc.hp === undefined) fc.hp = 100;
+      if (fc.population === undefined) fc.population = 1000;
+      if (fc.borderRadius === undefined) fc.borderRadius = 2;
+      if (fc.improvements === undefined) fc.improvements = 0;
+    }
+  }
+  // Ensure cities have per-city food field
+  if (state.cities) {
+    for (const city of state.cities) {
+      if (city.food === undefined) city.food = 0;
+    }
+  }
+  if (!state.aiFactions) state.aiFactions = {};
+  if (!state.aiFactionCities) state.aiFactionCities = {};
+  if (!state.barbarianCamps) state.barbarianCamps = [];
+  if (!state.aiWonders) state.aiWonders = {};
+  // Ensure every tile has col/row (missing in saves before v4)
+  if (state.map) {
+    for (let r = 0; r < state.map.length; r++) {
+      for (let c = 0; c < state.map[r].length; c++) {
+        state.map[r][c].col = c;
+        if (state.map[r][c].naturalWonder === undefined) state.map[r][c].naturalWonder = null;
+        state.map[r][c].row = r;
+      }
+    }
+  }
+  // Migrate v4 saves to v5 diplomacy fields
+  if (!state.envoys && state.envoys !== 0) state.envoys = 3;
+  if (!state.maxEnvoys) state.maxEnvoys = 3;
+  if (!state.envoySpentThisTurn) state.envoySpentThisTurn = {};
+  if (!state.openBorders) state.openBorders = {};
+  if (!state.embargoes) state.embargoes = {};
+  if (!state.ceasefires) state.ceasefires = {};
+  if (!state.vassals) state.vassals = {};
+  if (!state.nonAggressionPacts) state.nonAggressionPacts = {};
+  if (!state.metFactions) state.metFactions = {};
+  if (!state.factionStats) state.factionStats = {};
+  if (!state.appliedMods) state.appliedMods = [];
+  if (!state.combatBonuses) state.combatBonuses = [];
+  if (!state.yieldBonuses) state.yieldBonuses = [];
+  if (!state.activeEvents) state.activeEvents = [];
+  if (!state.minorFactions) state.minorFactions = [];
+  if (!state.gameLog) state.gameLog = [];
+  if (!state.aiCommitments) state.aiCommitments = [];
+  // Re-inject any dynamically created content from mods
+  restoreMods(state);
+  return state;
+}
+
+function restoreMods(state) {
+  if (!state.appliedMods || !state.appliedMods.length) return;
+  for (const record of state.appliedMods) {
+    const mod = record.mod;
+    if (!mod) continue;
+    switch (mod.type) {
+      case 'new_unit':
+        if (mod.id && mod.name && !UNIT_TYPES[mod.id]) {
+          UNIT_TYPES[mod.id] = {
+            name: mod.name, cost: mod.cost || 50, combat: mod.combat || 20,
+            rangedCombat: mod.rangedCombat || 0, range: mod.range || 0,
+            movePoints: mod.movePoints || 2, icon: mod.icon || '\u{2694}',
+            class: mod.class || 'melee', desc: mod.desc || 'Modded unit',
+          };
+          UNIT_UNLOCKS[mod.id] = null;
+        }
+        break;
+      case 'new_building':
+        if (mod.id && mod.name && !BUILDINGS.find(b => b.id === mod.id)) {
+          BUILDINGS.push({ id: mod.id, name: mod.name, cost: mod.cost || 60, desc: mod.desc || '', effect: mod.effect || {} });
+        }
+        break;
+      case 'new_tech':
+        if (mod.id && mod.name && !TECHNOLOGIES.find(t => t.id === mod.id)) {
+          TECHNOLOGIES.push({ id: mod.id, name: mod.name, cost: mod.cost || 40, desc: mod.desc || '', unlocks: mod.unlocks || [] });
+        }
+        break;
+      case 'new_resource':
+        if (mod.id && mod.name && !RESOURCES[mod.id]) {
+          RESOURCES[mod.id] = { name: mod.name, icon: mod.icon || '\u{2728}', color: mod.color || '#aaa', bonus: mod.bonus || { gold: 1 }, category: mod.category || 'luxury' };
+        }
+        break;
+    }
+  }
+  console.log(`Restored ${state.appliedMods.length} mod(s) from save`);
+}
+
+async function autoSave() {
+  // Save to local storage first (fast, works offline)
+  try {
+    const saveData = { version: GAME_VERSION, game_state: game, timestamp: Date.now() };
+    safeStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+  } catch (e) {
+    console.warn('Local storage save failed:', e);
+  }
+  // Update competition progress
+  updateActiveGameProgress();
+  // Also save to API in background
+  try {
+    await fetch(`${API}/api/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_state: game }),
+    });
+  } catch (e) {
+    console.warn('API auto-save failed:', e);
+  }
+}
+
+async function loadGame() {
+  // Try local storage first
+  try {
+    const raw = safeStorage.getItem(SAVE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data.game_state) {
+        setGame(migrateTiles(data.game_state));
+        if (game.units && game.units.length > 0) {
+          setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+        }
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn('Storage load failed:', e);
+  }
+  // Fallback to API
+  try {
+    const res = await fetch(`${API}/api/load`);
+    const data = await res.json();
+    if (data.found && data.game_state) {
+      setGame(migrateTiles(data.game_state));
+      if (game.units && game.units.length > 0) {
+        setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+      }
+      return true;
+    }
+  } catch (e) {
+    console.warn('API load failed:', e);
+  }
+  return false;
+}
+
+export { migrateTiles, restoreMods, autoSave, loadGame };

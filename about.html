@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About Uncivilised</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-bg: #0d0f0e;
+      --color-surface: #161a18;
+      --color-border: #2d3630;
+      --color-text: #d4cfc4;
+      --color-text-muted: #8a8578;
+      --color-gold: #c9a84c;
+      --color-gold-dim: #8b6914;
+      --font-display: 'Cormorant Garamond', Georgia, serif;
+      --font-body: 'Inter', -apple-system, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+    }
+
+    /* Header */
+    .about-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .about-logo {
+      font-family: var(--font-display);
+      font-size: 42px;
+      font-weight: 700;
+      color: var(--color-gold);
+      letter-spacing: 6px;
+      margin-bottom: 8px;
+    }
+
+    .about-label {
+      font-size: 14px;
+      color: var(--color-text-muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Sections */
+    .section {
+      margin-bottom: 48px;
+    }
+
+    .section h2 {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--color-gold);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .section p {
+      margin-bottom: 16px;
+      color: var(--color-text);
+    }
+
+    .section p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Feature list */
+    .features {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 24px;
+    }
+
+    .features li {
+      font-size: 14px;
+      color: var(--color-text);
+      padding: 4px 0;
+      padding-left: 16px;
+      position: relative;
+    }
+
+    .features li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 11px;
+      width: 6px;
+      height: 6px;
+      background: var(--color-gold-dim);
+      border-radius: 50%;
+    }
+
+    /* CTA */
+    .cta {
+      text-align: center;
+      margin: 56px 0 48px;
+    }
+
+    .cta-button {
+      display: inline-block;
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #1a1400;
+      background: var(--color-gold);
+      border: none;
+      border-radius: 6px;
+      padding: 14px 48px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .cta-button:hover {
+      background: #d9b85c;
+      transform: translateY(-1px);
+    }
+
+    /* Footer */
+    .about-footer {
+      text-align: center;
+      padding-top: 32px;
+      border-top: 1px solid var(--color-border);
+    }
+
+    .about-footer p {
+      font-size: 13px;
+      color: var(--color-text-muted);
+      margin-bottom: 6px;
+    }
+
+    .about-footer a {
+      color: var(--color-gold);
+      text-decoration: none;
+    }
+
+    .about-footer a:hover {
+      text-decoration: underline;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 32px;
+      font-size: 13px;
+      color: var(--color-text-muted);
+      text-decoration: none;
+      letter-spacing: 0.5px;
+    }
+
+    .back-link:hover {
+      color: var(--color-gold);
+    }
+
+    @media (max-width: 600px) {
+      .features {
+        grid-template-columns: 1fr;
+      }
+      .about-logo {
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <a href="index.html" class="back-link">&larr; Back to game</a>
+
+    <header class="about-header">
+      <div class="about-logo">UNCIVILISED</div>
+      <div class="about-label">About the Game</div>
+    </header>
+
+    <div class="section">
+      <p>Uncivilised is a free, open-source 4X strategy game set in the Ancient Era. Build cities, research technologies, raise armies, and forge an empire &mdash; but what makes Uncivilised different is how you deal with the civilisations around you.</p>
+    </div>
+
+    <div class="section">
+      <h2>The AI Negotiates Back</h2>
+      <p>Every faction leader in Uncivilised is powered by AI that thinks, reasons, and responds to your words &mdash; not scripted dialogue trees, not pre-written responses. Tell the Warlord you'll defend his borders and he might believe you. Threaten the Oracle and she might call your bluff. Promise tribute to the Commander and break your word &mdash; he'll remember.</p>
+      <p>Six AI leaders, each with distinct personalities, motivations, and diplomatic styles. They form alliances, demand tribute, propose trades, declare wars, and make peace &mdash; all through natural conversation. Your words have consequences.</p>
+    </div>
+
+    <div class="section">
+      <h2>Diplomacy Changes Everything</h2>
+      <p>In most strategy games, diplomacy is a menu you click through. In Uncivilised, it's the skill that determines whether your strategy works.</p>
+      <p>A brilliant military plan fails if every faction allies against you. A weak economy thrives if you negotiate the right trade deals. A science victory becomes possible when you convince two rivals to fight each other instead of you.</p>
+      <p>You can win by conquest, technology, culture, or outlasting everyone. But the path to any victory runs through negotiation.</p>
+    </div>
+
+    <div class="section">
+      <h2>Open Source, Community-Driven</h2>
+      <p>The game engine is free and open source. Fork it, mod it, extend it. Create new civilisations, maps, units, wonders, and scenarios. The Uncivilised modding community is welcome to rebuild every part of the game.</p>
+      <p>The AI diplomacy system is hosted at uncivilized.org and improves as more players interact with it. Every negotiation, every alliance, every betrayal helps the AI learn to be a better diplomat.</p>
+    </div>
+
+    <div class="section">
+      <h2>Features</h2>
+      <ul class="features">
+        <li>60&times;40 hex map with tectonic plate terrain generation</li>
+        <li>6 AI faction leaders with unique personalities</li>
+        <li>Natural language diplomacy &mdash; speak freely, the AI understands</li>
+        <li>25 technologies across the Ancient Era tech tree</li>
+        <li>12 civics in a parallel culture tree</li>
+        <li>19 buildings, 8 Wonders of the Ancient World</li>
+        <li>4 governments: Chiefdom, Despotism, Republic, Oligarchy</li>
+        <li>8 pantheons and religious foundations</li>
+        <li>12 unit types with promotions and upgrade paths</li>
+        <li>Dynamic barbarian camps with specialist mercenaries</li>
+        <li>Trade routes, happiness, great people</li>
+        <li>4 victory conditions: Domination, Science, Culture, Score</li>
+        <li>Global leaderboard and competitive tournaments</li>
+        <li>Vision system with explored/shroud/visible layers</li>
+        <li>Community modding support</li>
+      </ul>
+    </div>
+
+    <div class="cta">
+      <a href="index.html" class="cta-button">Play Now</a>
+    </div>
+
+    <footer class="about-footer">
+      <p>Created with care by the Uncivilised team.</p>
+      <p>Built on open-source foundations from the Civ modding community.</p>
+      <p style="margin-top:12px"><a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a></p>
+    </footer>
+
+  </div>
+</body>
+</html>
