@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
 
@@ -61,9 +61,10 @@ function migrateTiles(state) {
     }
   }
   // Migrate v4 saves to v5 diplomacy fields
-  if (!state.envoys && state.envoys !== 0) state.envoys = 3;
-  if (!state.maxEnvoys) state.maxEnvoys = 3;
+  if (!state.envoys && state.envoys !== 0) state.envoys = 1;
+  if (!state.maxEnvoys) state.maxEnvoys = 1;
   if (!state.envoySpentThisTurn) state.envoySpentThisTurn = {};
+  if (!state.messagesThisTurn) state.messagesThisTurn = 0;
   if (!state.openBorders) state.openBorders = {};
   if (!state.embargoes) state.embargoes = {};
   if (!state.ceasefires) state.ceasefires = {};
@@ -78,6 +79,26 @@ function migrateTiles(state) {
   if (!state.minorFactions) state.minorFactions = [];
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
+  // --- Reputation system migration ---
+  if (!state.reputation) {
+    state.reputation = {};
+    for (const fid of Object.keys(FACTIONS)) {
+      state.reputation[fid] = { honour: 0, generosity: 0, menace: 0, reliability: 0, cunning: 0 };
+    }
+  }
+  if (!state.diplomaticLedger) {
+    state.diplomaticLedger = {};
+    for (const fid of Object.keys(FACTIONS)) {
+      state.diplomaticLedger[fid] = [];
+    }
+  }
+  if (!state.diplomaticSummaries) {
+    state.diplomaticSummaries = {};
+    for (const fid of Object.keys(FACTIONS)) {
+      state.diplomaticSummaries[fid] = null;
+    }
+  }
+
   // Re-inject any dynamically created content from mods
   restoreMods(state);
   return state;

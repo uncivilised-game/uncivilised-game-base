@@ -15,10 +15,39 @@ export function toggleFeedbackChat() {
   }
 }
 
+// ── Client-side rate limiting ──
+let _fbSendTimes = [];
+const _FB_CLIENT_COOLDOWN_MS = 15000;  // 15s between messages
+const _FB_CLIENT_MAX_PER_HOUR = 10;
+
 export async function sendFeedback() {
   const input = document.getElementById('feedback-input');
   const msg = input.value.trim();
   if (!msg) return;
+
+  // Client-side cooldown
+  const now = Date.now();
+  _fbSendTimes = _fbSendTimes.filter(t => now - t < 3600000);
+  if (_fbSendTimes.length > 0 && now - _fbSendTimes[_fbSendTimes.length - 1] < _FB_CLIENT_COOLDOWN_MS) {
+    const wait = Math.ceil((_FB_CLIENT_COOLDOWN_MS - (now - _fbSendTimes[_fbSendTimes.length - 1])) / 1000);
+    const messagesDiv = document.getElementById('feedback-messages');
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#8a8578;font-size:12px;padding:4px 12px';
+    hint.textContent = `Please wait ${wait}s before sending another message.`;
+    messagesDiv.appendChild(hint);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return;
+  }
+  if (_fbSendTimes.length >= _FB_CLIENT_MAX_PER_HOUR) {
+    const messagesDiv = document.getElementById('feedback-messages');
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#8a8578;font-size:12px;padding:4px 12px';
+    hint.textContent = 'Hourly feedback limit reached. Thanks for all your input!';
+    messagesDiv.appendChild(hint);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return;
+  }
+  _fbSendTimes.push(now);
 
   const messagesDiv = document.getElementById('feedback-messages');
 

@@ -1,5 +1,5 @@
 import { MAP_COLS, MAP_ROWS, FACTIONS } from './constants.js';
-import { game, API } from './state.js';
+import { game, API, safeStorage } from './state.js';
 import { hexDistance } from './hex.js';
 import { initFactionStats } from './map.js';
 import { addEvent, logAction, countPlayerTerritory } from './events.js';
@@ -108,6 +108,8 @@ async function triggerFirstContactGreeting(factionId, method) {
 
   // Mark this as a free envoy interaction (first contact doesn't cost envoys)
   game.envoySpentThisTurn[factionId] = true;
+  if (!game.messagesThisTurn) game.messagesThisTurn = 0;
+  game.messagesThisTurn++;
 
   // Display the system first-contact banner
   appendChatMessage('system', `\u{1F30D} First Contact \u2014 You have ${method === 'encounter' ? 'encountered forces of' : 'discovered the lands of'} ${faction.name}, ${faction.title}.`);
@@ -140,7 +142,12 @@ async function triggerFirstContactGreeting(factionId, method) {
 
     const response = await fetch(`${API}/api/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-visitor-id': (safeStorage.getItem('uncivilised_visitor_id') || ''),
+        'x-player-name': (safeStorage.getItem('uncivilised_username') || 'anonymous'),
+        'x-game-session': (window._gameSessionId || ''),
+      },
       body: JSON.stringify({
         character_id: factionId,
         message: contactMessage,

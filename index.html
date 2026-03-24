@@ -17,7 +17,7 @@
 <link rel="author" href="https://www.perplexity.ai/computer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Uncivilised — Ancient Era</title>
+<title>Uncivilized — Ancient Era</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -29,7 +29,7 @@
   <div id="title-screen" class="screen active">
     <div class="title-content">
       <div class="title-logo">
-        <svg viewBox="0 0 400 60" class="logo-svg" aria-label="Uncivilised">
+        <svg viewBox="0 0 400 60" class="logo-svg" aria-label="Uncivilised Beta">
           <defs>
             <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stop-color="#c9a84c"/>
@@ -37,6 +37,7 @@
             </linearGradient>
           </defs>
           <text x="200" y="44" text-anchor="middle" font-family="Cormorant Garamond, serif" font-weight="700" font-size="48" fill="url(#logo-grad)">UNCIVILISED</text>
+          <text x="355" y="18" font-family="Inter, sans-serif" font-weight="600" font-size="11" fill="#c9a84c" letter-spacing="1.5" opacity="0.85">BETA</text>
           <line x1="40" y1="54" x2="360" y2="54" stroke="#c9a84c" stroke-width="0.5" opacity="0.6"/>
         </svg>
       </div>
@@ -55,24 +56,90 @@
         </div>
       </div>
 
-      <div class="title-buttons">
-        <button id="btn-new-game" class="btn btn-primary">Play Now</button>
-        <button id="btn-continue" class="btn btn-secondary" style="display:none">Continue</button>
+      <!-- Spots remaining counter -->
+      <div id="spots-counter" class="spots-counter" style="display:none">
+        <div class="spots-bar-track">
+          <div id="spots-bar-fill" class="spots-bar-fill" style="width:100%"></div>
+        </div>
+        <p class="spots-text"><strong id="spots-number">1,000</strong> spots remaining</p>
+      </div>
+
+      <!-- Auth-gated buttons: shown based on login state -->
+      <div id="auth-buttons-guest" class="title-buttons">
+        <button id="btn-signup" class="btn btn-primary" onclick="showSignupModal()">Sign Up to Play</button>
+        <button id="btn-signin" class="btn btn-secondary" onclick="showSigninModal()">Sign In</button>
         <button id="btn-leaderboard-title" class="btn btn-secondary" onclick="showLeaderboard()">Leaderboard</button>
       </div>
-      <div id="username-bar" class="username-bar">
-        <span id="username-display" class="username-display" style="display:none"></span>
-        <button id="btn-set-username" class="btn-username" onclick="showUsernamePrompt()">Set Username</button>
+      <div id="auth-buttons-player" class="title-buttons" style="display:none">
+        <button id="btn-new-game" class="btn btn-primary">Play Now</button>
+        <button id="btn-continue" class="btn btn-secondary" style="display:none">Continue</button>
+        <button id="btn-leaderboard-player" class="btn btn-secondary" onclick="showLeaderboard()">Leaderboard</button>
       </div>
+      <div id="username-bar" class="username-bar" style="display:none">
+        <span id="username-display" class="username-display"></span>
+        <button class="btn-username" onclick="playerSignOut()" style="font-size:12px;opacity:0.6">Sign Out</button>
+      </div>
+
+      <!-- Status messages for waitlisted / unverified -->
+      <div id="auth-status-msg" class="auth-status-msg" style="display:none"></div>
+
       <p class="title-hint">Every faction leader thinks, negotiates, and remembers.<br>Forge alliances through conversation. Betray empires with a whisper.</p>
     </div>
     <footer class="title-footer">
-      <a href="waitlist.html">Waitlist <span class="footer-count">(<span id="waitlist-count">...</span>)</span></a>
-      <span class="footer-dot">&middot;</span>
       <a href="about.html">About</a>
       <span class="footer-dot">&middot;</span>
       <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Built with Perplexity Computer</a>
     </footer>
+  </div>
+
+  <!-- Signup Modal -->
+  <div id="signup-modal" class="auth-modal-overlay" style="display:none">
+    <div class="auth-modal">
+      <button class="auth-modal-close" onclick="closeAuthModals()">&times;</button>
+      <h2 class="auth-modal-title">Claim Your Spot</h2>
+      <p class="auth-modal-subtitle" id="signup-subtitle">Join 1,000 players in the first wave</p>
+      <form id="signup-form" onsubmit="handleSignup(event)">
+        <div class="auth-field">
+          <label for="signup-username">Username</label>
+          <input type="text" id="signup-username" placeholder="e.g. conqueror42" minlength="3" maxlength="20" pattern="[a-zA-Z0-9_]+" required autocomplete="username">
+          <span class="auth-field-hint">Letters, numbers, underscores. 3-20 chars.</span>
+        </div>
+        <div class="auth-field">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" placeholder="you@example.com" required autocomplete="email">
+          <span class="auth-field-hint">We'll send a link to start playing.</span>
+        </div>
+        <div id="signup-error" class="auth-error" style="display:none"></div>
+        <button type="submit" id="signup-submit" class="btn btn-primary auth-submit">Sign Up</button>
+      </form>
+      <p class="auth-switch">Already have an account? <a href="#" onclick="showSigninModal(); return false;">Sign In</a></p>
+    </div>
+  </div>
+
+  <!-- Signin Modal -->
+  <div id="signin-modal" class="auth-modal-overlay" style="display:none">
+    <div class="auth-modal">
+      <button class="auth-modal-close" onclick="closeAuthModals()">&times;</button>
+      <h2 class="auth-modal-title">Welcome Back</h2>
+      <p class="auth-modal-subtitle">Enter your username to continue</p>
+      <form id="signin-form" onsubmit="handleSignin(event)">
+        <div class="auth-field">
+          <label for="signin-username">Username</label>
+          <input type="text" id="signin-username" placeholder="Your username" required autocomplete="username">
+        </div>
+        <div id="signin-error" class="auth-error" style="display:none"></div>
+        <button type="submit" id="signin-submit" class="btn btn-primary auth-submit">Sign In</button>
+      </form>
+      <p class="auth-switch">Don't have an account? <a href="#" onclick="showSignupModal(); return false;">Sign Up</a></p>
+    </div>
+  </div>
+
+  <!-- Success Modal (after signup) -->
+  <div id="success-modal" class="auth-modal-overlay" style="display:none">
+    <div class="auth-modal">
+      <button class="auth-modal-close" onclick="closeAuthModals()">&times;</button>
+      <div id="success-content"></div>
+    </div>
   </div>
 
   <!-- Game Screen -->
@@ -186,7 +253,8 @@
         <div id="chat-messages" class="panel-body chat-body"></div>
         <div id="diplo-actions"></div>
         <div id="chat-input-area">
-          <input type="text" id="chat-input" placeholder="Speak to the diplomat..." autocomplete="off">
+          <input type="text" id="chat-input" placeholder="Speak to the diplomat..." autocomplete="off" maxlength="500">
+          <span id="chat-char-count" class="chat-char-count">0/500</span>
           <button id="chat-send" class="btn btn-primary btn-small">Send</button>
         </div>
       </div>
@@ -250,10 +318,11 @@
       </div>
     </div>
 
-    <!-- Bottom-LEFT: Uncivilised logo -->
+    <!-- Bottom-LEFT: Uncivilized logo -->
     <div id="game-logo" style="position:fixed;bottom:12px;right:12px;z-index:100;pointer-events:none;opacity:0.4">
-      <svg viewBox="0 0 120 20" width="100" aria-label="Uncivilised">
+      <svg viewBox="0 0 150 20" width="125" aria-label="Uncivilised Beta">
         <text x="0" y="16" font-family="Cormorant Garamond, Georgia, serif" font-weight="700" font-size="16" fill="#c9a84c" letter-spacing="2">UNCIVILISED</text>
+        <text x="122" y="8" font-family="Inter, sans-serif" font-weight="600" font-size="6" fill="#c9a84c" letter-spacing="1" opacity="0.8">BETA</text>
       </svg>
     </div>
 
