@@ -1,4 +1,4 @@
-"""Uncivilised — API (Vercel Serverless Function)
+"""Uncivilized — API (Vercel Serverless Function)
 Handles diplomacy chat, leaderboard, username registration, save/load,
 waitlist, session tracking, and diplomacy interaction logging.
 Uses direct HTTP calls to Supabase PostgREST API (no SDK — saves ~1.5GB).
@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -16,6 +17,25 @@ from anthropic import Anthropic
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# ═══════════════════════════════════════════════════
+# Rate limiting (Supabase-persistent + in-memory fallback)
+# ═══════════════════════════════════════════════════
+_chat_rate: dict[str, list[float]] = defaultdict(list)  # fast in-memory first pass
+_CHAT_RATE_PER_MIN = 6   # max 6 /api/chat calls per minute per caller
+_CHAT_RATE_PER_HOUR = 60  # max 60 /api/chat calls per hour per caller
+
+_feedback_rate: dict[str, list[float]] = defaultdict(list)
+_FEEDBACK_RATE_PER_MIN = 3    # max 3 feedback messages per minute
+_FEEDBACK_RATE_PER_HOUR = 10  # max 10 feedback messages per hour
+_FEEDBACK_MSG_MAX_CHARS = 500 # truncate before sending to Claude
+# Accept both UUID format AND the v-{timestamp}-{random} format from the client
+_VISITOR_ID_RE = re.compile(
+    r'^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'  # UUID
+    r'|v-\d{13,}-[a-z0-9]{5,12}'                                           # v-timestamp-random
+    r'|anon-\d+)$',                                                         # anon-timestamp fallback
+    re.I,
+)
 
 # ═══════════════════════════════════════════════════
 # Supabase REST config (PostgREST via httpx)
@@ -34,30 +54,31 @@ _SB_HEADERS = {
 # Resend email config
 # ═══════════════════════════════════════════════════
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-FROM_EMAIL = "Uncivilised <hello@uncivilized.fun>"
+FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
+MAX_ACTIVE_PLAYERS = 1000  # first N signups get immediate access
 
 WELCOME_EMAIL_HTML = """
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
 <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
-<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILISED</span></td></tr>
+<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILISED</span> <span style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:600;color:#c9a84c;letter-spacing:2px;vertical-align:super">BETA</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
-<tr><td style="color:#e8e0d0;font-size:16px;line-height:26px;padding:0 0 24px">You're on the list. Thanks for joining early.</td></tr>
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Uncivilised is a free, open-source 4X strategy game where every faction leader is powered by AI. They think. They remember what you said three turns ago. They negotiate, betray, and form alliances through actual conversation &mdash; not scripted dialogue trees.</td></tr>
+<tr><td style="color:#e8e0d0;font-size:16px;line-height:26px;padding:0 0 24px">Welcome, beta tester. You're one of the first 1,000 players helping us shape this game.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Uncivilised is a free-to-play 4X strategy game where every faction leader is powered by AI. They think. They remember what you said three turns ago. They negotiate, betray, and form alliances through actual conversation &mdash; not scripted dialogue trees.</td></tr>
 <tr><td style="padding:0 0 20px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#c9a84c">What we're building</span></td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 8px">
 <table cellpadding="0" cellspacing="0" width="100%">
-<tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Fully open source</strong> &mdash; fork it, mod it, make it yours. The entire game engine is public under AGPL-3.0.</td></tr>
-<tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Bug bounties</strong> &mdash; find bugs, report issues, earn rewards. We're opening a 1,000-player testing programme soon.</td></tr>
+<tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Open source after beta</strong> &mdash; we plan to release the game engine as open source once beta testing is complete.</td></tr>
+<tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Bug bounties</strong> &mdash; as a beta tester, find bugs and report issues to earn rewards.</td></tr>
 <tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Weekly competitions</strong> &mdash; compete on leaderboards with same-seed maps. Real prizes, real rivalries.</td></tr>
 <tr><td style="color:#c9a84c;font-size:14px;padding:6px 12px 6px 0;vertical-align:top;width:20px">&#9670;</td><td style="color:#b8b0a0;font-size:15px;line-height:24px;padding:6px 0"><strong style="color:#e8e0d0">Modding ecosystem</strong> &mdash; build new factions, new maps, new victory conditions. Share them with the community.</td></tr>
 </table></td></tr>
 <tr><td style="padding:24px 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
-<tr><td style="text-align:center;padding:0 0 24px"><a href="https://uncivilized.fun" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#a08030);color:#1a1a0e;font-size:15px;font-weight:600;text-decoration:none;padding:12px 32px;border-radius:6px">Play the Demo</a></td></tr>
-<tr><td style="color:#8a8578;font-size:14px;line-height:22px;padding:0 0 8px;text-align:center">We'll email you when invites go out. First 500 get early access.</td></tr>
+<tr><td style="text-align:center;padding:0 0 24px"><a href="https://uncivilized.fun" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#a08030);color:#1a1a0e;font-size:15px;font-weight:600;text-decoration:none;padding:12px 32px;border-radius:6px">Play Now</a></td></tr>
+<tr><td style="color:#8a8578;font-size:14px;line-height:22px;padding:0 0 8px;text-align:center">You're part of our first 1,000 beta testers. Your feedback directly shapes the game.</td></tr>
 <tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
-<tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilised &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
+<tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
 </table></td></tr></table></body></html>
 """
 
@@ -77,7 +98,7 @@ def _send_welcome_email(to_email: str):
             json={
                 "from": FROM_EMAIL,
                 "to": [to_email],
-                "subject": "You're on the Uncivilised waitlist",
+                "subject": "Welcome to the Uncivilised Beta",
                 "html": WELCOME_EMAIL_HTML,
             },
             timeout=10,
@@ -88,6 +109,61 @@ def _send_welcome_email(to_email: str):
             print(f"[EMAIL] Failed for {to_email}: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"[EMAIL] Error sending to {to_email}: {e}")
+
+
+def _send_access_email(to_email: str, username: str, token: str):
+    """Send 'you're in' email with play link to active players."""
+    if not RESEND_API_KEY:
+        return
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
+<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span></td></tr>
+<tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
+<tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">You're in, {username}.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Your spot is secured. Click below to verify your email and start playing. Forge alliances. Betray empires. Rewrite history.</td></tr>
+<tr><td style="text-align:center;padding:0 0 24px"><a href="https://uncivilized.fun?token={token}" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#a08030);color:#1a1a0e;font-size:16px;font-weight:700;text-decoration:none;padding:14px 40px;border-radius:6px;letter-spacing:0.5px">Start Playing</a></td></tr>
+<tr><td style="color:#8a8578;font-size:13px;line-height:20px;padding:0 0 8px;text-align:center">If the button doesn't work, copy this link:<br><a href="https://uncivilized.fun?token={token}" style="color:#c9a84c;text-decoration:none;word-break:break-all">https://uncivilized.fun?token={token}</a></td></tr>
+<tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
+<tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
+</table></td></tr></table></body></html>"""
+    try:
+        httpx.post("https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [to_email],
+                  "subject": f"You're in — welcome to the Uncivilised Beta",
+                  "html": html},
+            timeout=10)
+    except Exception as e:
+        print(f"[EMAIL] Error sending access email to {to_email}: {e}")
+
+
+def _send_waitlisted_email(to_email: str, username: str, position: int):
+    """Send waitlist confirmation email when spots are full."""
+    if not RESEND_API_KEY:
+        return
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
+<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span></td></tr>
+<tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
+<tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">You're on the list, {username}.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 1,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">We'll email you the moment a spot opens up. In the meantime, the game is open source &mdash; you can follow development on GitHub or join the community.</td></tr>
+<tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
+<tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
+</table></td></tr></table></body></html>"""
+    try:
+        httpx.post("https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [to_email],
+                  "subject": "You're on the Uncivilised Beta waitlist",
+                  "html": html},
+            timeout=10)
+    except Exception as e:
+        print(f"[EMAIL] Error sending waitlist email to {to_email}: {e}")
 
 
 # Quick connectivity check at import time
@@ -178,6 +254,88 @@ def _sb_count(table: str, filters: str = "") -> int:
     return len(r.json())
 
 
+def _check_rate_limit(caller_id: str) -> tuple[bool, str]:
+    """Check and increment rate limit counter in Supabase.
+
+    Uses chat_rate_limits table with columns:
+      caller_id (text, PK), minute_count (int), hour_count (int),
+      minute_window (timestamptz), hour_window (timestamptz)
+
+    Returns (allowed: bool, reason: str).
+    Falls back to in-memory if Supabase unavailable.
+    """
+    if not _sb_ok:
+        return True, "sb_unavailable"  # fall through to in-memory check
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        rows = _sb_select(
+            "chat_rate_limits", select="*",
+            filters=f"caller_id=eq.{quote(caller_id)}", limit=1
+        )
+
+        if not rows:
+            # First request from this caller — create row
+            _sb_insert("chat_rate_limits", {
+                "caller_id": caller_id,
+                "minute_count": 1,
+                "hour_count": 1,
+                "minute_window": now_iso,
+                "hour_window": now_iso,
+            }, return_data=False)
+            return True, "first_request"
+
+        row = rows[0]
+        minute_window = row.get("minute_window", now_iso)
+        hour_window = row.get("hour_window", now_iso)
+        minute_count = row.get("minute_count", 0)
+        hour_count = row.get("hour_count", 0)
+
+        # Parse window timestamps
+        from datetime import datetime as _dt
+        try:
+            mw = _dt.fromisoformat(minute_window.replace("Z", "+00:00"))
+            hw = _dt.fromisoformat(hour_window.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            mw = hw = datetime.now(timezone.utc)
+
+        now_dt = datetime.now(timezone.utc)
+        minute_elapsed = (now_dt - mw).total_seconds()
+        hour_elapsed = (now_dt - hw).total_seconds()
+
+        # Reset windows if expired
+        update = {}
+        if minute_elapsed >= 60:
+            minute_count = 0
+            update["minute_count"] = 1
+            update["minute_window"] = now_iso
+        else:
+            minute_count += 1
+            update["minute_count"] = minute_count
+
+        if hour_elapsed >= 3600:
+            hour_count = 0
+            update["hour_count"] = 1
+            update["hour_window"] = now_iso
+        else:
+            hour_count += 1
+            update["hour_count"] = hour_count
+
+        # Check limits BEFORE writing (so we don't count rejected requests)
+        if minute_count > _CHAT_RATE_PER_MIN:
+            return False, "minute_limit"
+        if hour_count > _CHAT_RATE_PER_HOUR:
+            return False, "hour_limit"
+
+        # Write updated counts
+        _sb_update("chat_rate_limits", update, f"caller_id=eq.{quote(caller_id)}")
+        return True, "ok"
+
+    except Exception as e:
+        print(f"[RATE] Supabase rate check failed: {e} — allowing request")
+        return True, "sb_error"
+
+
 # ── Anthropic client ──
 client = Anthropic()
 
@@ -191,6 +349,9 @@ class ChatMessage(BaseModel):
     message: str
     game_state: dict | None = None
     conversation_history: list[dict] | None = None
+    reputation: dict | None = None
+    diplomatic_ledger: list[dict] | None = None
+    diplomatic_summary: str | None = None
 
 
 class SaveData(BaseModel):
@@ -210,6 +371,15 @@ class LeaderboardEntry(BaseModel):
 class ClaimUsername(BaseModel):
     username: str
     email: str | None = None
+
+
+class SignupRequest(BaseModel):
+    username: str
+    email: str
+
+
+class SigninRequest(BaseModel):
+    username: str
 
 
 class WaitlistEntry(BaseModel):
@@ -436,6 +606,85 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+
+# ═══════════════════════════════════════════════════
+# Reputation prompt builder
+# ═══════════════════════════════════════════════════
+_REPUTATION_WEIGHTS = {
+    "emperor_valerian":          {"honour": 1.5, "generosity": 0.5, "menace": 1.0, "reliability": 1.2, "cunning": -1.0},
+    "shadow_kael":               {"honour": 0.3, "generosity": 0.5, "menace": 0.8, "reliability": 1.0, "cunning": 1.5},
+    "merchant_prince_castellan": {"honour": 0.8, "generosity": 1.2, "menace": -0.5, "reliability": 1.5, "cunning": 0.3},
+    "pirate_queen_elara":        {"honour": 1.0, "generosity": 0.8, "menace": 1.2, "reliability": 0.5, "cunning": 1.0},
+    "commander_thane":           {"honour": 1.5, "generosity": 0.3, "menace": 1.0, "reliability": 1.5, "cunning": -1.5},
+    "rebel_leader_sera":         {"honour": 1.0, "generosity": 1.5, "menace": -1.0, "reliability": 1.0, "cunning": -0.5},
+}
+
+def _dim_label(value: float) -> str:
+    if value >= 60: return "Exemplary"
+    if value >= 30: return "Strong"
+    if value >= 10: return "Decent"
+    if value >= -9: return "Neutral"
+    if value >= -29: return "Poor"
+    if value >= -59: return "Bad"
+    return "Terrible"
+
+def _disp_label(score: float) -> str:
+    if score >= 80: return "Devoted"
+    if score >= 50: return "Trusting"
+    if score >= 20: return "Warm"
+    if score >= -19: return "Neutral"
+    if score >= -49: return "Wary"
+    if score >= -79: return "Hostile"
+    return "Nemesis"
+
+def _build_reputation_prompt(character_id: str, reputation: dict, ledger: list, summary: str | None, game_state: dict | None) -> str:
+    if not reputation:
+        return ""
+    weights = _REPUTATION_WEIGHTS.get(character_id, {})
+    score = 0
+    for dim in ("honour", "generosity", "menace", "reliability", "cunning"):
+        score += reputation.get(dim, 0) * weights.get(dim, 0)
+    disposition = max(-100, min(100, round(score / 7.5)))
+    disp_label = _disp_label(disposition)
+    honour = round(reputation.get("honour", 0))
+    generosity = round(reputation.get("generosity", 0))
+    menace = round(reputation.get("menace", 0))
+    reliability = round(reputation.get("reliability", 0))
+    cunning = round(reputation.get("cunning", 0))
+    ledger_lines = ""
+    if ledger:
+        recent = list(reversed(ledger[-5:]))
+        ledger_lines = "\n".join(f"- Turn {e.get('turn','?')}: {e.get('detail', e.get('event','?'))}" for e in recent)
+    broken_count = sum(1 for e in (ledger or []) if e.get("event") in ("alliance_broken", "nap_broken", "surprise_attack"))
+    active = []
+    if game_state:
+        if game_state.get("alliances", {}).get(character_id): active.append("Alliance")
+        if game_state.get("defense_pacts", {}).get(character_id): active.append("Mutual Defense")
+        if game_state.get("trade_deals", {}).get(character_id): active.append("Trade Deal")
+    narrative = summary or "No prior diplomatic history."
+    if all(v == 0 for v in (honour, generosity, menace, reliability, cunning)):
+        narrative = "First contact — no prior history with this player."
+    return f"""
+
+DIPLOMATIC MEMORY — YOUR PERCEPTION OF THIS PLAYER:
+
+Overall Disposition: {disp_label} ({disposition})
+- Honour: {honour} ({_dim_label(honour)})
+- Generosity: {generosity} ({_dim_label(generosity)})
+- Military Threat: {menace} ({_dim_label(menace)})
+- Reliability: {reliability} ({_dim_label(reliability)})
+- Cunning: {cunning} ({_dim_label(cunning)})
+
+{('Key Facts (most recent first):' + chr(10) + ledger_lines) if ledger_lines else 'No significant diplomatic events yet.'}
+
+Narrative: {narrative}
+
+Active Agreements: {', '.join(active) if active else 'None'}
+Broken Agreements: {broken_count}
+
+IMPORTANT: Let your disposition colour your tone, trust level, and willingness to deal. A player with low Honour should face suspicion. High Menace warrants caution. Adapt to what you KNOW from experience."""
+
+
 # ═══════════════════════════════════════════════════
 # /api/chat — AI diplomacy (+ diplomacy logging)
 # ═══════════════════════════════════════════════════
@@ -445,32 +694,80 @@ async def chat(msg: ChatMessage, request: Request):
     if not profile:
         return {"error": "Unknown character"}, 400
 
-    # Build system prompt with game context
+    # ── Require visitor_id (blocks casual curl/bot abuse) ──
+    visitor_id = request.headers.get("x-visitor-id", "")
+    if not visitor_id or not _VISITOR_ID_RE.match(visitor_id):
+        return {
+            "reply": "*The diplomat cannot hear you.* (Invalid session — refresh the page.)",
+            "action": None, "error": "missing_visitor_id",
+        }
+
+    # ── Rate limit: Supabase-persistent (survives cold starts) + in-memory fast path ──
+    caller_key = visitor_id or (request.client.host if request.client else "unknown")
+
+    # Layer 1: Supabase persistent counter (6/min, 60/hour)
+    allowed, reason = _check_rate_limit(caller_key)
+    if not allowed:
+        limit_msg = ("*The diplomats are overwhelmed. Wait a moment before sending another envoy.*"
+                     if reason == "minute_limit"
+                     else "*Your envoys have been too active today. Let them rest before sending more.*")
+        return {"reply": limit_msg, "action": None, "error": "rate_limited"}
+
+    # Layer 2: In-memory fast path (catches bursts within same function instance)
+    now = time.time()
+    _chat_rate[caller_key] = [t for t in _chat_rate[caller_key] if now - t < 60]
+    if len(_chat_rate[caller_key]) >= _CHAT_RATE_PER_MIN:
+        return {
+            "reply": "*The diplomats are overwhelmed. Wait a moment before sending another envoy.*",
+            "action": None, "error": "rate_limited",
+        }
+    _chat_rate[caller_key].append(now)
+
+    # Build system prompt with game context — sanitize all inputs to prevent
+    # token inflation attacks via oversized game_state payloads
     game_context = ""
     if msg.game_state:
         gs = msg.game_state
+        # Sanitize: extract only known fields, cap string lengths
+        _s = lambda v, mx=50: str(v)[:mx] if v is not None else '?'
+        _rel = lambda d, k: _s(d.get(k, 'neutral') if isinstance(d, dict) else 'neutral')
+        recent = gs.get('recent_events', ['none'])
+        if isinstance(recent, list):
+            recent = ', '.join(str(e)[:100] for e in recent[:5])
+        else:
+            recent = _s(recent, 200)
         game_context = f"""
 
 CURRENT GAME STATE:
-- Turn: {gs.get('turn', '?')} / 100
-- Player's Gold: {gs.get('gold', '?')}
-- Player's Military Strength: {gs.get('military', '?')}
-- Player's Cities: {gs.get('cities', '?')}
-- Player's Population: {gs.get('population', '?')}
-- Player's Territory Size: {gs.get('territory', '?')} hexes
-- Your Relationship with Player: {gs.get('relationship', {}).get(msg.character_id, 'neutral')}
-- Active Alliances with Player: {gs.get('alliances', {}).get(msg.character_id, 'none')}
-- Active Trade Deals: {gs.get('trade_deals', {}).get(msg.character_id, 'none')}
-- Marriage Bonds: {gs.get('marriages', {}).get(msg.character_id, 'none')}
-- Mutual Defense Pacts: {gs.get('defense_pacts', {}).get(msg.character_id, 'none')}
-- Recent Events: {', '.join(gs.get('recent_events', ['none']))}
+- Turn: {_s(gs.get('turn'), 10)} / 100
+- Player's Gold: {_s(gs.get('gold'), 10)}
+- Player's Military Strength: {_s(gs.get('military'), 10)}
+- Player's Cities: {_s(gs.get('cities'), 200)}
+- Player's Population: {_s(gs.get('population'), 10)}
+- Player's Territory Size: {_s(gs.get('territory'), 10)} hexes
+- Your Relationship with Player: {_rel(gs.get('relationship', {}), msg.character_id)}
+- Active Alliances with Player: {_rel(gs.get('alliances', {}), msg.character_id)}
+- Active Trade Deals: {_rel(gs.get('trade_deals', {}), msg.character_id)}
+- Marriage Bonds: {_rel(gs.get('marriages', {}), msg.character_id)}
+- Mutual Defense Pacts: {_rel(gs.get('defense_pacts', {}), msg.character_id)}
+- Recent Events: {recent}
 
 Use this information to inform your responses. Reference specific numbers when relevant.
 React appropriately to the player's relative power \u2014 if they're weak, you might be dismissive;
 if strong, you might be more respectful or threatened."""
 
+    # Build reputation memory section
+    reputation_context = _build_reputation_prompt(
+        msg.character_id,
+        msg.reputation,
+        msg.diplomatic_ledger or [],
+        msg.diplomatic_summary,
+        msg.game_state,
+    )
+
     system_prompt = f"""{profile['personality']}
 {game_context}
+{reputation_context}
 
 INTERACTION RULES:
 - Stay in character at all times
@@ -569,21 +866,36 @@ DIPLOMACY DEPTH RULES:
 - Consider the balance of power: if the player is much stronger, be more accommodating; if weaker, be bolder
 - Only include an action tag when you genuinely want to propose something. Casual conversation needs no action tag."""
 
-    # Build conversation messages
+    # Build conversation messages — cap each history entry to 500 chars
+    # to prevent token-stuffing attacks via bloated conversation_history
     messages = []
     if msg.conversation_history:
         for entry in msg.conversation_history[-8:]:  # Last 8 messages for context
+            content = (entry.get("content") or "")[:500]
             messages.append(
-                {"role": entry.get("role", "user"), "content": entry["content"]}
+                {"role": entry.get("role", "user"), "content": content}
             )
 
-    messages.append({"role": "user", "content": msg.message})
+    # Enforce 500-character message cap server-side (defense against agents/direct API calls)
+    player_message = msg.message[:500] if msg.message else ""
+    messages.append({"role": "user", "content": player_message})
 
+    # --- Prompt caching: wrap system prompt with cache_control so that
+    #     repeated calls to the same character reuse the cached prefix.
+    #     Cached input tokens cost 10% of base price and DON'T count
+    #     towards the ITPM rate limit.  ~3,000 tokens cached per hit.
+    #     TTL is 5 minutes — typical diplomacy sessions hit this easily.
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=200,
-            system=system_prompt,
+            system=[
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=messages,
         )
         reply = response.content[0].text
@@ -601,8 +913,7 @@ DIPLOMACY DEPTH RULES:
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
 
-        # Log diplomacy interaction to Supabase
-        visitor_id = request.headers.get("x-visitor-id", "anonymous")
+        # Log diplomacy interaction to Supabase (visitor_id already extracted above)
         _log_diplomacy_interaction(
             visitor_id=visitor_id,
             character_id=msg.character_id,
@@ -943,6 +1254,276 @@ async def get_waitlist_count():
 
 
 # ═══════════════════════════════════════════════════
+# /api/signup, /api/signin, /api/verify — player gating
+# ═══════════════════════════════════════════════════
+@app.post("/api/signup")
+async def player_signup(data: SignupRequest):
+    """Register a new player. First 1,000 get immediate access; rest are waitlisted."""
+    username = data.username.strip()
+    email = data.email.strip().lower()
+
+    if not username or len(username) < 3 or len(username) > 20:
+        return {"success": False, "error": "Username must be 3-20 characters"}
+    if not email or "@" not in email:
+        return {"success": False, "error": "Invalid email address"}
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9_]+$', username):
+        return {"success": False, "error": "Username can only contain letters, numbers, and underscores"}
+
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    try:
+        # Check if username already taken
+        existing = _sb_select(
+            "players", select="id",
+            filters=f"username_lower=eq.{quote(username.lower())}",
+            limit=1,
+        )
+        if existing:
+            return {"success": False, "error": "Username already taken"}
+
+        # Check if email already registered
+        email_exists = _sb_select(
+            "players", select="id",
+            filters=f"email=eq.{quote(email)}",
+            limit=1,
+        )
+        if email_exists:
+            return {"success": False, "error": "Email already registered"}
+
+        # Count active players to decide status
+        try:
+            active_count = _sb_count("players", filters="status=eq.active")
+        except Exception:
+            active_count = 0  # migration not run yet — treat as open
+        is_active = active_count < MAX_ACTIVE_PLAYERS
+        status = "active" if is_active else "waitlisted"
+
+        # Create the player record
+        import uuid
+        token = str(uuid.uuid4())
+        player_data = {
+            "username": username,
+            "username_lower": username.lower(),
+            "email": email,
+            "games_played": 0,
+            "best_score": 0,
+            "total_score": 0,
+        }
+        # Only include gating columns if migration has been run
+        try:
+            _sb_select("players", select="status", limit=1)
+            player_data.update({
+                "status": status,
+                "access_token": token,
+                "email_verified": False,
+            })
+        except Exception:
+            pass  # gating columns don't exist yet — skip them
+
+        rows = _sb_insert("players", player_data)
+
+        # Send appropriate email
+        if is_active:
+            _send_access_email(email, username, token)
+            remaining = MAX_ACTIVE_PLAYERS - (active_count + 1)
+            return {
+                "success": True,
+                "status": "active",
+                "username": username,
+                "remaining": max(remaining, 0),
+                "message": "Check your email for a link to start playing!",
+            }
+        else:
+            waitlist_pos = _sb_count("players", filters="status=eq.waitlisted")
+            _send_waitlisted_email(email, username, waitlist_pos)
+            return {
+                "success": True,
+                "status": "waitlisted",
+                "username": username,
+                "position": waitlist_pos,
+                "message": "All spots are taken. You're on the waitlist!",
+            }
+    except Exception as e:
+        print(f"[SIGNUP] Error: {e}")
+        return {"success": False, "error": "Something went wrong. Please try again."}
+
+
+@app.post("/api/signin")
+async def player_signin(data: SigninRequest):
+    """Sign in a returning player by username."""
+    username = data.username.strip()
+    if not username:
+        return {"success": False, "error": "Username required"}
+
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    try:
+        # Try with new gating columns first
+        try:
+            rows = _sb_select(
+                "players",
+                select="username,email,status,email_verified,access_token",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+        except Exception:
+            # Fallback: gating columns not yet added (migration pending)
+            rows = _sb_select(
+                "players",
+                select="username",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+            if not rows:
+                return {"success": False, "error": "Player not found. Need to sign up first."}
+            return {
+                "success": True,
+                "status": "active",
+                "username": rows[0]["username"],
+                "verified": True,
+            }
+
+        if not rows:
+            return {"success": False, "error": "Player not found. Need to sign up first."}
+
+        player = rows[0]
+        if player.get("status") == "suspended":
+            return {"success": False, "error": "Account suspended. Contact support."}
+
+        if player.get("status") == "waitlisted":
+            return {
+                "success": True,
+                "status": "waitlisted",
+                "username": player["username"],
+                "message": "You're still on the waitlist. We'll email you when a spot opens.",
+            }
+
+        if player.get("email_verified") is False:
+            # Resend the access email
+            _send_access_email(player.get("email", ""), player["username"], player.get("access_token", ""))
+            return {
+                "success": True,
+                "status": "pending_verification",
+                "username": player["username"],
+                "message": "Please check your email and click the verification link to play.",
+            }
+
+        # Active + verified — they can play
+        return {
+            "success": True,
+            "status": "active",
+            "username": player["username"],
+            "verified": True,
+        }
+    except Exception as e:
+        print(f"[SIGNIN] Error: {e}")
+        return {"success": False, "error": "Something went wrong. Please try again."}
+
+
+@app.get("/api/verify-token/{token}")
+async def verify_token(token: str):
+    """Verify an email token from the play link. Marks player as verified."""
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    try:
+        rows = _sb_select(
+            "players",
+            select="username,status,email_verified",
+            filters=f"access_token=eq.{quote(token)}",
+            limit=1,
+        )
+        if not rows:
+            return {"success": False, "error": "Invalid or expired token"}
+
+        player = rows[0]
+        if not player["email_verified"]:
+            _sb_update("players", {"email_verified": True},
+                       f"access_token=eq.{quote(token)}")
+
+        if player["status"] != "active":
+            return {
+                "success": True,
+                "verified": True,
+                "status": player["status"],
+                "username": player["username"],
+                "can_play": False,
+                "message": "Email verified but you're on the waitlist.",
+            }
+
+        return {
+            "success": True,
+            "verified": True,
+            "status": "active",
+            "username": player["username"],
+            "can_play": True,
+        }
+    except Exception as e:
+        print(f"[VERIFY-TOKEN] Error: {e}")
+        return {"success": False, "error": "Something went wrong. Please try again."}
+
+
+@app.get("/api/spots-remaining")
+async def spots_remaining():
+    """Return how many of the 1,000 spots are still open."""
+    if not _sb_ok:
+        return {"total": MAX_ACTIVE_PLAYERS, "active": 0, "remaining": MAX_ACTIVE_PLAYERS}
+
+    try:
+        active_count = _sb_count("players", filters="status=eq.active")
+        remaining = max(MAX_ACTIVE_PLAYERS - active_count, 0)
+        return {"total": MAX_ACTIVE_PLAYERS, "active": active_count, "remaining": remaining}
+    except Exception:
+        return {"total": MAX_ACTIVE_PLAYERS, "active": 0, "remaining": MAX_ACTIVE_PLAYERS}
+
+
+@app.get("/api/verify-access")
+async def verify_access(request: Request):
+    """Server-side gate: check if current player is allowed to start a game."""
+    username = request.headers.get("x-player-name", "").strip()
+    if not username or username == "anonymous":
+        return {"allowed": False, "reason": "not_signed_up"}
+
+    if not _sb_ok:
+        return {"allowed": True, "reason": "db_unavailable"}  # fail open
+
+    try:
+        try:
+            rows = _sb_select(
+                "players",
+                select="status,email_verified",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+        except Exception:
+            # Gating columns don't exist yet — check player exists at all
+            rows = _sb_select(
+                "players", select="username",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+            if rows:
+                return {"allowed": True, "reason": "migration_pending"}
+            return {"allowed": False, "reason": "not_signed_up"}
+
+        if not rows:
+            return {"allowed": False, "reason": "not_signed_up"}
+
+        player = rows[0]
+        if player.get("status") != "active":
+            return {"allowed": False, "reason": "waitlisted"}
+        if not player.get("email_verified", True):
+            return {"allowed": False, "reason": "not_verified"}
+
+        return {"allowed": True, "reason": "ok"}
+    except Exception:
+        return {"allowed": True, "reason": "error_fail_open"}
+
+
+# ═══════════════════════════════════════════════════
 # /api/session — game session tracking
 # ═══════════════════════════════════════════════════
 @app.post("/api/session/start")
@@ -994,6 +1575,27 @@ async def submit_feedback(data: FeedbackMessage, request: Request):
 
     visitor_id = data.visitor_id or request.headers.get("x-visitor-id", "anonymous")
 
+    # ── Rate limit (in-memory) ──
+    now = time.time()
+    _feedback_rate[visitor_id] = [t for t in _feedback_rate[visitor_id] if now - t < 3600]
+    recent_minute = sum(1 for t in _feedback_rate[visitor_id] if now - t < 60)
+    if recent_minute >= _FEEDBACK_RATE_PER_MIN:
+        return {
+            "success": True,
+            "response": "You're sending feedback quite fast — please wait a minute before submitting again.",
+            "category": None,
+        }
+    if len(_feedback_rate[visitor_id]) >= _FEEDBACK_RATE_PER_HOUR:
+        return {
+            "success": True,
+            "response": "Thanks for all your feedback! You've reached the hourly limit. Please try again later.",
+            "category": None,
+        }
+    _feedback_rate[visitor_id].append(now)
+
+    # Truncate message before sending to Claude (controls token cost)
+    ai_msg = msg[:_FEEDBACK_MSG_MAX_CHARS]
+
     # Use Claude to categorize and respond
     category = "other"
     priority = "medium"
@@ -1009,7 +1611,7 @@ async def submit_feedback(data: FeedbackMessage, request: Request):
                 "role": "user",
                 "content": f"""Categorize this player feedback and respond to them.
 
-Feedback: "{msg}"
+Feedback: "{ai_msg}"
 
 Respond with EXACTLY this JSON format (no other text):
 {{

@@ -41,9 +41,9 @@ _SB_HEADERS = {
 # Resend email config
 # ═══════════════════════════════════════════════════
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-FROM_EMAIL = "Uncivilised <hello@uncivilized.fun>"
+FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 
-WELCOME_EMAIL_HTML = open(os.path.join(os.path.dirname(__file__), "welcome_email.html")).read() if os.path.exists(os.path.join(os.path.dirname(__file__), "welcome_email.html")) else "<p>You're on the Uncivilised waitlist. Thanks for joining early.</p>"
+WELCOME_EMAIL_HTML = open(os.path.join(os.path.dirname(__file__), "welcome_email.html")).read() if os.path.exists(os.path.join(os.path.dirname(__file__), "welcome_email.html")) else "<p>You're on the Uncivilized waitlist. Thanks for joining early.</p>"
 
 
 def _send_welcome_email(to_email: str):
@@ -55,7 +55,7 @@ def _send_welcome_email(to_email: str):
         resp = httpx.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [to_email], "subject": "You're on the Uncivilised waitlist", "html": WELCOME_EMAIL_HTML},
+            json={"from": FROM_EMAIL, "to": [to_email], "subject": "Welcome to the Uncivilised Beta", "html": WELCOME_EMAIL_HTML},
             timeout=10,
         )
         if resp.status_code < 300:
@@ -366,6 +366,9 @@ class ChatMessage(BaseModel):
     message: str
     game_state: Optional[dict] = None
     conversation_history: Optional[List[dict]] = None
+    reputation: Optional[dict] = None
+    diplomatic_ledger: Optional[List[dict]] = None
+    diplomatic_summary: Optional[str] = None
 
 
 class SaveData(BaseModel):
@@ -422,6 +425,85 @@ app.add_middleware(
 )
 
 
+
+# ═══════════════════════════════════════════════════
+# Reputation prompt builder
+# ═══════════════════════════════════════════════════
+_REPUTATION_WEIGHTS = {
+    "emperor_valerian":          {"honour": 1.5, "generosity": 0.5, "menace": 1.0, "reliability": 1.2, "cunning": -1.0},
+    "shadow_kael":               {"honour": 0.3, "generosity": 0.5, "menace": 0.8, "reliability": 1.0, "cunning": 1.5},
+    "merchant_prince_castellan": {"honour": 0.8, "generosity": 1.2, "menace": -0.5, "reliability": 1.5, "cunning": 0.3},
+    "pirate_queen_elara":        {"honour": 1.0, "generosity": 0.8, "menace": 1.2, "reliability": 0.5, "cunning": 1.0},
+    "commander_thane":           {"honour": 1.5, "generosity": 0.3, "menace": 1.0, "reliability": 1.5, "cunning": -1.5},
+    "rebel_leader_sera":         {"honour": 1.0, "generosity": 1.5, "menace": -1.0, "reliability": 1.0, "cunning": -0.5},
+}
+
+def _dim_label(value: float) -> str:
+    if value >= 60: return "Exemplary"
+    if value >= 30: return "Strong"
+    if value >= 10: return "Decent"
+    if value >= -9: return "Neutral"
+    if value >= -29: return "Poor"
+    if value >= -59: return "Bad"
+    return "Terrible"
+
+def _disp_label(score: float) -> str:
+    if score >= 80: return "Devoted"
+    if score >= 50: return "Trusting"
+    if score >= 20: return "Warm"
+    if score >= -19: return "Neutral"
+    if score >= -49: return "Wary"
+    if score >= -79: return "Hostile"
+    return "Nemesis"
+
+def _build_reputation_prompt(character_id: str, reputation: dict, ledger: list, summary: str | None, game_state: dict | None) -> str:
+    if not reputation:
+        return ""
+    weights = _REPUTATION_WEIGHTS.get(character_id, {})
+    score = 0
+    for dim in ("honour", "generosity", "menace", "reliability", "cunning"):
+        score += reputation.get(dim, 0) * weights.get(dim, 0)
+    disposition = max(-100, min(100, round(score / 7.5)))
+    disp_label = _disp_label(disposition)
+    honour = round(reputation.get("honour", 0))
+    generosity = round(reputation.get("generosity", 0))
+    menace = round(reputation.get("menace", 0))
+    reliability = round(reputation.get("reliability", 0))
+    cunning = round(reputation.get("cunning", 0))
+    ledger_lines = ""
+    if ledger:
+        recent = list(reversed(ledger[-5:]))
+        ledger_lines = "\n".join(f"- Turn {e.get('turn','?')}: {e.get('detail', e.get('event','?'))}" for e in recent)
+    broken_count = sum(1 for e in (ledger or []) if e.get("event") in ("alliance_broken", "nap_broken", "surprise_attack"))
+    active = []
+    if game_state:
+        if game_state.get("alliances", {}).get(character_id): active.append("Alliance")
+        if game_state.get("defense_pacts", {}).get(character_id): active.append("Mutual Defense")
+        if game_state.get("trade_deals", {}).get(character_id): active.append("Trade Deal")
+    narrative = summary or "No prior diplomatic history."
+    if all(v == 0 for v in (honour, generosity, menace, reliability, cunning)):
+        narrative = "First contact — no prior history with this player."
+    return f"""
+
+DIPLOMATIC MEMORY — YOUR PERCEPTION OF THIS PLAYER:
+
+Overall Disposition: {disp_label} ({disposition})
+- Honour: {honour} ({_dim_label(honour)})
+- Generosity: {generosity} ({_dim_label(generosity)})
+- Military Threat: {menace} ({_dim_label(menace)})
+- Reliability: {reliability} ({_dim_label(reliability)})
+- Cunning: {cunning} ({_dim_label(cunning)})
+
+{('Key Facts (most recent first):' + chr(10) + ledger_lines) if ledger_lines else 'No significant diplomatic events yet.'}
+
+Narrative: {narrative}
+
+Active Agreements: {', '.join(active) if active else 'None'}
+Broken Agreements: {broken_count}
+
+IMPORTANT: Let your disposition colour your tone, trust level, and willingness to deal. A player with low Honour should face suspicion. High Menace warrants caution. Adapt to what you KNOW from experience."""
+
+
 # ═══════════════════════════════════════════════════
 # /api/chat — AI diplomacy (+ diplomacy logging)
 # ═══════════════════════════════════════════════════
@@ -455,8 +537,18 @@ Use this information to inform your responses. Reference specific numbers when r
 React appropriately to the player's relative power — if they're weak, you might be dismissive;
 if strong, you might be more respectful or threatened."""
 
+    # Build reputation memory section
+    reputation_context = _build_reputation_prompt(
+        msg.character_id,
+        msg.reputation,
+        msg.diplomatic_ledger or [],
+        msg.diplomatic_summary,
+        msg.game_state,
+    )
+
     system_prompt = f"""{profile['personality']}
 {game_context}
+{reputation_context}
 
 INTERACTION RULES:
 - Stay in character at all times
