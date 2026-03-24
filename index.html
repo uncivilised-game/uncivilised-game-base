@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Uncivilised — Ancient Era</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Title Screen -->
+  <div id="title-screen" class="screen active">
+    <div class="title-content">
+      <div class="title-logo">
+        <svg viewBox="0 0 400 60" class="logo-svg" aria-label="Uncivilised">
+          <defs>
+            <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#c9a84c"/>
+              <stop offset="100%" stop-color="#8b6914"/>
+            </linearGradient>
+          </defs>
+          <text x="200" y="44" text-anchor="middle" font-family="Cormorant Garamond, serif" font-weight="700" font-size="48" fill="url(#logo-grad)">UNCIVILISED</text>
+          <line x1="40" y1="54" x2="360" y2="54" stroke="#c9a84c" stroke-width="0.5" opacity="0.6"/>
+        </svg>
+      </div>
+      <p class="title-subtitle">AI-Powered Diplomacy</p>
+
+      <!-- Competition Banner -->
+      <div class="competition-banner">
+        <div class="competition-badge">LIVE COMPETITION</div>
+        <p class="competition-text">Play. Climb the leaderboard. Win rewards.</p>
+        <div class="competition-rewards">
+          <span class="reward-tag">Leaderboard Prizes</span>
+          <span class="reward-divider"></span>
+          <span class="reward-tag">Bug Bounties</span>
+          <span class="reward-divider"></span>
+          <span class="reward-tag">Feature Requests Rewarded</span>
+        </div>
+      </div>
+
+      <div class="title-buttons">
+        <button id="btn-new-game" class="btn btn-primary">Play Now</button>
+        <button id="btn-continue" class="btn btn-secondary" style="display:none">Continue</button>
+        <button id="btn-leaderboard-title" class="btn btn-secondary" onclick="showLeaderboard()">Leaderboard</button>
+      </div>
+      <div id="username-bar" class="username-bar">
+        <span id="username-display" class="username-display" style="display:none"></span>
+        <button id="btn-set-username" class="btn-username" onclick="showUsernamePrompt()">Set Username</button>
+      </div>
+      <p class="title-hint">Every faction leader thinks, negotiates, and remembers.<br>Forge alliances through conversation. Betray empires with a whisper.</p>
+    </div>
+    <footer class="title-footer">
+      <a href="waitlist.html">Waitlist <span class="footer-count">(<span id="waitlist-count">...</span>)</span></a>
+      <span class="footer-dot">&middot;</span>
+      <a href="about.html">About</a>
+      <span class="footer-dot">&middot;</span>
+      <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Built with Perplexity Computer</a>
+    </footer>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game-screen" class="screen">
+    <!-- Top Bar -->
+    <header id="top-bar">
+      <div class="top-bar-left">
+        <span class="stat" id="stat-turn" title="Turn">Turn <strong>1</strong>/100</span>
+        <span class="stat-divider">|</span>
+        <span class="stat" id="stat-gold" title="Gold">
+          <svg class="icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#c9a84c" stroke="#8b6914" stroke-width="1"/><text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#3d2e00">G</text></svg>
+          <strong>100</strong>
+        </span>
+        <span class="stat" id="stat-science" title="Science">
+          <svg class="icon" viewBox="0 0 16 16"><polygon points="8,1 10,6 16,6 11,10 13,16 8,12 3,16 5,10 0,6 6,6" fill="#5b8dd9" stroke="#3a6cb8" stroke-width="0.5"/></svg>
+          <strong>5</strong>/turn
+        </span>
+        <span class="stat" id="stat-military" title="Military Strength">
+          <svg class="icon" viewBox="0 0 16 16"><path d="M8 1L10 5H14L11 8L12 13L8 10L4 13L5 8L2 5H6Z" fill="#d9534f" stroke="#a94442" stroke-width="0.5"/></svg>
+          <strong>10</strong>
+        </span>
+        <span class="stat" id="stat-units" title="Units">
+          ⚔ <strong>2</strong>
+        </span>
+        <span class="stat-divider">|</span>
+        <span class="stat" id="stat-envoys" title="Diplomatic Envoys">
+          <svg class="icon" viewBox="0 0 16 16"><path d="M8 1C4.7 1 2 3.7 2 7s2.7 6 6 6 6-2.7 6-6S11.3 1 8 1zm0 2c1.1 0 2 .7 2 1.5S9.1 6 8 6 6 5.3 6 4.5 6.9 3 8 3zm3 7.5c0 .3-.2.5-.5.5h-5c-.3 0-.5-.2-.5-.5V10c0-1.1 1.3-2 3-2s3 .9 3 2v.5z" fill="#a88be0" stroke="#7b5fbf" stroke-width="0.5"/></svg>
+          <strong>3</strong>/3
+        </span>
+      </div>
+      <div class="top-bar-right">
+        <button id="btn-menu" class="btn btn-small" title="Menu">Menu</button>
+      </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <div id="game-main">
+      <!-- Hex Map Canvas -->
+      <canvas id="hex-canvas" style="touch-action:none"></canvas>
+
+      <!-- Mini Map -->
+      <div id="mini-map-container">
+        <canvas id="mini-map" width="180" height="120"></canvas>
+      </div>
+
+      <!-- Action Bar (bottom) -->
+      <div id="action-bar">
+        <button class="action-btn" id="btn-end-turn">
+          <span class="action-label">End Turn</span>
+          <span class="action-key">Enter</span>
+        </button>
+        <button class="action-btn" id="btn-diplomacy-list">
+          <span class="action-label">Diplomacy</span>
+          <span class="action-key">D</span>
+        </button>
+        <button class="action-btn" id="btn-build">
+          <span class="action-label">Build</span>
+          <span class="action-key">B</span>
+        </button>
+        <button class="action-btn" id="btn-research">
+          <span class="action-label">Research</span>
+          <span class="action-key">R</span>
+        </button>
+        <button class="action-btn" id="btn-units">
+          <span class="action-label">Units</span>
+          <span class="action-key">U</span>
+        </button>
+        <button class="action-btn" id="btn-civics">
+          <span class="action-label">Civics</span>
+          <span class="action-key">T</span>
+        </button>
+        <button class="action-btn" id="btn-victory">
+          <span class="action-label">Victory</span>
+          <span class="action-key">V</span>
+        </button>
+      </div>
+
+      <!-- Tile Info Panel -->
+      <div id="tile-info" class="panel" style="display:none">
+        <div class="panel-header">
+          <h3 id="tile-info-title">Plains</h3>
+          <button class="panel-close">&times;</button>
+        </div>
+        <div id="tile-info-body" class="panel-body"></div>
+      </div>
+
+      <!-- Diplomacy Character Select -->
+      <div id="diplomacy-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Diplomacy</h3>
+          <button class="panel-close">&times;</button>
+        </div>
+        <div id="diplomacy-characters" class="panel-body"></div>
+      </div>
+
+      <!-- Selection Panel (units / cities) -->
+      <div id="selection-panel" class="panel" style="display:none"></div>
+
+      <!-- Chat / Diplomacy Conversation -->
+      <div id="chat-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <div class="chat-header-info">
+            <span id="chat-portrait" class="portrait"></span>
+            <div>
+              <h3 id="chat-name">Character Name</h3>
+              <span id="chat-title" class="chat-subtitle">Title</span>
+            </div>
+          </div>
+          <button class="panel-close" id="chat-close">&times;</button>
+        </div>
+        <div id="chat-messages" class="panel-body chat-body"></div>
+        <div id="diplo-actions"></div>
+        <div id="chat-input-area">
+          <input type="text" id="chat-input" placeholder="Speak to the diplomat..." autocomplete="off">
+          <button id="chat-send" class="btn btn-primary btn-small">Send</button>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div id="event-log">
+        <div id="event-log-header" onclick="document.getElementById('event-log').classList.toggle('collapsed')">
+          <span>Event Log</span>
+          <span id="event-log-toggle">▼</span>
+        </div>
+        <div id="event-log-messages" style="padding:4px 8px;max-height:180px;overflow-y:auto"></div>
+      </div>
+
+      <!-- Build Panel -->
+      <div id="build-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Build</h3>
+          <button class="panel-close">&times;</button>
+        </div>
+        <div id="build-options" class="panel-body"></div>
+      </div>
+
+      <!-- Research Panel -->
+      <div id="research-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Research</h3>
+          <button class="panel-close">&times;</button>
+        </div>
+        <div id="research-options" class="panel-body"></div>
+      </div>
+
+      <!-- Units Panel -->
+      <div id="units-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Military</h3>
+          <button class="panel-close">&times;</button>
+        </div>
+        <div id="units-options" class="panel-body"></div>
+      </div>
+
+      <!-- Turn Summary -->
+      <div id="turn-summary" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Turn Summary</h3>
+        </div>
+        <div id="turn-summary-body" class="panel-body"></div>
+        <div class="panel-footer">
+          <button id="btn-dismiss-summary" class="btn btn-primary">Continue</button>
+        </div>
+      </div>
+
+      <!-- Game Over -->
+      <div id="game-over" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>Game Complete</h3>
+        </div>
+        <div id="game-over-body" class="panel-body"></div>
+        <div class="panel-footer">
+          <button id="btn-new-game-end" class="btn btn-primary">New Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom-LEFT: Uncivilised logo -->
+    <div id="game-logo" style="position:fixed;bottom:12px;right:12px;z-index:100;pointer-events:none;opacity:0.4">
+      <svg viewBox="0 0 120 20" width="100" aria-label="Uncivilised">
+        <text x="0" y="16" font-family="Cormorant Garamond, Georgia, serif" font-weight="700" font-size="16" fill="#c9a84c" letter-spacing="2">UNCIVILISED</text>
+      </svg>
+    </div>
+
+    <!-- Bottom-CENTER: Feedback chat widget (open by default, collapsible) -->
+    <div id="feedback-widget" style="position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:200;width:340px">
+      <div id="feedback-chat" style="position:relative;width:100%;background:rgba(10,12,14,0.92);border:1px solid rgba(201,168,76,0.3);border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.5);backdrop-filter:blur(8px);transition:max-height 0.3s ease;max-height:320px">
+        <div style="padding:8px 14px;border-bottom:1px solid rgba(201,168,76,0.15);display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleFeedbackChat()">
+          <span style="color:#c9a84c;font-family:'Cormorant Garamond',serif;font-size:14px;font-weight:600;letter-spacing:0.03em">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px;margin-right:4px"><path d="M2 2h12v9H5l-3 3V2z" stroke="#c9a84c" stroke-width="1.2"/></svg>
+            Feedback
+          </span>
+          <span id="feedback-toggle-icon" style="color:#666;font-size:10px">▼</span>
+        </div>
+        <div id="feedback-body">
+          <div id="feedback-messages" style="height:180px;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px">
+            <div style="color:#8a8578;font-size:12px;line-height:1.4;padding:8px 10px;background:rgba(26,31,26,0.8);border-radius:6px">Report a bug or request a feature and receive bounty payments.</div>
+          </div>
+          <div style="padding:6px 10px;border-top:1px solid rgba(201,168,76,0.1);display:flex;gap:6px">
+            <input id="feedback-input" type="text" placeholder="Describe the bug or feature..." style="flex:1;background:#1a1f1a;border:1px solid #333;border-radius:6px;padding:6px 10px;color:#e8e0d0;font-size:12px;font-family:Inter,sans-serif;outline:none" onkeypress="if(event.key==='Enter')sendFeedback()">
+            <button onclick="sendFeedback()" style="background:#c9a84c;color:#1a1a0e;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="./game.js?v=2"></script>
+</body>
+</html>
