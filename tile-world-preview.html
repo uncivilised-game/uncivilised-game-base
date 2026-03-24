@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Uncivilised - World Map Tile Preview</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; overflow: hidden; font-family: -apple-system, sans-serif; }
+canvas { display: block; }
+#controls {
+  position: fixed; top: 12px; right: 12px; color: #c9d1d9;
+  background: rgba(13,17,23,0.92); padding: 14px; border-radius: 8px;
+  border: 1px solid #30363d; font-size: 13px; min-width: 230px; z-index: 10;
+  max-height: 95vh; overflow-y: auto;
+}
+#controls label { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+#controls input[type=range] { flex: 1; accent-color: #f0c040; }
+#controls select { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 4px 8px; border-radius: 4px; width: 100%; }
+#controls h3 { color: #f0c040; margin-bottom: 8px; font-size: 14px; }
+.sep { border-top: 1px solid #30363d; margin: 8px 0; }
+button { background: #238636; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; width: 100%; margin-top: 5px; }
+button:hover { background: #2ea043; }
+#info { position: fixed; bottom: 12px; left: 12px; color: #8b949e; font-size: 12px; font-family: monospace; background: rgba(13,17,23,0.8); padding: 6px 10px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="controls">
+  <h3>World Map Preview</h3>
+  <label>Tile opacity: <input type="range" id="tileOpacity" min="0" max="100" value="48"> <span id="opVal">48%</span></label>
+  <label>Tile scale: <input type="range" id="tileScale" min="100" max="140" value="132"> <span id="scaleVal">132%</span></label>
+  <label>Hex size: <input type="range" id="hexSize" min="20" max="60" value="28"> <span id="sizeVal">28</span></label>
+  <div class="sep"></div>
+  <label><input type="checkbox" id="showBase" checked> Procedural base</label>
+  <label><input type="checkbox" id="showTiles" checked> Terrain tiles</label>
+  <label><input type="checkbox" id="showRivers" checked> Rivers</label>
+  <label><input type="checkbox" id="showBorders" checked> Hex borders</label>
+  <label><input type="checkbox" id="showLabels"> Terrain labels</label>
+  <div class="sep"></div>
+  <label>Rivers: <input type="range" id="riverCount" min="2" max="20" value="6"> <span id="rcVal">6</span></label>
+  <label>River width: <input type="range" id="riverWidth" min="1" max="6" value="1"> <span id="rwVal">1</span></label>
+  <div class="sep"></div>
+  <select id="seedSelect">
+    <option value="42">Pangaea (42)</option>
+    <option value="137">Archipelago (137)</option>
+    <option value="256" selected>Continents (256)</option>
+    <option value="999">Islands (999)</option>
+  </select>
+  <button onclick="regenerate()">New Random World</button>
+</div>
+<div id="info">Loading tiles...</div>
+<canvas id="c"></canvas>
+
+<script>
+// =============================================
+// TILE CONFIG
+// =============================================
+const TERRAIN_TILE_MAP = {
+  'grassland': ['grassland','grassland_v2','grassland_v3','grassland_v4','grassland_v5','grassland_v6'],
+  'plains':['plains','plains_v2','plains_v3','plains_v4','plains_v5','plains_v6'],
+  'desert':['desert','desert_v2','desert_v3','desert_v4','desert_v5','desert_v6'],
+  'ocean':['ocean','ocean_v2','ocean_v3','ocean_v4','ocean_v5','ocean_v6'],
+  'coast':['coast','coast_v2','coast_v3','coast_v4','coast_v5','coast_v6'],
+  'lake':['lake','lake_v2','lake_v3','lake_v4','lake_v5','lake_v6'],
+  'tundra':['tundra','tundra_v2','tundra_v3','tundra_v4','tundra_v5','tundra_v6'],
+  'snow':['snow','snow_v2','snow_v3','snow_v4','snow_v5','snow_v6'],
+};
+const FEATURE_TILE_MAP = {
+  'mountain':['mountain','mountain_v2','mountain_v3','mountain_v4','mountain_v5','mountain_v6'],
+  'hills':['hills','hills_v2','hills_v3','hills_v4','hills_v5','hills_v6'],
+  'woods':['woods','woods_v2','woods_v3','woods_v4','woods_v5','woods_v6'],
+  'rainforest':['rainforest','rainforest_v2','rainforest_v3','rainforest_v4','rainforest_v5','rainforest_v6'],
+  'marsh':['marsh','marsh_v2','marsh_v3','marsh_v4','marsh_v5','marsh_v6'],
+  'floodplains':['floodplains','floodplains_v2','floodplains_v3','floodplains_v4','floodplains_v5','floodplains_v6'],
+};
+
+// River feature tiles removed — using procedural rivers only
+
+const BASE_COLORS = {
+  ocean:[22,62,95],coast:[35,105,140],lake:[35,92,125],
+  grassland:[65,125,50],plains:[125,140,65],desert:[180,155,68],
+  tundra:[110,125,110],snow:[195,205,215],
+  mountain:[95,95,110],hills:[80,110,65],woods:[35,78,35],
+  rainforest:[22,62,22],marsh:[50,78,50],floodplains:[65,95,50]
+};
+
+// =============================================
+// LOAD TILES
+// =============================================
+const TILE_IMAGES = {};
+let loadedCount=0, totalCount=0;
+function onLoad(){ loadedCount++; if(loadedCount>=totalCount){document.getElementById('info').textContent=`${totalCount} tiles loaded · Scroll to zoom · Drag to pan`;render();}}
+
+const tNames=new Set();
+for(const a of Object.values(TERRAIN_TILE_MAP))a.forEach(t=>tNames.add(t));
+for(const a of Object.values(FEATURE_TILE_MAP))a.forEach(t=>tNames.add(t));
+totalCount=tNames.size;
+
+for(const n of tNames){const i=new Image();i.onload=onLoad;i.onerror=onLoad;i.src=`./assets/hex/${n}.png`;TILE_IMAGES[n]=i;}
+
+// =============================================
+// NOISE
+// =============================================
+function seededRandom(seed){let s=seed;return function(){s=(s*16807)%2147483647;return(s-1)/2147483646;};}
+function createNoise(seed){
+  const rand=seededRandom(seed);const perm=Array.from({length:512},(_,i)=>i%256);
+  for(let i=255;i>0;i--){const j=Math.floor(rand()*(i+1));[perm[i],perm[j]]=[perm[j],perm[i]];}
+  for(let i=0;i<256;i++)perm[i+256]=perm[i];
+  const grad=[[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+  return function(x,y){
+    const X=Math.floor(x)&255,Y=Math.floor(y)&255,xf=x-Math.floor(x),yf=y-Math.floor(y);
+    const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+    function dot(h,x,y){const g=grad[h&7];return g[0]*x+g[1]*y;}
+    const aa=perm[perm[X]+Y],ab=perm[perm[X]+Y+1],ba=perm[perm[X+1]+Y],bb=perm[perm[X+1]+Y+1];
+    return(dot(aa,xf,yf)*(1-u)+dot(ba,xf-1,yf)*u)*(1-v)+(dot(ab,xf,yf-1)*(1-u)+dot(bb,xf-1,yf-1)*u)*v;
+  };
+}
+function fbm(noise,x,y,oct){let v=0,a=1,f=1,m=0;for(let i=0;i<oct;i++){v+=noise(x*f,y*f)*a;m+=a;a*=0.5;f*=2;}return v/m;}
+
+// =============================================
+// WORLD + RIVER GENERATION
+// =============================================
+const COLS=50,ROWS=35;
+let worldMap=[],rivers=[];
+
+function getNeighborCoords(c,r){
+  const odd=r%2;
+  return(odd?[[-1,0],[0,-1],[1,-1],[1,0],[1,1],[0,1]]:[[-1,0],[-1,-1],[0,-1],[1,0],[0,1],[-1,1]]).map(([dc,dr])=>({c:c+dc,r:r+dr}));
+}
+function getTile(c,r){return(c>=0&&c<COLS&&r>=0&&r<ROWS)?worldMap[r][c]:null;}
+
+function generateWorld(seed){
+  const n1=createNoise(seed),n2=createNoise(seed+100),n3=createNoise(seed+200);
+  const nM=createNoise(seed+300),nF=createNoise(seed+400);
+  const rand=seededRandom(seed+500);
+  worldMap=[];rivers=[];
+
+  // Desert placement — pick ONE medium-sized desert region
+  const nDesert=createNoise(seed+600);
+  // Find desert center: hot, dry area (equatorial band)
+  let desertCX=Math.floor(COLS*0.3+rand()*COLS*0.4);
+  let desertCY=Math.floor(ROWS*0.3+rand()*ROWS*0.15); // slightly above equator
+  const desertRadius=5+Math.floor(rand()*3); // 5-7 hex radius
+
+  for(let r=0;r<ROWS;r++){worldMap[r]=[];for(let c=0;c<COLS;c++){
+    const nx=c/COLS,ny=r/ROWS;
+    let elev=fbm(n1,c*0.07,r*0.07,6);
+    const eX=Math.min(nx,1-nx)*2.5,eY=Math.min(ny,1-ny)*2.5;
+    elev=elev*0.55+Math.pow(Math.min(Math.min(eX,eY),1.0),0.8)*0.45-0.1;
+    const ridge=Math.abs(fbm(nM,c*0.04,r*0.06,4)),ridgeStr=Math.max(0,1-ridge*4.5);
+    let moist=(fbm(n2,c*0.05+50,r*0.05+50,4)+1)/2;
+    let temp=Math.max(0,Math.min(1,1-Math.abs(ny-0.5)*2.2+fbm(n3,c*0.04,r*0.04,3)*0.15));
+    const fN=fbm(nF,c*0.08,r*0.08,4);
+
+    // Distance to desert center (with noise for organic shape)
+    const dDist=Math.sqrt((c-desertCX)**2+(r-desertCY)**2);
+    const dNoise=fbm(nDesert,c*0.12,r*0.12,3)*2;
+    const inDesert=dDist<(desertRadius+dNoise);
+
+    let base,feature=null;
+    if(elev<-0.18)base='ocean';else if(elev<-0.08)base='coast';
+    else if(temp<0.12)base='snow';else if(temp<0.25)base='tundra';
+    else if(inDesert&&elev>-0.08)base='desert'; // forced desert in the zone
+    else if(moist>0.42&&temp>0.3)base='grassland';else base='plains';
+    if(!['ocean','coast'].includes(base)){
+      // Mountains: much stricter thresholds — only the highest peaks
+      if(elev>0.22&&ridgeStr>0.45)feature='mountain';
+      // Hills: also raised threshold
+      else if(elev>0.12&&ridgeStr>0.25)feature='hills';
+      else if(base==='grassland'&&fN>0.15&&moist>0.45)feature=temp>0.72?'rainforest':'woods';
+      else if(base==='plains'&&fN>0.25&&moist>0.4)feature='woods';
+      else if(base==='grassland'&&moist>0.62&&elev<0&&fN<-0.1)feature='marsh';
+      else if(base==='desert'&&moist>0.2&&elev<0.02){feature='floodplains';base='plains';}
+      else if(elev>-0.08&&elev<-0.02&&moist>0.45)base='lake';
+    }
+    worldMap[r][c]={col:c,row:r,base,feature,elevation:elev,moisture:moist,temperature:temp,
+                    riverType:null, riverFrom:null, riverTo:null, riverProgress:0, riverWidth:0};
+  }}
+
+  // Coast pass
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    if(worldMap[r][c].base==='ocean'){
+      const nb=getNeighborCoords(c,r);
+      if(nb.some(n=>{const t=getTile(n.c,n.r);return t&&!['ocean','coast'].includes(t.base);}))
+        worldMap[r][c].base='coast';
+    }
+  }
+
+  // Mountain pass generation — prevent landlocked areas
+  // BFS from map edges to find all reachable land; break through mountain walls for isolated pockets
+  const reachable=Array.from({length:ROWS},()=>new Uint8Array(COLS));
+  const passQueue=[];
+  // Seed from all edge tiles and all ocean/coast tiles (these are always accessible)
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const t=worldMap[r][c];
+    const isEdge=(r===0||r===ROWS-1||c===0||c===COLS-1);
+    const isWater=['ocean','coast'].includes(t.base);
+    const isPassable=t.feature!=='mountain';
+    if((isEdge||isWater)&&isPassable){
+      reachable[r][c]=1;
+      passQueue.push({c,r});
+    }
+  }
+  // BFS flood through non-mountain tiles
+  let qi=0;
+  while(qi<passQueue.length){
+    const cur=passQueue[qi++];
+    for(const n of getNeighborCoords(cur.c,cur.r)){
+      const nt=getTile(n.c,n.r);
+      if(!nt||reachable[n.r][n.c])continue;
+      if(nt.feature==='mountain')continue; // mountains block
+      reachable[n.r][n.c]=1;
+      passQueue.push(n);
+    }
+  }
+  // Find unreachable land tiles and carve mountain passes to connect them
+  for(let r=1;r<ROWS-1;r++)for(let c=1;c<COLS-1;c++){
+    const t=worldMap[r][c];
+    if(reachable[r][c]||t.feature==='mountain'||['ocean','coast'].includes(t.base))continue;
+    // This is landlocked non-mountain land — find nearest mountain neighbor that borders reachable land
+    const nb=getNeighborCoords(c,r);
+    for(const n of nb){
+      const nt=getTile(n.c,n.r);
+      if(!nt||nt.feature!=='mountain')continue;
+      // Check if this mountain borders reachable territory
+      const mnb=getNeighborCoords(n.c,n.r);
+      if(mnb.some(m=>{const mt=getTile(m.c,m.r);return mt&&reachable[m.r][m.c];})){
+        // Carve a pass — downgrade mountain to hills
+        nt.feature='hills';
+        nt.elevation=Math.min(nt.elevation,0.14);
+        // Mark newly reachable and BFS from here
+        reachable[n.r][n.c]=1;
+        reachable[r][c]=1;
+        const passQ2=[{c:n.c,r:n.r},{c,r}];
+        let q2=0;
+        while(q2<passQ2.length){
+          const p=passQ2[q2++];
+          for(const pn of getNeighborCoords(p.c,p.r)){
+            const pt=getTile(pn.c,pn.r);
+            if(!pt||reachable[pn.r][pn.c]||pt.feature==='mountain')continue;
+            reachable[pn.r][pn.c]=1;
+            passQ2.push(pn);
+          }
+        }
+        break; // one pass per pocket is enough
+      }
+    }
+  }
+
+  generateRivers(seed);
+}
+
+function generateRivers(seed){
+  const rand=seededRandom(seed+777);
+  const maxRivers=parseInt(document.getElementById('riverCount')?.value||8);
+
+  const sources=[];
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const t=worldMap[r][c];
+    if(t.feature==='mountain'&&t.elevation>0.22)sources.push({c,r,priority:t.elevation+rand()*0.1,type:'mountain'});
+    else if(t.feature==='hills'&&t.elevation>0.14)sources.push({c,r,priority:t.elevation+rand()*0.05,type:'hills'});
+    else if(t.base==='lake')sources.push({c,r,priority:t.elevation+0.05+rand()*0.05,type:'lake'});
+  }
+  sources.sort((a,b)=>b.priority-a.priority);
+
+  const riverTiles=new Set();
+
+  // Select sources with minimum spacing to spread rivers across the map
+  const MIN_SOURCE_DIST=8; // minimum hex distance between river sources
+  const selectedSources=[];
+  for(const src of sources){
+    if(selectedSources.length>=maxRivers)break;
+    // Check distance to all already-selected sources
+    const tooClose=selectedSources.some(s=>{
+      const dx=s.c-src.c,dy=s.r-src.r;
+      return Math.sqrt(dx*dx+dy*dy)<MIN_SOURCE_DIST;
+    });
+    if(!tooClose)selectedSources.push(src);
+  }
+
+  for(let i=0;i<selectedSources.length;i++){
+    const src=selectedSources[i];
+    const path=traceRiver(src.c,src.r,riverTiles,rand);
+    if(path.length<3)continue;
+
+    // Store directional info for each segment
+    for(let j=0;j<path.length;j++){
+      const seg=path[j];
+      const tile=getTile(seg.c,seg.r);
+      if(!tile)continue;
+
+      const progress=j/(path.length-1);
+
+      // From/to pixel positions for drawing connected river lines
+      const prev=j>0?path[j-1]:null;
+      const next=j<path.length-1?path[j+1]:null;
+
+      // River type for feature tiles
+      let rType;
+      if(j===0) rType=(tile.feature==='mountain')?'waterfall':'spring';
+      else if(j===path.length-1){
+        const dt=tile.base;
+        if(dt==='ocean')rType='estuary';
+        else if(dt==='coast')rType='rivermouth';
+        else if(dt==='lake')rType='delta';
+        else rType='rivermouth';
+      } else {
+        // Check steepness for rapids
+        const prevTile=prev?getTile(prev.c,prev.r):null;
+        const elevDrop=prevTile?(prevTile.elevation-tile.elevation):0;
+        if(elevDrop>0.05&&progress<0.5)rType='rapids';
+        else if(progress<0.15)rType='stream';
+        else if(progress<0.4)rType='med_river';
+        else if(progress<0.7)rType='lrg_river';
+        else rType='wide';
+
+        // Check for merge points
+        const nb=getNeighborCoords(seg.c,seg.r);
+        const nearbyOtherRiver=nb.some(n=>{
+          const key=`${n.c},${n.r}`;
+          return riverTiles.has(key)&&!path.some(p=>p.c===n.c&&p.r===n.r);
+        });
+        if(nearbyOtherRiver&&progress>0.1)rType='merge';
+      }
+
+      tile.riverType=rType;
+      tile.riverProgress=progress;
+      tile.riverWidth=0.4+progress*2.5; // grows from source to mouth
+      tile.riverFrom=prev?{c:prev.c,r:prev.r}:null;
+      tile.riverTo=next?{c:next.c,r:next.r}:null;
+
+      riverTiles.add(`${seg.c},${seg.r}`);
+    }
+    rivers.push(path);
+  }
+}
+
+function traceRiver(startC,startR,existing,rand){
+  const path=[{c:startC,r:startR}];
+  const visited=new Set([`${startC},${startR}`]);
+  let c=startC,r=startR;
+
+  // Find nearest ocean/coast for a gentle directional pull
+  let nearWC=COLS/2,nearWR=ROWS-1,nearWD=Infinity;
+  for(let rr=0;rr<ROWS;rr++)for(let cc=0;cc<COLS;cc++){
+    const t=getTile(cc,rr);
+    if(t&&['ocean','coast'].includes(t.base)){
+      const d=Math.sqrt((cc-startC)**2+(rr-startR)**2);
+      if(d<nearWD){nearWD=d;nearWC=cc;nearWR=rr;}
+    }
+  }
+
+  for(let step=0;step<60;step++){
+    const cur=getTile(c,r);if(!cur)break;
+    if(step>0&&['ocean','coast','lake'].includes(cur.base))break;
+    const nb=getNeighborCoords(c,r);let cands=[];
+
+    // Distance to target water — pull gets stronger as river gets longer
+    const distToWater=Math.sqrt((nearWC-c)**2+(nearWR-r)**2)||1;
+    const pullStrength=0.04+step*0.004; // light early pull, builds over time
+
+    for(const n of nb){
+      const nt=getTile(n.c,n.r);if(!nt)continue;
+      if(visited.has(`${n.c},${n.r}`))continue;
+      let score=-nt.elevation*0.7; // downhill preference
+      if(['ocean','coast'].includes(nt.base))score+=2.5;
+      if(nt.base==='lake')score+=1.8;
+      if(existing.has(`${n.c},${n.r}`))score-=0.2;
+      // Gentle pull toward nearest water (not momentum — doesn't track previous direction)
+      const nDistToWater=Math.sqrt((nearWC-n.c)**2+(nearWR-n.r)**2);
+      score+=(distToWater-nDistToWater)*pullStrength;
+      // Randomness for meandering — creates visible S-curves and bends
+      score+=(rand()-0.5)*0.28;
+      cands.push({...n,score,tile:nt});
+    }
+    if(!cands.length)break;
+    cands.sort((a,b)=>b.score-a.score);
+    // 20% chance to pick second-best — creates bends
+    const pick=(cands.length>1&&rand()<0.20)?cands[1]:cands[0];
+    c=pick.c;r=pick.r;
+    path.push({c,r});
+    visited.add(`${c},${r}`);
+    if(['ocean','coast','lake'].includes(pick.tile.base))break;
+  }
+  return path;
+}
+
+// =============================================
+// RENDERING
+// =============================================
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let camX=0,camY=0,hexSize=28,hoveredTile=null;
+
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight;render();}
+function hexToPixel(c,r){return{x:hexSize*1.732*(c+0.5*(r%2))+camX,y:hexSize*1.5*r+camY};}
+function drawHexPath(ctx,x,y,s){
+  ctx.beginPath();for(let i=0;i<6;i++){const a=Math.PI/180*(60*i-30);const px=x+s*Math.cos(a),py=y+s*Math.sin(a);i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.closePath();
+}
+function getTerrainImg(tile){
+  const h=Math.abs((tile.col*127+tile.row*311+tile.col*tile.row*17)%1000);
+  if(tile.feature&&FEATURE_TILE_MAP[tile.feature]){const o=FEATURE_TILE_MAP[tile.feature];return TILE_IMAGES[o[h%o.length]];}
+  if(TERRAIN_TILE_MAP[tile.base]){const o=TERRAIN_TILE_MAP[tile.base];return TILE_IMAGES[o[h%o.length]];}
+  return null;
+}
+
+function render(){
+  const showBase=document.getElementById('showBase').checked;
+  const showTiles=document.getElementById('showTiles').checked;
+  const showRivers=document.getElementById('showRivers').checked;
+  const showBorders=document.getElementById('showBorders').checked;
+  const showLabels=document.getElementById('showLabels').checked;
+  const tileOpacity=document.getElementById('tileOpacity').value/100;
+  const tileScale=document.getElementById('tileScale').value/100;
+  const baseWidth=parseFloat(document.getElementById('riverWidth').value);
+  const s=hexSize;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Pass 1: Base fill
+  if(showBase){
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const tile=worldMap[r][c];const{x,y}=hexToPixel(c,r);
+      if(x<-s*2||x>canvas.width+s*2||y<-s*2||y>canvas.height+s*2)continue;
+      const dt=tile.feature||tile.base;const col=BASE_COLORS[dt]||BASE_COLORS[tile.base]||[60,60,60];
+      drawHexPath(ctx,x,y,s+0.5);ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;ctx.fill();
+    }
+  }
+
+  // Pass 2: Terrain tiles (ALL hexes get terrain tiles, rivers are drawn ON TOP)
+  if(showTiles){
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const tile=worldMap[r][c];const{x,y}=hexToPixel(c,r);
+      if(x<-s*2||x>canvas.width+s*2||y<-s*2||y>canvas.height+s*2)continue;
+      const img=getTerrainImg(tile);
+      if(!img||!img.complete||img.naturalWidth===0)continue;
+      ctx.save();drawHexPath(ctx,x,y,s+0.5);ctx.clip();
+      ctx.globalAlpha=tileOpacity;const ds=s*tileScale;
+      ctx.drawImage(img,x-ds,y-ds,ds*2,ds*2);
+      ctx.globalAlpha=1.0;ctx.restore();
+    }
+  }
+
+  // Pass 3: RIVERS — drawn as continuous flowing paths connecting hex centers
+  if(showRivers){
+    for(const river of rivers){
+      if(river.length<2)continue;
+      const pts=river.map(seg=>hexToPixel(seg.c,seg.r));
+
+      // Build a smooth cubic spline through all points
+      // Draw as graduated stroke: thin at source, wide at mouth
+      for(let i=0;i<pts.length-1;i++){
+        const p0=pts[i],p1=pts[i+1];
+        const progress=i/(pts.length-1);
+        const width=baseWidth*(0.5+progress*2.2)*(s/36);
+
+        // Bezier curves — high tension for smooth flowing meanders
+        const tension=0.3; // high tension for natural curvy rivers
+        ctx.beginPath();
+        if(i>0&&i<pts.length-2){
+          const prev=pts[i-1],next2=pts[i+2];
+          const cpx1=p0.x+(p1.x-prev.x)*tension,cpy1=p0.y+(p1.y-prev.y)*tension;
+          const cpx2=p1.x-(next2.x-p0.x)*tension,cpy2=p1.y-(next2.y-p0.y)*tension;
+          ctx.moveTo(p0.x,p0.y);
+          ctx.bezierCurveTo(cpx1,cpy1,cpx2,cpy2,p1.x,p1.y);
+        } else {
+          ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);
+        }
+
+        // Dark river edge
+        ctx.strokeStyle=`rgba(15,50,80,0.7)`;
+        ctx.lineWidth=width+2;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();
+
+        // Main water
+        const rb=Math.round(30-progress*15),rg=Math.round(120-progress*30),rr=Math.round(190-progress*40);
+        ctx.beginPath();
+        if(i>0&&i<pts.length-2){
+          const prev=pts[i-1],next2=pts[i+2];
+          ctx.moveTo(p0.x,p0.y);
+          ctx.bezierCurveTo(p0.x+(p1.x-prev.x)*tension,p0.y+(p1.y-prev.y)*tension,
+                            p1.x-(next2.x-p0.x)*tension,p1.y-(next2.y-p0.y)*tension,p1.x,p1.y);
+        } else {ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);}
+        ctx.strokeStyle=`rgba(${rb},${rg},${rr},0.85)`;
+        ctx.lineWidth=width;ctx.stroke();
+
+        // Light specular highlight
+        ctx.beginPath();ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);
+        ctx.strokeStyle=`rgba(${rb+60},${rg+50},${rr+30},0.25)`;
+        ctx.lineWidth=Math.max(1,width*0.35);ctx.stroke();
+      }
+
+      // Delta/fan at mouth
+      if(pts.length>2){
+        const last=pts[pts.length-1],prev=pts[pts.length-2];
+        const tile=getTile(river[river.length-1].c,river[river.length-1].r);
+        if(tile&&['ocean','coast','lake'].includes(tile.base)){
+          const angle=Math.atan2(last.y-prev.y,last.x-prev.x);
+          const fan=s*0.4;
+          ctx.beginPath();
+          ctx.moveTo(prev.x,prev.y);
+          ctx.lineTo(last.x+Math.cos(angle+0.5)*fan,last.y+Math.sin(angle+0.5)*fan);
+          ctx.lineTo(last.x+Math.cos(angle-0.5)*fan,last.y+Math.sin(angle-0.5)*fan);
+          ctx.closePath();
+          ctx.fillStyle='rgba(25,90,150,0.35)';ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Pass 4: Borders
+  if(showBorders){
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const{x,y}=hexToPixel(c,r);
+      if(x<-s*2||x>canvas.width+s*2||y<-s*2||y>canvas.height+s*2)continue;
+      drawHexPath(ctx,x,y,s-0.5);ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;ctx.stroke();
+    }
+  }
+
+  // Pass 5: Labels
+  if(showLabels&&s>22){
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const tile=worldMap[r][c];const{x,y}=hexToPixel(c,r);
+      if(x<-s*2||x>canvas.width+s*2||y<-s*2||y>canvas.height+s*2)continue;
+      let label=tile.riverType||tile.feature||tile.base;
+      ctx.font=`bold ${Math.max(7,s/4.5)}px monospace`;
+      ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillText(label,x+1,y+1);
+      ctx.fillStyle=tile.riverType?'rgba(100,200,255,0.9)':'rgba(255,255,255,0.75)';
+      ctx.fillText(label,x,y);
+    }
+  }
+
+  // Hover
+  if(hoveredTile){
+    const{x,y}=hexToPixel(hoveredTile.col,hoveredTile.row);
+    drawHexPath(ctx,x,y,s);ctx.strokeStyle='#f0c040';ctx.lineWidth=2;ctx.stroke();
+    const t=hoveredTile;
+    let info=`${t.base}${t.feature?' + '+t.feature:''}`;
+    if(t.riverType)info+=` | river: ${t.riverType}`;
+    info+=` · elev:${t.elevation.toFixed(2)} · (${t.col},${t.row})`;
+    document.getElementById('info').textContent=info;
+  }
+}
+
+// =============================================
+// INTERACTION
+// =============================================
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.style.cursor='grabbing';});
+canvas.addEventListener('mousemove',e=>{
+  if(dragging){camX+=e.clientX-lastX;camY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;render();return;}
+  let found=null;
+  for(let r=0;r<ROWS&&!found;r++)for(let c=0;c<COLS&&!found;c++){
+    const{x,y}=hexToPixel(c,r);if(Math.sqrt((e.clientX-x)**2+(e.clientY-y)**2)<hexSize*0.82)found=worldMap[r][c];
+  }
+  if(found!==hoveredTile){hoveredTile=found;render();}
+});
+canvas.addEventListener('mouseup',()=>{dragging=false;canvas.style.cursor='default';});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();const old=hexSize;hexSize=Math.max(10,Math.min(80,hexSize-Math.sign(e.deltaY)*3));
+  const sc=hexSize/old;camX=e.clientX-(e.clientX-camX)*sc;camY=e.clientY-(e.clientY-camY)*sc;
+  document.getElementById('hexSize').value=hexSize;document.getElementById('sizeVal').textContent=hexSize;render();
+},{passive:false});
+
+document.getElementById('tileOpacity').oninput=function(){document.getElementById('opVal').textContent=this.value+'%';render();};
+document.getElementById('tileScale').oninput=function(){document.getElementById('scaleVal').textContent=this.value+'%';render();};
+document.getElementById('hexSize').oninput=function(){hexSize=+this.value;document.getElementById('sizeVal').textContent=hexSize;render();};
+document.getElementById('riverWidth').oninput=function(){document.getElementById('rwVal').textContent=this.value;render();};
+document.getElementById('riverCount').oninput=function(){
+  document.getElementById('rcVal').textContent=this.value;
+  generateWorld(parseInt(document.getElementById('seedSelect').value));render();
+};
+['showBase','showTiles','showRivers','showBorders','showLabels'].forEach(id=>document.getElementById(id).onchange=render);
+document.getElementById('seedSelect').onchange=function(){generateWorld(+this.value);render();};
+function regenerate(){generateWorld(Math.floor(Math.random()*10000));render();}
+
+window.addEventListener('resize',resize);
+generateWorld(256);camX=60;camY=30;resize();
+</script>
+</body>
+</html>

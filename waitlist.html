@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+
+<!-- Perplexity Computer Attribution — SEO Meta Tags -->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uncivilised — Join the Waitlist</title>
+<meta name="description" content="The first strategy game where diplomacy is powered by AI. Join the waitlist for Uncivilised: The Ancient Era.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --color-bg: #0d0f0e;
+    --color-surface: #161a18;
+    --color-surface-raised: #1c211e;
+    --color-border: #2d3630;
+    --color-text: #d4cfc4;
+    --color-text-muted: #8a8578;
+    --color-text-dim: #5e5a50;
+    --color-gold: #c9a84c;
+    --color-gold-dim: #8b6914;
+    --color-gold-glow: rgba(201, 168, 76, 0.15);
+    --color-success: #5a9e6f;
+    --color-error: #c75050;
+    --font-display: 'Cormorant Garamond', Georgia, serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--color-text);
+    background: var(--color-bg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* ─── Background texture ─── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(201, 168, 76, 0.04) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 50% at 50% 100%, rgba(139, 105, 20, 0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ─── Animations ─── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .fade-in-up {
+    opacity: 0;
+    animation: fadeInUp 0.8s ease-out forwards;
+  }
+
+  .fade-in {
+    opacity: 0;
+    animation: fadeIn 0.6s ease-out forwards;
+  }
+
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.25s; }
+  .delay-3 { animation-delay: 0.4s; }
+  .delay-4 { animation-delay: 0.55s; }
+  .delay-5 { animation-delay: 0.7s; }
+  .delay-6 { animation-delay: 0.85s; }
+  .delay-7 { animation-delay: 1.0s; }
+
+  /* ─── Layout ─── */
+  .page {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 24px 40px;
+    min-height: 100vh;
+  }
+
+  .content {
+    max-width: 640px;
+    width: 100%;
+    text-align: center;
+  }
+
+  /* ─── Logo ─── */
+  .logo-svg {
+    width: 100%;
+    max-width: 420px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ─── Tagline ─── */
+  .tagline {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-top: 16px;
+  }
+
+  /* ─── Description ─── */
+  .description {
+    font-family: var(--font-body);
+    font-weight: 300;
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--color-text);
+    margin-top: 32px;
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .description em {
+    font-style: italic;
+    color: var(--color-gold);
+    font-weight: 400;
+  }
+
+  /* ─── Waitlist Form ─── */
+  .form-section {
+    margin-top: 40px;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 12px;
+    max-width: 460px;
+    margin: 0 auto;
+  }
+
+  .email-input {
+    flex: 1;
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    outline: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .email-input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  .email-input:focus {
+    border-color: var(--color-gold);
+    box-shadow: 0 0 0 3px var(--color-gold-glow);
+  }
+
+  .submit-btn {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--color-bg);
+    background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-gold-dim) 100%);
+    border: none;
+    border-radius: 6px;
+    padding: 14px 28px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  }
+
+  .submit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(201, 168, 76, 0.25);
+    filter: brightness(1.1);
+  }
+
+  .submit-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+
+  .submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    filter: none;
+  }
+
+  .submit-btn .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(13, 15, 14, 0.3);
+    border-top-color: var(--color-bg);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ─── Form Feedback ─── */
+  .form-message {
+    margin-top: 16px;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 22px;
+    transition: opacity 0.3s ease;
+  }
+
+  .form-message.success {
+    color: var(--color-success);
+  }
+
+  .form-message.error {
+    color: var(--color-error);
+  }
+
+  .form-message.duplicate {
+    color: var(--color-gold);
+  }
+
+  /* ─── Counter ─── */
+  .counter-section {
+    margin-top: 36px;
+  }
+
+  .counter {
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--color-text-muted);
+    letter-spacing: 0.5px;
+  }
+
+  .counter .count-number {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-gold);
+    display: inline-block;
+    min-width: 30px;
+    vertical-align: baseline;
+  }
+
+  .counter-loading {
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+    background: var(--color-surface);
+    border-radius: 4px;
+    animation: pulse 1.5s ease-in-out infinite;
+    vertical-align: middle;
+  }
+
+  /* ─── Divider ─── */
+  .section-divider {
+    width: 60px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-gold-dim), transparent);
+    margin: 48px auto;
+    opacity: 0.5;
+  }
+
+  /* ─── Features ─── */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 0;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .feature {
+    text-align: center;
+  }
+
+  .feature-icon {
+    font-size: 28px;
+    line-height: 1;
+    margin-bottom: 12px;
+    display: block;
+    opacity: 0.85;
+  }
+
+  .feature-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-gold);
+    margin-bottom: 8px;
+  }
+
+  .feature-desc {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 300;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+  }
+
+  /* ─── Footer ─── */
+  .site-footer {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 32px 24px 28px;
+    border-top: 1px solid rgba(45, 54, 48, 0.4);
+  }
+
+  .footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .footer-links a {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .footer-links a:hover {
+    color: var(--color-gold);
+  }
+
+  .footer-divider {
+    color: var(--color-text-dim);
+    font-size: 13px;
+    user-select: none;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 600px) {
+    .page {
+      padding: 48px 20px 32px;
+      justify-content: flex-start;
+      padding-top: 80px;
+    }
+
+    .logo-svg {
+      max-width: 300px;
+    }
+
+    .tagline {
+      font-size: 12px;
+      letter-spacing: 2.5px;
+    }
+
+    .description {
+      font-size: 15px;
+      margin-top: 24px;
+    }
+
+    .form-row {
+      flex-direction: column;
+    }
+
+    .submit-btn {
+      padding: 14px 24px;
+    }
+
+    .features {
+      grid-template-columns: 1fr;
+      gap: 28px;
+      max-width: 320px;
+    }
+
+    .feature-title {
+      font-size: 17px;
+    }
+
+    .section-divider {
+      margin: 36px auto;
+    }
+
+    .counter .count-number {
+      font-size: 24px;
+    }
+  }
+
+  /* ─── Selection styling ─── */
+  ::selection {
+    background: rgba(201, 168, 76, 0.25);
+    color: var(--color-text);
+  }
+</style>
+</head>
+<body>
+
+<main class="page">
+  <div class="content">
+
+    <!-- Logo -->
+    <div class="fade-in-up delay-1">
+      <svg viewBox="0 0 420 60" class="logo-svg" aria-label="Uncivilised">
+        <defs>
+          <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#c9a84c"/>
+            <stop offset="100%" stop-color="#8b6914"/>
+          </linearGradient>
+        </defs>
+        <text x="210" y="42" text-anchor="middle" font-family="'Cormorant Garamond', Georgia, serif" font-weight="700" font-size="48" fill="url(#logo-grad)">UNCIVILISED</text>
+        <line x1="50" y1="53" x2="370" y2="53" stroke="#c9a84c" stroke-width="0.5" opacity="0.5"/>
+      </svg>
+    </div>
+
+    <!-- Tagline -->
+    <p class="tagline fade-in-up delay-2">The AI Diplomacy Game</p>
+
+    <!-- Description -->
+    <p class="description fade-in-up delay-3">
+      Every faction leader thinks, remembers, and negotiates back. Form alliances through conversation. Betray empires with a whisper. <em>The first strategy game where diplomacy is powered by AI.</em>
+    </p>
+
+    <!-- Email Form -->
+    <div class="form-section fade-in-up delay-4">
+      <form id="waitlist-form" class="form-row" novalidate>
+        <input
+          type="email"
+          id="email-input"
+          class="email-input"
+          placeholder="Enter your email"
+          required
+          autocomplete="email"
+          aria-label="Email address"
+        >
+        <button type="submit" class="submit-btn" id="submit-btn">Join the Waitlist</button>
+      </form>
+      <div id="form-message" class="form-message" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- Counter -->
+    <div class="counter-section fade-in-up delay-5">
+      <p class="counter">
+        <span id="counter-display"><span class="counter-loading"></span></span>
+        players waiting
+      </p>
+    </div>
+
+    <!-- Divider -->
+    <div class="section-divider fade-in delay-5"></div>
+
+    <!-- Features -->
+    <div class="features">
+      <div class="feature fade-in-up delay-5">
+        <span class="feature-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <circle cx="16" cy="11" r="5" stroke="#c9a84c" stroke-width="1.5" fill="none"/>
+            <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#c9a84c" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <circle cx="25" cy="9" r="3" stroke="#8b6914" stroke-width="1" fill="none" opacity="0.6"/>
+            <circle cx="7" cy="9" r="3" stroke="#8b6914" stroke-width="1" fill="none" opacity="0.6"/>
+          </svg>
+        </span>
+        <h3 class="feature-title">6 AI Faction Leaders</h3>
+        <p class="feature-desc">Each with unique personality, memory, and negotiation style</p>
+      </div>
+      <div class="feature fade-in-up delay-6">
+        <span class="feature-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <path d="M6 16h6l3-8 4 16 3-8h4" stroke="#c9a84c" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="16" cy="16" r="13" stroke="#8b6914" stroke-width="1" fill="none" opacity="0.3"/>
+          </svg>
+        </span>
+        <h3 class="feature-title">Emergent Diplomacy</h3>
+        <p class="feature-desc">Alliance, betrayal, trade, marriage — the AI negotiates back</p>
+      </div>
+      <div class="feature fade-in-up delay-7">
+        <span class="feature-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="6" y="8" width="20" height="16" rx="2" stroke="#c9a84c" stroke-width="1.5" fill="none"/>
+            <path d="M12 16l3 3 5-6" stroke="#c9a84c" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <h3 class="feature-title">Free & Open Source</h3>
+        <p class="feature-desc">The game is free forever. The diplomacy AI learns from every player</p>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="site-footer fade-in delay-7">
+  <nav class="footer-links">
+    <a href="../">Play the Demo</a>
+    <span class="footer-divider">·</span>
+    <a href="about.html">About</a>
+    <span class="footer-divider">·</span>
+    <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+  </nav>
+</footer>
+
+<script>
+(function() {
+  'use strict';
+
+  const API_BASE = window.location.origin;
+
+  const form = document.getElementById('waitlist-form');
+  const emailInput = document.getElementById('email-input');
+  const submitBtn = document.getElementById('submit-btn');
+  const formMessage = document.getElementById('form-message');
+  const counterDisplay = document.getElementById('counter-display');
+
+  // ─── Email validation ───
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  // ─── Show message ───
+  function showMessage(text, type) {
+    formMessage.textContent = text;
+    formMessage.className = 'form-message ' + type;
+  }
+
+  // ─── Clear message ───
+  function clearMessage() {
+    formMessage.textContent = '';
+    formMessage.className = 'form-message';
+  }
+
+  // ─── Format number with commas ───
+  function formatNumber(n) {
+    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  // ─── Fetch waitlist count ───
+  async function fetchCount() {
+    try {
+      const res = await fetch(API_BASE + '/api/waitlist/count');
+      if (!res.ok) throw new Error('Failed to fetch count');
+      const data = await res.json();
+      const count = data.count || data.total || 0;
+      counterDisplay.innerHTML = '<span class="count-number">' + formatNumber(count) + '</span> ';
+    } catch (e) {
+      counterDisplay.innerHTML = '';
+    }
+  }
+
+  // ─── Submit form ───
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    clearMessage();
+
+    const email = emailInput.value.trim();
+
+    if (!email) {
+      showMessage('Please enter your email address.', 'error');
+      emailInput.focus();
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      showMessage('Please enter a valid email address.', 'error');
+      emailInput.focus();
+      return;
+    }
+
+    // Disable button, show spinner
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>Joining…';
+
+    try {
+      const res = await fetch(API_BASE + '/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, source: 'waitlist_page' })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        const position = data.position || '?';
+        if (data.message && data.message.includes('Already')) {
+          showMessage("You're already on the list!", 'success');
+        } else {
+          showMessage("You're in! Position #" + position + " in line", 'success');
+        }
+        emailInput.value = '';
+        fetchCount();
+      } else {
+        showMessage(data.error || 'Something went wrong. Try again.', 'error');
+      }
+    } catch (err) {
+      showMessage('Something went wrong. Try again.', 'error');
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = 'Join the Waitlist';
+  });
+
+  // ─── Clear error on input ───
+  emailInput.addEventListener('input', function() {
+    if (formMessage.classList.contains('error')) {
+      clearMessage();
+    }
+  });
+
+  // ─── Init ───
+  fetchCount();
+})();
+</script>
+
+</body>
+</html>

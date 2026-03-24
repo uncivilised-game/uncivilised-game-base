@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+node_modules/
+game.js
+game.js.map
+game.original.js

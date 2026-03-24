@@ -1,0 +1,33 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/game.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, must-revalidate" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/server.py", "destination": "/404" },
+    { "source": "/welcome_email.html", "destination": "/404" },
+    { "source": "/src/(.*)", "destination": "/404" },
+    { "source": "/esbuild.config.mjs", "destination": "/404" },
+    { "source": "/demo", "destination": "/index.html" }
+  ]
+}
