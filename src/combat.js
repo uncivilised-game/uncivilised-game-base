@@ -4,12 +4,12 @@ import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction } from './events.js';
 import { render } from './render.js';
-import { getModCombatBonus } from './game-mods.js';
+import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
 import { deselectUnit, autoSelectNext } from './units.js';
 import { updateUI } from './leaderboard.js';
 import { showToast } from './events.js';
-import { showModBanner } from './game-mods.js';
+import { showModBanner } from './diplomacy-api.js';
 import { panCameraTo } from './input.js';
 import { startAnimLoop } from './feedback.js';
 

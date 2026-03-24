@@ -6,15 +6,15 @@ import { getTileYields, getTileName } from './map.js';
 import { render } from './render.js';
 import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
-import { getRelationLabel } from './diplomacy.js';
-import { getModCombatBonus } from './game-mods.js';
+import { getRelationLabel } from './diplomacy-api.js';
+import { getModCombatBonus } from './diplomacy-api.js';
 import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
-import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy.js';
+import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
 

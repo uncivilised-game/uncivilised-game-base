@@ -5,7 +5,7 @@ import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './r
 import { handleHexClick, selectUnit, deselectUnit, selectNextUnit, autoSelectNext } from './units.js';
 import { endTurn } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, renderResearchPanel, renderUnitsPanel, toggleCivicsPanel, toggleVictoryPanel } from './ui-panels.js';
-import { renderDiplomacyPanel } from './diplomacy.js';
+import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
 

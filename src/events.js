@@ -2,7 +2,7 @@ import { BUILDINGS, TECHNOLOGIES, FACTIONS, MAP_COLS, MAP_ROWS } from './constan
 import { game } from './state.js';
 import { hexDistance } from './hex.js';
 import { initFactionStats } from './map.js';
-import { showModBanner } from './game-mods.js';
+import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 
 export function addEvent(text, type = '') {

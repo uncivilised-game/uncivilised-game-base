@@ -7,7 +7,7 @@ import { getTileYields, getTileName, getTileMoveCost } from './map.js';
 import { computeMoveRange, computeAttackRange } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
-import { getRelationLabel } from './diplomacy.js';
+import { getRelationLabel } from './diplomacy-api.js';
 import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
 

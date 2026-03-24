@@ -2,7 +2,7 @@ import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WO
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
-import { processAITurns, processBarbarianTurns, processAICommitments } from './ai.js';
+import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory } from './events.js';
 import { render } from './render.js';

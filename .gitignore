@@ -4,3 +4,4 @@ node_modules/
 game.js
 game.js.map
 game.original.js
+src/_diplomacy-plugin.gen.js
