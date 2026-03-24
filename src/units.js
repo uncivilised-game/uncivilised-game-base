@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS } from './constants.js';
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
@@ -120,6 +120,12 @@ function computeMoveRange() {
   const unit = game.units.find(u => u.id === game.selectedUnitId);
   if (!unit || unit.moveLeft <= 0 || unit.owner !== 'player') return null;
 
+  // Workers building improvements cannot move (cancel build first)
+  if (unit.type === 'worker' && unit.sleeping) {
+    const tile = game.map[unit.row]?.[unit.col];
+    if (tile && tile.improvementBuilder && tile.improvementBuilder.unitId === unit.id) return null;
+  }
+
   const visited = new Map();
   const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft }];
   visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
@@ -225,6 +231,15 @@ function computeAttackRange() {
 }
 
 function moveUnitTo(unit, targetCol, targetRow) {
+  // Block movement if worker is building an improvement
+  if (unit.type === 'worker' && unit.sleeping) {
+    const tile = game.map[unit.row]?.[unit.col];
+    if (tile && tile.improvementBuilder && tile.improvementBuilder.unitId === unit.id) {
+      showToast('Worker Busy', 'This worker is building ' + (TILE_IMPROVEMENTS?.[tile.improvementBuilder.improvementId]?.name || 'an improvement') + '. Cancel the build first.');
+      return false;
+    }
+  }
+
   const moveRange = computeMoveRange();
   if (!moveRange) return false;
   const key = `${targetCol},${targetRow}`;

@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": ".",
+  "buildCommand": "npm run build && mkdir -p .vercel-static && cp index.html about.html waitlist.html tile-world-preview.html game.js resource-icons.js style.css .vercel-static/ && cp -r assets .vercel-static/assets",
+  "outputDirectory": ".vercel-static",
   "functions": {
     "api/index.py": {
       "maxDuration": 30
@@ -24,6 +24,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/server.py", "destination": "/404" },
     { "source": "/welcome_email.html", "destination": "/404" },
     { "source": "/src/(.*)", "destination": "/404" },

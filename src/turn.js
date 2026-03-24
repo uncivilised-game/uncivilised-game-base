@@ -13,6 +13,7 @@ import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt } from './combat.js';
+import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 
@@ -366,6 +367,7 @@ function endTurn() {
     if (game.turn >= alliance.startTurn + alliance.turns) {
       delete game.activeAlliances[cid];
       addEvent(`Alliance with ${FACTIONS[cid].name} expired`, 'diplomacy');
+      updateReputation(cid, 'alliance_honoured', `Alliance with ${FACTIONS[cid].name} honoured to completion`);
     }
   }
 
@@ -374,6 +376,7 @@ function endTurn() {
     if (game.turn >= deal.startTurn + deal.duration) {
       delete game.tradeDeals[cid];
       addEvent(`Trade deal with ${FACTIONS[cid].name} expired`, 'gold');
+      updateReputation(cid, 'trade_deal_honoured', `Trade deal with ${FACTIONS[cid].name} honoured to completion`);
       continue;
     }
     // Parse and apply trade effects per turn
@@ -392,6 +395,7 @@ function endTurn() {
       delete game.defensePacts[cid];
       game.defense = Math.max(0, game.defense - 3);
       addEvent(`Defense pact with ${FACTIONS[cid].name} expired`, 'diplomacy');
+      updateReputation(cid, 'defense_pact_honoured', `Defense pact with ${FACTIONS[cid].name} honoured`);
     }
   }
 
@@ -474,10 +478,11 @@ function endTurn() {
   // --- Faction intelligence reports (every 10 turns) ---
   generateFactionIntelReports();
 
-  // --- Refill envoys ---
-  game.maxEnvoys = 3 + Math.floor(game.culture / 10) + (game.techs.includes('writing') ? 1 : 0) + (game.techs.includes('philosophy') ? 1 : 0);
+  // --- Refill envoys (1 per turn) and messages (3 per turn) ---
+  game.maxEnvoys = 1;
   game.envoys = game.maxEnvoys;
   game.envoySpentThisTurn = {};
+  game.messagesThisTurn = 0;
 
   // --- Open borders upkeep ---
   for (const [cid, ob] of Object.entries(game.openBorders || {})) {
@@ -670,6 +675,11 @@ function endTurn() {
     Object.keys(game.activeAlliances || {}).length * 10 +
     (game.barbarianCamps ? game.barbarianCamps.filter(bc => bc.destroyed).length * 15 : 0)
   );
+
+  // --- Reputation decay & contradiction detection ---
+  ensureReputationState();
+  decayReputation();
+  detectContradictions();
 
   game.turn++;
   game.recentEvents = events.map(text => ({ text, turn: game.turn })).concat(game.recentEvents).slice(0, 20);

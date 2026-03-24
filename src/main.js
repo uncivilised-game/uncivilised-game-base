@@ -1,5 +1,5 @@
 /*
- * UNCIVILISED — The Ancient Era
+ * UNCIVILIZED — The Ancient Era
  * Main entry point — wires all modules together
  */
 
@@ -24,7 +24,7 @@ import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduc
 import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
 import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
-import { getAvailableImprovements, startImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
+import { getAvailableImprovements, startImprovement, cancelImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary } from './events.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { updateUI, updateEnvoyUI, showLeaderboard, showUsernamePrompt, initUsernameUI, submitToLeaderboard, fetchCurrentCompetition, checkSessionLimit, registerActiveGame, incrementSession, sbFetch } from './leaderboard.js';
@@ -61,6 +61,7 @@ window.startBuild = startBuild;
 window.startResearch = startResearch;
 window.startWonderBuild = startWonderBuild;
 window.startImprovement = startImprovement;
+window.cancelImprovement = cancelImprovement;
 window.recruitUnit = recruitUnit;
 window.setTechGoal = setTechGoal;
 window.interactWithMinorFaction = interactWithMinorFaction;
@@ -200,7 +201,7 @@ function createInitialState() {
     },
     activeAlliances: {}, activeTrades: {}, tradeDeals: {}, marriages: {}, defensePacts: {},
     conversationHistories: {},
-    envoys: 3, maxEnvoys: 3, envoySpentThisTurn: {},
+    envoys: 1, maxEnvoys: 1, envoySpentThisTurn: {}, messagesThisTurn: 0,
     openBorders: {}, embargoes: {}, ceasefires: {}, vassals: {}, nonAggressionPacts: {},
     metFactions: {}, factionStats: {},
     appliedMods: [], combatBonuses: [], yieldBonuses: [],
@@ -225,6 +226,29 @@ initInputHandlers();
 // --- startNewGame / continueGame ---
 async function startNewGame() {
   const playerName = safeStorage.getItem('uncivilised_username');
+  if (!playerName) {
+    showSignupModal();
+    return;
+  }
+  // Server-side access gate
+  try {
+    const gateRes = await fetch(API + '/api/verify-access', {
+      headers: { 'x-player-name': playerName },
+    });
+    const gateData = await gateRes.json();
+    if (!gateData.allowed) {
+      if (gateData.reason === 'waitlisted') {
+        alert('You\'re on the waitlist. We\'ll email you when a spot opens.');
+      } else if (gateData.reason === 'not_verified') {
+        alert('Please check your email and click the verification link first.');
+      } else {
+        showSignupModal();
+      }
+      return;
+    }
+  } catch (_) {
+    // Network error — fail open
+  }
   if (playerName && currentCompetition) {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
@@ -284,6 +308,20 @@ async function startNewGame() {
 
 async function continueGame() {
   const playerName = safeStorage.getItem('uncivilised_username');
+  if (!playerName) {
+    showSignupModal();
+    return;
+  }
+  try {
+    const gateRes = await fetch(API + '/api/verify-access', {
+      headers: { 'x-player-name': playerName },
+    });
+    const gateData = await gateRes.json();
+    if (!gateData.allowed) {
+      alert('Access not available. Check your email or sign up.');
+      return;
+    }
+  } catch (_) {}
   if (playerName && currentCompetition) {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
@@ -339,37 +377,266 @@ window.advanceTime = (ms) => {
   for (let i = 0; i < turns; i++) endTurn();
 };
 
+// --- Auth flow functions ---
+function showSignupModal() {
+  closeAuthModals();
+  document.getElementById('signup-modal').style.display = 'flex';
+  document.getElementById('signup-username').focus();
+  // Update subtitle with remaining spots
+  fetchSpotsRemaining().then(data => {
+    const sub = document.getElementById('signup-subtitle');
+    if (sub && data.remaining > 0) sub.textContent = data.remaining.toLocaleString() + ' spots left in the first wave';
+    else if (sub) sub.textContent = 'Join the waitlist for the next wave';
+  });
+}
+
+function showSigninModal() {
+  closeAuthModals();
+  document.getElementById('signin-modal').style.display = 'flex';
+  document.getElementById('signin-username').focus();
+}
+
+function closeAuthModals() {
+  ['signup-modal', 'signin-modal', 'success-modal'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+async function fetchSpotsRemaining() {
+  try {
+    const res = await fetch(API + '/api/spots-remaining');
+    if (res.ok) return await res.json();
+  } catch (e) {}
+  return { total: 1000, active: 0, remaining: 1000 };
+}
+
+async function updateSpotsCounter() {
+  const data = await fetchSpotsRemaining();
+  const counter = document.getElementById('spots-counter');
+  const numEl = document.getElementById('spots-number');
+  const barEl = document.getElementById('spots-bar-fill');
+  if (counter) counter.style.display = 'block';
+  if (numEl) numEl.textContent = data.remaining.toLocaleString();
+  if (barEl) barEl.style.width = Math.max(2, (data.remaining / data.total) * 100) + '%';
+}
+
+async function handleSignup(e) {
+  e.preventDefault();
+  const btn = document.getElementById('signup-submit');
+  const errEl = document.getElementById('signup-error');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing up...';
+
+  const username = document.getElementById('signup-username').value.trim();
+  const email = document.getElementById('signup-email').value.trim();
+
+  try {
+    const res = await fetch(API + '/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      errEl.textContent = data.error || 'Signup failed';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Sign Up';
+      return;
+    }
+
+    // Save username locally
+    safeStorage.setItem('uncivilised_username', username);
+
+    closeAuthModals();
+
+    // Show success modal
+    const content = document.getElementById('success-content');
+    if (data.status === 'active') {
+      content.innerHTML = '<div class="auth-success-icon">\u2694\uFE0F</div>'
+        + '<h2 class="auth-success-title">You\'re In!</h2>'
+        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 1,000, <strong>' + username + '</strong>.</p>'
+        + '<button class="btn btn-primary auth-success-btn" onclick="closeAuthModals()">Got It</button>';
+    } else {
+      content.innerHTML = '<div class="auth-success-icon">\u23F3</div>'
+        + '<h2 class="auth-success-title">You\'re on the List</h2>'
+        + '<p class="auth-success-msg">All spots are taken right now. You\'re <strong>#' + data.position + '</strong> on the waitlist.<br>We\'ll email you when a spot opens up.</p>'
+        + '<button class="btn btn-primary auth-success-btn" onclick="closeAuthModals()">Got It</button>';
+    }
+    document.getElementById('success-modal').style.display = 'flex';
+    updateSpotsCounter();
+    refreshAuthUI();
+  } catch (err) {
+    errEl.textContent = 'Network error. Try again.';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sign Up';
+}
+
+async function handleSignin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('signin-submit');
+  const errEl = document.getElementById('signin-error');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+
+  const username = document.getElementById('signin-username').value.trim();
+
+  try {
+    const res = await fetch(API + '/api/signin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      errEl.textContent = data.error || 'Sign in failed';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      return;
+    }
+
+    safeStorage.setItem('uncivilised_username', data.username);
+    closeAuthModals();
+    refreshAuthUI();
+
+    if (data.status === 'waitlisted') {
+      showStatusMessage('You\'re still on the waitlist. We\'ll email you when a spot opens.');
+    } else if (data.status === 'pending_verification') {
+      showStatusMessage('Check your email and click the verification link to start playing.');
+    }
+  } catch (err) {
+    errEl.textContent = 'Network error. Try again.';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sign In';
+}
+
+function showStatusMessage(msg) {
+  const el = document.getElementById('auth-status-msg');
+  if (el) {
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+}
+
+function playerSignOut() {
+  safeStorage.removeItem('uncivilised_username');
+  refreshAuthUI();
+}
+
+async function refreshAuthUI() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const guestBtns = document.getElementById('auth-buttons-guest');
+  const playerBtns = document.getElementById('auth-buttons-player');
+  const usernameBar = document.getElementById('username-bar');
+  const usernameDisplay = document.getElementById('username-display');
+  const statusMsg = document.getElementById('auth-status-msg');
+  if (statusMsg) statusMsg.style.display = 'none';
+
+  if (!username) {
+    // Guest state
+    if (guestBtns) guestBtns.style.display = 'flex';
+    if (playerBtns) playerBtns.style.display = 'none';
+    if (usernameBar) usernameBar.style.display = 'none';
+    return;
+  }
+
+  // Signed in — check access
+  if (usernameBar) usernameBar.style.display = 'block';
+  if (usernameDisplay) usernameDisplay.textContent = username;
+
+  try {
+    const res = await fetch(API + '/api/verify-access', {
+      headers: { 'x-player-name': username },
+    });
+    const data = await res.json();
+    if (data.allowed) {
+      // Active + verified — show play buttons
+      if (guestBtns) guestBtns.style.display = 'none';
+      if (playerBtns) playerBtns.style.display = 'flex';
+
+      // Check for saved game
+      let hasSave = false;
+      try {
+        const raw = safeStorage.getItem(SAVE_KEY);
+        if (raw) { const d = JSON.parse(raw); if (d.game_state) hasSave = true; }
+      } catch (_) {}
+      if (!hasSave) {
+        try {
+          const sr = await fetch(API + '/api/load');
+          const sd = await sr.json();
+          if (sd.found) hasSave = true;
+        } catch (_) {}
+      }
+      if (hasSave) {
+        document.getElementById('btn-continue').style.display = 'block';
+      }
+    } else {
+      // Not allowed — show guest buttons + reason
+      if (guestBtns) guestBtns.style.display = 'flex';
+      if (playerBtns) playerBtns.style.display = 'none';
+      if (data.reason === 'waitlisted') {
+        showStatusMessage('You\'re on the waitlist. We\'ll email you when a spot opens.');
+      } else if (data.reason === 'not_verified') {
+        showStatusMessage('Check your email and click the verification link to start playing.');
+      }
+    }
+  } catch (_) {
+    // Network error — fail open, show play buttons
+    if (guestBtns) guestBtns.style.display = 'none';
+    if (playerBtns) playerBtns.style.display = 'flex';
+  }
+}
+
+async function handleTokenVerification() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) return;
+
+  // Clean the URL
+  window.history.replaceState({}, '', window.location.pathname);
+
+  try {
+    const res = await fetch(API + '/api/verify-token/' + encodeURIComponent(token));
+    const data = await res.json();
+    if (data.success && data.username) {
+      safeStorage.setItem('uncivilised_username', data.username);
+      if (data.can_play) {
+        showStatusMessage('Email verified! You\'re ready to play, ' + data.username + '.');
+      } else {
+        showStatusMessage('Email verified! You\'re on the waitlist \u2014 we\'ll notify you when a spot opens.');
+      }
+    }
+  } catch (_) {}
+}
+
+// Expose auth functions for HTML onclick
+window.showSignupModal = showSignupModal;
+window.showSigninModal = showSigninModal;
+window.closeAuthModals = closeAuthModals;
+window.handleSignup = handleSignup;
+window.handleSignin = handleSignin;
+window.playerSignOut = playerSignOut;
+
 // --- Initialization ---
 (async function init() {
   await fetchCurrentCompetition();
 
-  try {
-    const wcRes = await fetch(API + '/api/waitlist/count');
-    if (wcRes.ok) {
-      const wcData = await wcRes.json();
-      const el = document.getElementById('waitlist-count');
-      if (el) el.textContent = (wcData.count || 0).toLocaleString();
-    }
-  } catch(e) {}
+  // Handle email verification token in URL
+  await handleTokenVerification();
 
-  let hasSave = false;
-  try {
-    const raw = safeStorage.getItem(SAVE_KEY);
-    if (raw) {
-      const data = JSON.parse(raw);
-      if (data.game_state) hasSave = true;
-    }
-  } catch (e) {}
-  if (!hasSave) {
-    try {
-      const res = await fetch(`${API}/api/load`);
-      const data = await res.json();
-      if (data.found) hasSave = true;
-    } catch (e) {}
-  }
-  if (hasSave) {
-    document.getElementById('btn-continue').style.display = 'block';
-  }
+  // Fetch and display spots remaining
+  updateSpotsCounter();
+
+  // Refresh auth UI based on stored credentials
+  await refreshAuthUI();
 
   if (currentCompetition) {
     const hint = document.querySelector('.title-hint');

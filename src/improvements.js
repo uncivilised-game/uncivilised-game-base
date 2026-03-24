@@ -66,6 +66,20 @@ export function startImprovement(unitId, improvementId) {
   addEvent(`Worker began building ${imp.name}`, 'gold');
 }
 
+export function cancelImprovement(unitId) {
+  const unit = game.units.find(u => u.id === unitId);
+  if (!unit || unit.type !== 'worker') return;
+
+  const tile = game.map[unit.row]?.[unit.col];
+  if (tile && tile.improvementBuilder && tile.improvementBuilder.unitId === unitId) {
+    const impName = TILE_IMPROVEMENTS[tile.improvementBuilder.improvementId]?.name || 'improvement';
+    tile.improvementBuilder = null;
+    tile.improvementProgress = 0;
+    unit.sleeping = false;
+    addEvent(`Worker cancelled building ${impName}`, 'warning');
+  }
+}
+
 export function processImprovements() {
   for (let r = 0; r < MAP_ROWS; r++) {
     for (let c = 0; c < MAP_COLS; c++) {
@@ -148,6 +162,7 @@ export function showWorkerActions(unitOrId) {
   // Show current improvement if building
   if (tile.improvementBuilder) {
     html += `<p style="color:var(--color-gold)">Building: ${TILE_IMPROVEMENTS[tile.improvementBuilder.improvementId]?.name} (${tile.improvementBuilder.turnsLeft} turns left)</p>`;
+    html += `<button class="minor-btn" style="color:#ff6b6b" onclick="cancelImprovement(${unit.id});showWorkerActions(${unit.id})">✕ Cancel Build</button>`;
   }
 
   // Show existing improvement
