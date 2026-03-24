@@ -3,7 +3,7 @@ import { game, API } from './state.js';
 import { hexDistance } from './hex.js';
 import { initFactionStats } from './map.js';
 import { addEvent, logAction, countPlayerTerritory } from './events.js';
-import { openChat, appendChatMessage, processCharacterAction, updateDiploActions } from './diplomacy.js';
+import { openChat, appendChatMessage, processCharacterAction, updateDiploActions } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { render } from './render.js';
 import { closeAllPanels } from './ui-panels.js';

@@ -8,16 +8,34 @@ A browser-based 4X strategy game where every faction leader is powered by an LLM
 
 The core innovation is the **emergent game modification system**: AI leaders don't just talk — they can inject new units, buildings, technologies, and resources into the game as a result of diplomatic negotiation. A pirate queen teaches you naval warfare → new ship class appears. A spymaster sells you intel → fog of war lifts. A merchant prince shares trade secrets → desert tiles now yield food. Every playthrough evolves differently based on what you negotiate.
 
-## Tech Stack
+## Architecture
+
+This is the **open-source base game**. The AI diplomacy engine is a separate private module that plugs in at build time.
 
 | Layer | Tech |
 |-------|------|
-| **Frontend** | Vanilla JS (27 ES modules under `src/`), Canvas2D rendering, esbuild bundler |
+| **Frontend** | Vanilla JS (ES modules under `src/`), Canvas2D rendering, esbuild bundler |
 | **Backend** | Python FastAPI (`server.py` / `api/index.py`) |
-| **AI** | Anthropic Claude Sonnet via API |
 | **Database** | Supabase (PostgREST, no SDK) |
-| **Email** | Resend API (waitlist welcome emails) |
 | **Hosting** | Vercel (static + serverless Python) |
+| **Diplomacy** | Optional plugin — auto-detected at build time (see below) |
+
+### Diplomacy Plugin System
+
+The game is fully playable without the diplomacy module — you get the full Civ-style experience (map generation, combat, tech tree, city building, etc.) but AI leaders won't respond in chat.
+
+The diplomacy engine lives in a separate private repo (`uncivilised-diplomacy`). If placed alongside this repo, the build auto-detects it:
+
+```
+parent/
+├── uncivilised-game-base/     ← this repo (public)
+└── uncivilised-diplomacy/     ← diplomacy plugin (private, optional)
+```
+
+- `esbuild.config.mjs` checks for `../uncivilised-diplomacy/src/plugin.js` at build time
+- If found: generates a loader that registers the diplomacy implementations
+- If not found: builds with no-op stubs — game works fine without AI chat
+- The plugin uses `@game/` import aliases that esbuild resolves to `src/` in this repo
 
 ## Game Features
 
@@ -29,8 +47,8 @@ The core innovation is the **emergent game modification system**: AI leaders don
 - **Settler expansion** — found new cities, cultural border growth
 - **Barbarian camps & minor factions** — mystic sects, nomadic tribes with interaction menus
 - **Fog of war** — exploration, first contact events, rumour system about undiscovered factions
-- **Diplomacy** — alliances, trade deals, marriages, defense pacts, embargoes, vassalage, introductions
-- **Emergent game mods** — AI leaders create new content through conversation (see above)
+- **Diplomacy** — alliances, trade deals, marriages, defense pacts, embargoes, vassalage, introductions (requires diplomacy plugin)
+- **Emergent game mods** — AI leaders create new content through conversation (requires diplomacy plugin)
 - **Competition system** — weekly leaderboards with session limits, Supabase-backed
 - **Save/load** — localStorage + server-side via Supabase
 
@@ -38,78 +56,86 @@ The core innovation is the **emergent game modification system**: AI leaders don
 
 ### Prerequisites
 
-- Python 3.11+
-- An [Anthropic API key](https://console.anthropic.com/)
+- Node.js 18+
+- Python 3.11+ (for the backend)
 
 ### Setup
 
 ```bash
-# Clone
 git clone <repo-url>
-cd uncivilised-game
+cd uncivilised-game-base
 
-# Install dependencies
-pip install -r requirements.txt
 npm install
+npm run build        # bundle src/ → game.js
+python server.py     # serve on :8000
 
-# Set your Anthropic API key
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Build & run (watch mode + server)
-npm run dev
-# → runs on http://localhost:8000
-
-# Or manually:
-npm run build          # bundle src/ → game.js
-python server.py       # serve on :8000
+# Or with watch mode:
+npm run dev          # watch + serve
 ```
 
 The frontend auto-detects localhost and routes API calls to `http://localhost:8000`.
+
+### With Diplomacy Plugin
+
+```bash
+# Clone both repos side by side:
+git clone <base-repo-url> uncivilised-game-base
+git clone <diplomacy-repo-url> uncivilised-diplomacy
+
+cd uncivilised-game-base
+npm install
+npm run build    # auto-detects ../uncivilised-diplomacy
+```
+
+You'll also need an Anthropic API key for the AI chat backend:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+python server.py
+```
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | Claude API key for AI diplomacy |
-| `SUPABASE_URL` | No | Supabase project URL (falls back to hardcoded demo) |
+| `ANTHROPIC_API_KEY` | For diplomacy | Claude API key for AI chat |
+| `SUPABASE_URL` | No | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | No | Supabase service role key |
 | `RESEND_API_KEY` | No | Resend API key for waitlist emails |
 
-Without Supabase/Resend, the game runs fine — leaderboard, saves, and waitlist just won't persist to the server.
+Without these, the game runs fine — leaderboard, saves, waitlist, and AI chat just won't work.
 
 ## Project Structure
 
 ```
-uncivilised-game/
-├── src/                     # Game engine (27 ES modules)
-│   ├── main.js              # Entry point — wires modules, exposes window globals
-│   ├── constants.js         # Game data: terrain, units, buildings, techs, factions
-│   ├── state.js             # Shared mutable state (game, canvas, camera)
-│   ├── render.js            # Canvas2D hex rendering, visibility, minimap
-│   ├── terrain-render.js    # Painterly terrain detail
-│   ├── ui-panels.js         # Build, research, civics, victory panels
-│   ├── diplomacy.js         # Chat UI, AI action processing
-│   ├── ai.js                # AI faction turn logic
-│   ├── turn.js              # End-of-turn processing
-│   ├── map.js               # Map generation
-│   ├── combat.js            # Combat resolution
-│   ├── units.js             # Unit movement, pathfinding
-│   ├── input.js             # Mouse/touch/keyboard, camera
-│   ├── improvements.js      # Worker actions, tile improvements
-│   ├── events.js            # Event log, notifications
-│   ├── game-mods.js         # Dynamic game modification from diplomacy
-│   ├── save-load.js         # Save/load system
-│   └── ...                  # + 10 more modules
-├── index.html               # Main game page
-├── style.css                # UI styling
-├── server.py                # Local dev backend (FastAPI + uvicorn)
-├── api/
-│   └── index.py             # Vercel serverless function (production backend)
-├── esbuild.config.mjs       # Bundler config (src/ → game.js)
-├── package.json             # npm scripts: build, watch, dev
-├── assets/                  # Portraits, hex tiles, unit sprites, terrain
-├── vercel.json              # Vercel deployment config
-└── requirements.txt         # Python dependencies
+uncivilised-game-base/
+├── src/                          # Game engine (ES modules)
+│   ├── main.js                   # Entry point — wires modules, exposes window globals
+│   ├── diplomacy-api.js          # Plugin interface — stubs + registerDiplomacyPlugin()
+│   ├── _diplomacy-plugin.gen.js  # Auto-generated loader (gitignored)
+│   ├── constants.js              # Game data: terrain, units, buildings, techs, factions
+│   ├── state.js                  # Shared mutable state (game, canvas, camera)
+│   ├── render.js                 # Canvas2D hex rendering, visibility, minimap
+│   ├── terrain-render.js         # Painterly terrain detail
+│   ├── ui-panels.js              # Build, research, civics, victory panels
+│   ├── turn.js                   # End-of-turn processing
+│   ├── map.js                    # Map generation
+│   ├── combat.js                 # Combat resolution
+│   ├── units.js                  # Unit movement, pathfinding
+│   ├── input.js                  # Mouse/touch/keyboard, camera
+│   ├── improvements.js           # Worker actions, tile improvements
+│   ├── events.js                 # Event log, notifications
+│   ├── save-load.js              # Save/load system
+│   └── ...                       # + more modules
+├── index.html                    # Main game page
+├── style.css                     # UI styling
+├── server.py                     # Local dev backend (FastAPI + uvicorn)
+├── api/index.py                  # Vercel serverless function (production backend)
+├── esbuild.config.mjs            # Bundler config — auto-detects diplomacy plugin
+├── package.json                  # npm scripts: build, watch, dev
+├── assets/                       # Portraits, hex tiles, unit sprites, terrain
+├── vercel.json                   # Vercel deployment config
+└── requirements.txt              # Python dependencies
 ```
 
 ## The 6 Faction Leaders
@@ -123,11 +149,15 @@ uncivilised-game/
 | `commander_thane` | Commander Thane | Militaristic | Blunt, honorable, judges by martial prowess |
 | `rebel_leader_sera` | High Priestess 'Ula | Cultural/Rebel | Passionate, idealistic, champions the oppressed |
 
+## Contributing
+
+The base game is open source — contributions to gameplay, rendering, UI, map generation, combat, and other non-diplomacy systems are welcome. The diplomacy engine (AI chat, game mods, AI faction logic) is maintained separately.
+
 ## Known Issues
 
 - **Security:** API keys are hardcoded as fallback defaults in `server.py` and `api/index.py`. For production, these must be moved to environment variables only.
-- **Architecture:** ~~Single `game.js` monolith~~ — now modularized into 27 ES modules under `src/`.
 - **Performance:** The painterly terrain renderer is expensive — draws noise-driven splotches, individual trees, gradient blending per hex per frame. May struggle on low-end devices at full zoom.
+
 ## License
 
 TBD — Contact jamie247@gmail.com for licensing inquiries.

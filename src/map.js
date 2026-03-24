@@ -3,7 +3,7 @@ import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
 import { getImprovementYields } from './improvements.js';
-import { getModYieldBonus } from './game-mods.js';
+import { getModYieldBonus } from './diplomacy-api.js';
 import { addEvent } from './events.js';
 import { countPlayerTerritory } from './events.js';
 
