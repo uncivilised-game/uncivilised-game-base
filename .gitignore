@@ -9,5 +9,6 @@ src/_diplomacy-plugin.gen.js
 .vercel-static/
 .vercel_python_packages/
 .python-version
+.venv/
 pyproject.toml
 uv.lock
