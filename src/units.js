@@ -5,7 +5,7 @@ import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from 
 import { resolveCombat, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
-import { render } from './render.js';
+import { render, markVisibilityDirty } from './render.js';
 import { addEvent, logAction, showToast } from './events.js';
 import { revealAround } from './discovery.js';
 import { panCameraTo } from './input.js';
@@ -257,6 +257,7 @@ function moveUnitTo(unit, targetCol, targetRow) {
 
   unit.col = targetCol;
   unit.row = targetRow;
+  markVisibilityDirty();
   unit.moveLeft = remaining;
   unit.fortified = false;
   unit.sleeping = false;

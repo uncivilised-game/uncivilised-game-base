@@ -348,7 +348,15 @@ async function continueGame() {
     document.getElementById('game-screen').classList.add('active');
     resizeCanvas();
     updateUI();
-    render();
+    try {
+      render();
+    } catch (e) {
+      console.error('Render failed on load:', e);
+      alert('Save data appears corrupted. Please start a new game.');
+      document.getElementById('game-screen').classList.remove('active');
+      document.getElementById('title-screen').classList.add('active');
+      return;
+    }
     addEvent('Game loaded \u2014 welcome back', '');
     if (activeGameRecord) addEvent('Session ' + activeGameRecord.sessions_used + '/3', 'gold');
   } else {
@@ -437,9 +445,16 @@ async function updateSpotsCounter() {
   const counter = document.getElementById('spots-counter');
   const numEl = document.getElementById('spots-number');
   const barEl = document.getElementById('spots-bar-fill');
+  const textEl = numEl?.parentElement;
   if (counter) counter.style.display = 'block';
-  if (numEl) numEl.textContent = data.remaining.toLocaleString();
-  if (barEl) barEl.style.width = Math.max(2, (data.remaining / data.total) * 100) + '%';
+  if (data.remaining <= 0) {
+    // All spots taken — show waitlist prompt
+    if (textEl) textEl.innerHTML = '<strong>Join the waiting list</strong>';
+    if (barEl) barEl.style.width = '0%';
+  } else {
+    if (numEl) numEl.textContent = data.remaining.toLocaleString();
+    if (barEl) barEl.style.width = Math.max(2, (data.remaining / data.total) * 100) + '%';
+  }
 }
 
 async function handleSignup(e) {

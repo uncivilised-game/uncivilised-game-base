@@ -40,15 +40,27 @@ function centerCameraOnCity() {
   else { game.cameraY = Math.max(-HEX_SIZE, Math.min(totalH - viewH + HEX_SIZE, game.cameraY)); }
 }
 
+let _visibilityDirty = true;
+
+/** Mark visibility for recomputation (call after units move, cities change, etc.) */
+function markVisibilityDirty() { _visibilityDirty = true; }
+
 function computeVisibility() {
+  if (!_visibilityDirty && game.visibleTiles) return;
+  _visibilityDirty = false;
+
   // Create fresh visibility grid each computation
   const visible = Array.from({ length: MAP_ROWS }, () => Array(MAP_COLS).fill(false));
 
-  // Player cities grant vision
+  // Player cities grant vision — bounded to radius
   for (const city of game.cities) {
     const radius = 5 + Math.floor((city.borderRadius || 2));
-    for (let r = 0; r < MAP_ROWS; r++) {
-      for (let c = 0; c < MAP_COLS; c++) {
+    const rMin = Math.max(0, city.row - radius - 1);
+    const rMax = Math.min(MAP_ROWS, city.row + radius + 2);
+    const cMin = Math.max(0, city.col - radius - 1);
+    const cMax = Math.min(MAP_COLS, city.col + radius + 2);
+    for (let r = rMin; r < rMax; r++) {
+      for (let c = cMin; c < cMax; c++) {
         if (hexDistance(c, r, city.col, city.row) <= radius) {
           visible[r][c] = true;
           // Also ensure fog of war is revealed (safety net)
@@ -58,12 +70,16 @@ function computeVisibility() {
     }
   }
 
-  // Player units grant vision
+  // Player units grant vision — bounded columns too
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const sightRange = unit.type === 'scout' ? 4 : 3;
-    for (let r = Math.max(0, unit.row - sightRange - 1); r < Math.min(MAP_ROWS, unit.row + sightRange + 2); r++) {
-      for (let c = 0; c < MAP_COLS; c++) {
+    const rMin = Math.max(0, unit.row - sightRange - 1);
+    const rMax = Math.min(MAP_ROWS, unit.row + sightRange + 2);
+    const cMin = Math.max(0, unit.col - sightRange - 1);
+    const cMax = Math.min(MAP_COLS, unit.col + sightRange + 2);
+    for (let r = rMin; r < rMax; r++) {
+      for (let c = cMin; c < cMax; c++) {
         if (hexDistance(c, r, unit.col, unit.row) <= sightRange) {
           visible[r][c] = true;
           // Also ensure fog of war is revealed (safety net — prevents
@@ -74,12 +90,14 @@ function computeVisibility() {
     }
   }
 
-  // Converted barbarian camps (spy network) grant vision
+  // Converted barbarian camps (spy network) grant vision — bounded columns too
   if (game.minorFactions) {
     for (const mf of game.minorFactions) {
       if (mf.converted && mf.convertedRole === 'spy network') {
+        const cMin = Math.max(0, mf.col - 7);
+        const cMax = Math.min(MAP_COLS, mf.col + 8);
         for (let r = Math.max(0, mf.row - 6); r < Math.min(MAP_ROWS, mf.row + 7); r++) {
-          for (let c = 0; c < MAP_COLS; c++) {
+          for (let c = cMin; c < cMax; c++) {
             if (hexDistance(c, r, mf.col, mf.row) <= 6) {
               visible[r][c] = true;
             }
@@ -93,13 +111,14 @@ function computeVisibility() {
 }
 
 function render() {
-  computeVisibility();
   if (!game) return;
-  // Ensure canvas dimensions are set before rendering
-  if (!canvasW || !canvasH) resizeCanvas();
   // Sanitize camera state — prevent NaN/Infinity from corrupting the frame
   if (!isFinite(game.cameraX)) game.cameraX = 0;
   if (!isFinite(game.cameraY)) game.cameraY = 0;
+  try {
+  computeVisibility();
+  // Ensure canvas dimensions are set before rendering
+  if (!canvasW || !canvasH) resizeCanvas();
   // Fill entire canvas with fog-of-war color (prevents black edges at zoom)
   ctx.fillStyle = '#0a0c0b';
   ctx.fillRect(0, 0, canvasW, canvasH);
@@ -873,6 +892,9 @@ function render() {
 
   ctx.restore(); // End zoom transform
   renderMiniMap();
+  } catch (e) {
+    console.error('Render error:', e);
+  }
 }
 
 function renderMiniMap() {
@@ -1117,4 +1139,4 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   ctx.restore();
 }
 
-export { render, resizeCanvas, centerCameraOnCity, computeVisibility, renderMiniMap, drawHoverTooltip };
+export { render, resizeCanvas, centerCameraOnCity, computeVisibility, markVisibilityDirty, renderMiniMap, drawHoverTooltip };

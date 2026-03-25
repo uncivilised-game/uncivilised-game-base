@@ -166,6 +166,18 @@ async function autoSave() {
   }
 }
 
+function isValidGameState(state) {
+  // Basic structural checks to prevent loading corrupt saves
+  if (!state || typeof state !== 'object') return false;
+  if (!Array.isArray(state.map) || state.map.length === 0) return false;
+  if (!Array.isArray(state.units)) return false;
+  if (!Array.isArray(state.cities)) return false;
+  if (!Array.isArray(state.fogOfWar) || state.fogOfWar.length === 0) return false;
+  // Verify map grid dimensions are sensible
+  if (!Array.isArray(state.map[0]) || state.map[0].length === 0) return false;
+  return true;
+}
+
 async function loadGame() {
   // Try local storage first
   try {
@@ -173,11 +185,17 @@ async function loadGame() {
     if (raw) {
       const data = JSON.parse(raw);
       if (data.game_state) {
-        setGame(migrateTiles(data.game_state));
-        if (game.units && game.units.length > 0) {
-          setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+        const state = migrateTiles(data.game_state);
+        if (!isValidGameState(state)) {
+          console.warn('Local save is corrupt, clearing it');
+          safeStorage.removeItem(SAVE_KEY);
+        } else {
+          setGame(state);
+          if (game.units && game.units.length > 0) {
+            setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+          }
+          return true;
         }
-        return true;
       }
     }
   } catch (e) {
@@ -190,11 +208,16 @@ async function loadGame() {
     });
     const data = await res.json();
     if (data.found && data.game_state) {
-      setGame(migrateTiles(data.game_state));
-      if (game.units && game.units.length > 0) {
-        setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+      const state = migrateTiles(data.game_state);
+      if (!isValidGameState(state)) {
+        console.warn('API save is corrupt, ignoring');
+      } else {
+        setGame(state);
+        if (game.units && game.units.length > 0) {
+          setNextUnitId(Math.max(...game.units.map(u => u.id)) + 1);
+        }
+        return true;
       }
-      return true;
     }
   } catch (e) {
     console.warn('API load failed:', e);

@@ -64,8 +64,8 @@ export function showCompletionNotification(type, name, desc) {
     document.getElementById('game-main').appendChild(panel);
   }
 
-  const icons = { building: '\u{1F3DB}', research: '\u{1F4DA}', unit: '\u{2694}' };
-  const labels = { building: 'Building Complete', research: 'Research Complete', unit: 'Unit Recruited' };
+  const icons = { building: '\u{1F3DB}', research: '\u{1F4DA}', unit: '\u{2694}', improvement: '\u{2692}' };
+  const labels = { building: 'Building Complete', research: 'Research Complete', unit: 'Unit Recruited', improvement: 'Improvement Complete' };
   const icon = icons[type] || '\u{2705}';
   const label = labels[type] || 'Complete';
 
