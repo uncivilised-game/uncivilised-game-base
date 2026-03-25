@@ -57,6 +57,7 @@ _SB_HEADERS = {
 # ═══════════════════════════════════════════════════
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
+REPLY_TO_EMAIL = "hello@uncivilized.fun"
 MAX_ACTIVE_PLAYERS = 1000  # first N signups get immediate access
 
 WELCOME_EMAIL_HTML = """
@@ -100,8 +101,11 @@ def _send_welcome_email(to_email: str):
             json={
                 "from": FROM_EMAIL,
                 "to": [to_email],
-                "subject": "Welcome to the Uncivilised Beta",
+                "reply_to": REPLY_TO_EMAIL,
+                "subject": "Welcome to the Uncivilized Beta",
                 "html": WELCOME_EMAIL_HTML,
+                "text": "Welcome to the Uncivilized Beta! Play now at https://uncivilized.fun",
+                "headers": {"List-Unsubscribe": f"<mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>"},
             },
             timeout=10,
         )
@@ -135,8 +139,11 @@ def _send_access_email(to_email: str, username: str, token: str):
         resp = httpx.post("https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={"from": FROM_EMAIL, "to": [to_email],
-                  "subject": f"You're in — welcome to the Uncivilised Beta",
-                  "html": html},
+                  "reply_to": REPLY_TO_EMAIL,
+                  "subject": f"You're in — welcome to the Uncivilized Beta, {username}",
+                  "html": html,
+                  "text": f"You're in, {username}! Click here to verify and start playing: https://uncivilized.fun?token={token}",
+                  "headers": {"List-Unsubscribe": f"<mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>"}},
             timeout=10)
         if resp.status_code < 300:
             print(f"[EMAIL] Access email sent to {to_email}")
@@ -167,8 +174,11 @@ def _send_waitlisted_email(to_email: str, username: str, position: int):
         resp = httpx.post("https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={"from": FROM_EMAIL, "to": [to_email],
-                  "subject": "You're on the Uncivilised Beta waitlist",
-                  "html": html},
+                  "reply_to": REPLY_TO_EMAIL,
+                  "subject": f"You're on the Uncivilized Beta waitlist, {username}",
+                  "html": html,
+                  "text": f"You're on the list, {username}. You're #{position} on the waitlist. We'll email you when a spot opens. Visit https://uncivilized.fun",
+                  "headers": {"List-Unsubscribe": f"<mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>"}},
             timeout=10)
         if resp.status_code < 300:
             print(f"[EMAIL] Waitlist email sent to {to_email}")
