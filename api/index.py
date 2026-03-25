@@ -1677,7 +1677,7 @@ Respond with EXACTLY this JSON format (no other text):
 # Replaces direct Supabase anon key access from the browser
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
-_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players'}
+_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players', 'feedback'}
 _DB_PROXY_WRITE = {'active_games', 'leaderboard', 'players'}
 
 
