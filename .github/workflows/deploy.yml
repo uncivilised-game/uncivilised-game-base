@@ -60,7 +60,10 @@ jobs:
         if: github.ref == 'refs/heads/devel'
         working-directory: uncivilised-game-base
         run: |
-          vercel deploy \
+          DEPLOY_URL=$(vercel deploy \
             --token=${{ secrets.VERCEL_TOKEN }} \
-            --yes
+            --yes)
+          vercel alias "$DEPLOY_URL" staging.uncivilized.fun \
+            --token=${{ secrets.VERCEL_TOKEN }}
           echo "### Staging deployed" >> $GITHUB_STEP_SUMMARY
+          echo "Live at: https://staging.uncivilized.fun" >> $GITHUB_STEP_SUMMARY

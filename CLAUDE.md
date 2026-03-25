@@ -129,7 +129,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 
 **Branches:**
 - **`main`** → Production (`uncivilized.fun`) — `vercel deploy --prod`
-- **`devel`** → Staging (`uncivilised-game-v2.vercel.app`) — `vercel deploy` (preview). No alias needed — domain is set in Vercel UI.
+- **`devel`** → Staging (`staging.uncivilized.fun`) — `vercel deploy` + `vercel alias`
 - Other branches are ignored by CI
 
 **Workflow:** Single `.github/workflows/deploy.yml` triggers on push to `main` or `devel`. It checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
