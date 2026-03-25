@@ -40,7 +40,7 @@ import { drawDetailedHex } from './terrain-render.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
-  console.log('%c[Uncivilised] Running without diplomacy module — AI leaders will not respond', 'color: #888');
+  console.log('%c[Uncivilized] Running without diplomacy module — AI leaders will not respond', 'color: #888');
 }
 
 // --- Wire up lazy render callback for asset preloader ---
