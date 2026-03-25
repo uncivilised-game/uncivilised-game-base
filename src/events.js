@@ -64,8 +64,8 @@ export function showCompletionNotification(type, name, desc) {
     document.getElementById('game-main').appendChild(panel);
   }
 
-  const icons = { building: '\u{1F3DB}', research: '\u{1F4DA}', unit: '\u{2694}' };
-  const labels = { building: 'Building Complete', research: 'Research Complete', unit: 'Unit Recruited' };
+  const icons = { building: '\u{1F3DB}', research: '\u{1F4DA}', unit: '\u{2694}', improvement: '\u{2692}' };
+  const labels = { building: 'Building Complete', research: 'Research Complete', unit: 'Unit Recruited', improvement: 'Improvement Complete' };
   const icon = icons[type] || '\u{2705}';
   const label = labels[type] || 'Complete';
 
@@ -133,7 +133,7 @@ window.selectNextBuild = function(buildingId) {
   game.currentBuild = buildingId;
   game.buildProgress = 0;
   const bdata = BUILDINGS.find(b => b.id === buildingId);
-  addEvent(`Started building ${bdata.name}`, 'gold');
+  addEvent(`Started building ${bdata ? bdata.name : buildingId}`, 'gold');
   dismissCompletion();
 };
 
@@ -141,7 +141,7 @@ window.selectNextResearch = function(techId) {
   game.currentResearch = techId;
   game.researchProgress = 0;
   const tdata = TECHNOLOGIES.find(t => t.id === techId);
-  addEvent(`Started researching ${tdata.name}`, 'science');
+  addEvent(`Started researching ${tdata ? tdata.name : techId}`, 'science');
   dismissCompletion();
 };
 

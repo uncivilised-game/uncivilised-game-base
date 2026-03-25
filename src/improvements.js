@@ -120,7 +120,7 @@ export function processImprovements() {
         if (worker) { worker.sleeping = false; }
 
         tile.improvementBuilder = null;
-        showCompletionNotification('building', imp.name, imp.desc);
+        showCompletionNotification('improvement', imp.name, imp.desc);
       }
     }
   }
