@@ -56,7 +56,7 @@ export function registerDiplomacyPlugin(impl) {
     }
   }
   _pluginLoaded = true;
-  console.log('%c[Uncivilised] Diplomacy module loaded (%d functions registered)', 'color: #c9a84c; font-weight: bold', Object.keys(impl).length);
+  console.log('%c[Uncivilized] Diplomacy module loaded (%d functions registered)', 'color: #c9a84c; font-weight: bold', Object.keys(impl).length);
 }
 
 export function isDiplomacyLoaded() { return _pluginLoaded; }

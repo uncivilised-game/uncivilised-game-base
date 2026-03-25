@@ -54,7 +54,7 @@ const config = {
   alias,
   banner: {
     js: `/*
- * UNCIVILISED — The Ancient Era
+ * UNCIVILIZED — The Ancient Era
  * Built from src/ modules via esbuild
  */`,
   },
