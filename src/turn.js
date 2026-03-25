@@ -16,6 +16,7 @@ import { getUnitAt } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
+import { clampCamera } from './input.js';
 
 function endTurn() {
   if (!game || game.turn > MAX_TURNS) return;
@@ -705,6 +706,9 @@ function endTurn() {
     selectUnit(movable[0]);
     addEvent(`${movable.length} unit${movable.length > 1 ? 's' : ''} ready for orders`, 'combat');
   }
+
+  // Ensure camera is clamped after all turn processing (prevents zoom/pan glitches)
+  clampCamera();
 
   // Log turn summary
   logAction('turn', 'Turn ' + (game.turn - 1) + ' ended. Gold:' + game.gold + ' Military:' + game.military + ' Pop:' + game.population + ' Score:' + game.score, {
