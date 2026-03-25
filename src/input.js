@@ -267,8 +267,8 @@ export function initInputHandlers() {
     const my = e.clientY - rect.top;
     const totalW = MAP_COLS * HEX_SIZE * SQRT3;
     const totalH = MAP_ROWS * HEX_SIZE * 1.5;
-    game.cameraX = (mx / miniCanvas.width) * totalW - canvasW / 2;
-    game.cameraY = (my / miniCanvas.height) * totalH - canvasH / 2;
+    game.cameraX = (mx / miniCanvas.width) * totalW - (canvasW / gameZoom) / 2;
+    game.cameraY = (my / miniCanvas.height) * totalH - (canvasH / gameZoom) / 2;
     clampCamera();
     render();
   });

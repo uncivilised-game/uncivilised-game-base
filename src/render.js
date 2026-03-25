@@ -24,10 +24,20 @@ function resizeCanvas() {
 
 function centerCameraOnCity() {
   if (!game || !game.cities.length) return;
+  if (!canvasW || !canvasH || !gameZoom || !isFinite(gameZoom)) return;
   const city = game.cities[0];
   const pos = hexToPixel(city.col, city.row);
   game.cameraX = pos.x - (canvasW / gameZoom) / 2;
   game.cameraY = pos.y - (canvasH / gameZoom) / 2;
+  // Inline clamp (can't import from input.js — circular dep)
+  const totalW = MAP_COLS * HEX_SIZE * SQRT3;
+  const totalH = MAP_ROWS * HEX_SIZE * 1.5 + HEX_SIZE;
+  const viewW = canvasW / gameZoom;
+  const viewH = canvasH / gameZoom;
+  if (viewW >= totalW) { game.cameraX = (totalW - viewW) / 2; }
+  else { game.cameraX = Math.max(-HEX_SIZE, Math.min(totalW - viewW + HEX_SIZE, game.cameraX)); }
+  if (viewH >= totalH) { game.cameraY = (totalH - viewH) / 2; }
+  else { game.cameraY = Math.max(-HEX_SIZE, Math.min(totalH - viewH + HEX_SIZE, game.cameraY)); }
 }
 
 function computeVisibility() {
