@@ -1851,6 +1851,125 @@ async def resend_missed_emails(secret: str = "", limit: int = 25, offset: int = 
         return {"success": False, "error": str(e)}
 
 
+# /api/admin/manage-player — lookup, create, or resend email for a player
+# ═══════════════════════════════════════════════════
+@app.get("/api/admin/manage-player")
+async def admin_manage_player(
+    secret: str = "",
+    email: str = "",
+    username: str = "",
+    action: str = "lookup",
+):
+    """Lookup a player by email, optionally create them or resend their email.
+
+    Query params:
+        secret:   must match ADMIN_SECRET environment variable
+        email:    player email to look up or create (required)
+        username: username to assign if creating a new player
+        action:   "lookup" (default), "create", or "resend"
+    """
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        return {"success": False, "error": "Invalid or missing admin secret"}
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+    if not email or not _EMAIL_RE.match(email.strip().lower()):
+        return {"success": False, "error": "Valid email required"}
+
+    email = email.strip().lower()
+
+    try:
+        # Look up existing player by email
+        rows = _sb_select(
+            "players",
+            select="id,username,username_lower,email,status,email_verified,access_token,created_at",
+            filters=f"email=eq.{quote(email)}",
+            limit=1,
+        )
+        player = rows[0] if rows else None
+
+        if action == "lookup":
+            if player:
+                return {
+                    "success": True,
+                    "found": True,
+                    "player": {
+                        "username": player.get("username"),
+                        "email": player.get("email"),
+                        "status": player.get("status"),
+                        "email_verified": player.get("email_verified"),
+                        "created_at": player.get("created_at"),
+                    },
+                }
+            return {"success": True, "found": False, "message": "No player with that email"}
+
+        elif action == "resend":
+            if not player:
+                return {"success": False, "error": "No player with that email — use action=create to add them"}
+            token = player.get("access_token", "")
+            uname = player.get("username", "")
+            status = player.get("status", "active")
+            if status == "active":
+                _send_access_email(email, uname, token)
+            else:
+                pos = _sb_count("players", filters="status=eq.waitlisted")
+                _send_waitlisted_email(email, uname, pos)
+            return {
+                "success": True,
+                "action": "resend",
+                "status": status,
+                "username": uname,
+                "message": f"Re-sent {status} email to {email}",
+            }
+
+        elif action == "create":
+            if player:
+                return {
+                    "success": False,
+                    "error": f"Player already exists with username '{player.get('username')}' (status: {player.get('status')}). Use action=resend to re-send their email.",
+                }
+            if not username or len(username.strip()) < 3:
+                return {"success": False, "error": "Username required (3+ chars) when creating a player"}
+
+            username = username.strip()
+            # Check username collision
+            existing_name = _sb_select(
+                "players", select="id",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+            if existing_name:
+                return {"success": False, "error": f"Username '{username}' already taken"}
+
+            import uuid
+            token = str(uuid.uuid4())
+            _sb_insert("players", {
+                "username": username,
+                "username_lower": username.lower(),
+                "email": email,
+                "games_played": 0,
+                "best_score": 0,
+                "total_score": 0,
+                "status": "active",
+                "access_token": token,
+                "email_verified": False,
+            })
+            _send_access_email(email, username, token)
+            return {
+                "success": True,
+                "action": "created",
+                "username": username,
+                "status": "active",
+                "message": f"Created player '{username}' and sent access email to {email}",
+            }
+
+        else:
+            return {"success": False, "error": f"Unknown action '{action}'. Use: lookup, create, or resend"}
+
+    except Exception as e:
+        print(f"[ADMIN] manage-player error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # /api/admin/analytics — game session & diplomacy analytics
 # ═══════════════════════════════════════════════════
 @app.get("/api/admin/analytics")
