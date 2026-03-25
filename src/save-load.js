@@ -73,6 +73,8 @@ function migrateTiles(state) {
   if (!state.nonAggressionPacts) state.nonAggressionPacts = {};
   if (!state.metFactions) state.metFactions = {};
   if (!state.factionStats) state.factionStats = {};
+  if (!state.relationships) state.relationships = {};
+  if (!state.activeAlliances) state.activeAlliances = {};
   if (!state.appliedMods) state.appliedMods = [];
   if (!state.combatBonuses) state.combatBonuses = [];
   if (!state.yieldBonuses) state.yieldBonuses = [];
