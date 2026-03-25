@@ -20,7 +20,7 @@ jobs:
       - name: Checkout diplomacy repo
         uses: actions/checkout@v4
         with:
-          repository: jamieoutlierV/uncivilised-diplomacy
+          repository: uncivilised-game/uncivilised-diplomacy
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
           path: uncivilised-diplomacy
 
