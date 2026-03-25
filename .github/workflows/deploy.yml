@@ -64,6 +64,7 @@ jobs:
             --token=${{ secrets.VERCEL_TOKEN }} \
             --yes)
           vercel alias "$DEPLOY_URL" staging.uncivilized.fun \
-            --token=${{ secrets.VERCEL_TOKEN }}
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }}
           echo "### Staging deployed" >> $GITHUB_STEP_SUMMARY
           echo "Live at: https://staging.uncivilized.fun" >> $GITHUB_STEP_SUMMARY
