@@ -136,6 +136,22 @@ export function initInputHandlers() {
         endTurn();
       }
     }
+    // Escape key closes any open panel or overlay
+    if (e.key === 'Escape') {
+      const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'];
+      let closed = false;
+      for (const id of panels) {
+        const el = document.getElementById(id);
+        if (el && el.style.display !== 'none' && el.style.display !== '') {
+          el.style.display = 'none';
+          closed = true;
+        }
+      }
+      // Also close any confirm-overlay modals
+      const overlay = document.querySelector('.confirm-overlay');
+      if (overlay) { overlay.remove(); closed = true; }
+      if (closed) render();
+    }
   });
 
   // 3. Safari gesture events — use for in-game zoom instead of just blocking

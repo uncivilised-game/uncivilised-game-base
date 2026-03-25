@@ -1,6 +1,7 @@
 import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
+import { showToast } from './events.js';
 
 function migrateTiles(state) {
   if (!state.tradeRoutes) state.tradeRoutes = [];
@@ -148,16 +149,18 @@ async function autoSave() {
     safeStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
   } catch (e) {
     console.warn('Local storage save failed:', e);
+    showToast('Save Warning', 'Local save failed \u2014 your progress may not persist if you close the browser.');
   }
   // Update competition progress
   updateActiveGameProgress();
   // Also save to API in background
   try {
-    await fetch(`${API}/api/save`, {
+    const res = await fetch(`${API}/api/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-visitor-id': safeStorage.getItem('uncivilised_visitor_id') || 'anonymous' },
       body: JSON.stringify({ game_state: game }),
     });
+    if (!res.ok) console.warn('API save returned', res.status);
   } catch (e) {
     console.warn('API auto-save failed:', e);
   }
