@@ -1,4 +1,7 @@
 {
+  "git": {
+    "deploymentEnabled": false
+  },
   "buildCommand": "sh build-vercel.sh",
   "outputDirectory": ".vercel-static",
   "functions": {
