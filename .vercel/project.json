@@ -1,3 +1,16 @@
 {
-  "orgId": "team_bwj7o8I0KjvcyFNhaezdG9oE"
+  "projectId": "prj_1FjNwIvbKyWxS2Kioc3BozQQ3jRD",
+  "orgId": "team_bwj7o8I0KjvcyFNhaezdG9oE",
+  "projectName": "uncivilised-game-v2",
+  "settings": {
+    "createdAt": 1774427839443,
+    "framework": null,
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
 }

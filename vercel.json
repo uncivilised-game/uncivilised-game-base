@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build && mkdir -p .vercel-static && cp index.html about.html waitlist.html tile-world-preview.html game.js resource-icons.js style.css .vercel-static/ && cp -r assets .vercel-static/assets",
+  "buildCommand": "sh build-vercel.sh",
   "outputDirectory": ".vercel-static",
   "functions": {
     "api/index.py": {
