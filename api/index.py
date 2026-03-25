@@ -63,10 +63,10 @@ WELCOME_EMAIL_HTML = """
 <body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
 <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
-<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILISED</span> <span style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:600;color:#c9a84c;letter-spacing:2px;vertical-align:super">BETA</span></td></tr>
+<tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span> <span style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:600;color:#c9a84c;letter-spacing:2px;vertical-align:super">BETA</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
 <tr><td style="color:#e8e0d0;font-size:16px;line-height:26px;padding:0 0 24px">Welcome, beta tester. You're one of the first 1,000 players helping us shape this game.</td></tr>
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Uncivilised is a free-to-play 4X strategy game where every faction leader is powered by AI. They think. They remember what you said three turns ago. They negotiate, betray, and form alliances through actual conversation &mdash; not scripted dialogue trees.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Uncivilized is a free-to-play 4X strategy game where every faction leader is powered by AI. They think. They remember what you said three turns ago. They negotiate, betray, and form alliances through actual conversation &mdash; not scripted dialogue trees.</td></tr>
 <tr><td style="padding:0 0 20px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#c9a84c">What we're building</span></td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 8px">
 <table cellpadding="0" cellspacing="0" width="100%">
@@ -1626,7 +1626,7 @@ async def submit_feedback(data: FeedbackMessage, request: Request):
         classify_result = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=300,
-            system="You are a game feedback assistant for Uncivilised, a 4X strategy game. Categorize player feedback and respond warmly.",
+            system="You are a game feedback assistant for Uncivilized, a 4X strategy game. Categorize player feedback and respond warmly.",
             messages=[{
                 "role": "user",
                 "content": f"""Categorize this player feedback and respond to them.
