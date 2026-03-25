@@ -512,7 +512,7 @@ function ensureVictoryPanel() {
   panel = document.createElement('div');
   panel.id = 'victory-panel';
   panel.className = 'panel';
-  panel.style.cssText = 'display:none;position:absolute;top:60px;right:10px;width:320px;max-height:65vh;overflow-y:auto;background:var(--color-panel-bg,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:16px;z-index:200;color:#e0e0e0;font-size:13px';
+  panel.style.cssText = 'display:none;position:fixed;top:60px;right:10px;width:320px;max-height:65vh;overflow-y:auto;background:var(--color-panel-bg,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:16px;z-index:200;color:#e0e0e0;font-size:13px';
   panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0;color:#ffd700;font-size:15px">\u{1F3C6} Victory Progress</h3><button class="panel-close" style="background:none;border:none;color:#aaa;font-size:18px;cursor:pointer" onclick="this.closest(\'.panel\').style.display=\'none\'">\u2715</button></div><div id="victory-options"></div>';
   document.body.appendChild(panel);
   return panel;
@@ -874,7 +874,7 @@ function ensureCivicsPanel() {
   panel = document.createElement('div');
   panel.id = 'civics-panel';
   panel.className = 'panel';
-  panel.style.cssText = 'display:none;position:absolute;top:60px;right:10px;width:340px;max-height:70vh;overflow-y:auto;background:var(--color-panel-bg,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:16px;z-index:200;color:#e0e0e0;font-size:13px';
+  panel.style.cssText = 'display:none;position:fixed;top:60px;right:10px;width:340px;max-height:70vh;overflow-y:auto;background:var(--color-panel-bg,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:16px;z-index:200;color:#e0e0e0;font-size:13px';
   panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#e8a0ff;font-size:15px">\u{1F3DB} Civics Tree</h3><button class="panel-close" style="background:none;border:none;color:#aaa;font-size:18px;cursor:pointer" onclick="this.closest(\'.panel\').style.display=\'none\'">\u2715</button></div><div id="civics-options"></div>';
   document.body.appendChild(panel);
   return panel;

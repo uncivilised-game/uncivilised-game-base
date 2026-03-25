@@ -18,8 +18,14 @@ import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 
+let _processingTurn = false;
+
 function endTurn() {
   if (!game || game.turn > MAX_TURNS) return;
+  if (_processingTurn) return; // prevent double-click / re-entrance
+  _processingTurn = true;
+  const btn = document.getElementById('btn-end-turn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
 
   // Dismiss intel/rumour banner from previous turn
   const intelBanner = document.getElementById('intel-banner');
@@ -687,6 +693,7 @@ function endTurn() {
 
   const victory = checkVictoryConditions();
   if (victory) {
+    _processingTurn = false;
     showGameOver(victory);
     return;
   }
@@ -718,6 +725,11 @@ function endTurn() {
     cities: game.cities.length,
   });
   autoSave();
+
+  // Re-enable End Turn button
+  _processingTurn = false;
+  const btnEnd = document.getElementById('btn-end-turn');
+  if (btnEnd) { btnEnd.disabled = false; btnEnd.style.opacity = '1'; }
 }
 
 function showTurnSummary(events) {
