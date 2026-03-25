@@ -115,7 +115,6 @@ function render() {
   // Sanitize camera state — prevent NaN/Infinity from corrupting the frame
   if (!isFinite(game.cameraX)) game.cameraX = 0;
   if (!isFinite(game.cameraY)) game.cameraY = 0;
-  try {
   computeVisibility();
   // Ensure canvas dimensions are set before rendering
   if (!canvasW || !canvasH) resizeCanvas();
@@ -892,9 +891,6 @@ function render() {
 
   ctx.restore(); // End zoom transform
   renderMiniMap();
-  } catch (e) {
-    console.error('Render error:', e);
-  }
 }
 
 function renderMiniMap() {
