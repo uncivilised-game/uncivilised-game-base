@@ -42,6 +42,7 @@ _SB_HEADERS = {
 # ═══════════════════════════════════════════════════
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
+REPLY_TO_EMAIL = "hello@uncivilized.fun"
 
 WELCOME_EMAIL_HTML = open(os.path.join(os.path.dirname(__file__), "welcome_email.html")).read() if os.path.exists(os.path.join(os.path.dirname(__file__), "welcome_email.html")) else "<p>You're on the Uncivilized waitlist. Thanks for joining early.</p>"
 
@@ -55,7 +56,11 @@ def _send_welcome_email(to_email: str):
         resp = httpx.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [to_email], "subject": "Welcome to the Uncivilised Beta", "html": WELCOME_EMAIL_HTML},
+            json={"from": FROM_EMAIL, "to": [to_email], "reply_to": REPLY_TO_EMAIL,
+                  "subject": "Welcome to the Uncivilized Beta",
+                  "html": WELCOME_EMAIL_HTML,
+                  "text": "Welcome to the Uncivilized Beta! Play now at https://uncivilized.fun",
+                  "headers": {"List-Unsubscribe": f"<mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>"}},
             timeout=10,
         )
         if resp.status_code < 300:
