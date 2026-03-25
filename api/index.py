@@ -114,6 +114,7 @@ def _send_welcome_email(to_email: str):
 def _send_access_email(to_email: str, username: str, token: str):
     """Send 'you're in' email with play link to active players."""
     if not RESEND_API_KEY:
+        print(f"[EMAIL] Skipping — RESEND_API_KEY not set")
         return
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
@@ -129,12 +130,16 @@ def _send_access_email(to_email: str, username: str, token: str):
 <tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
 </table></td></tr></table></body></html>"""
     try:
-        httpx.post("https://api.resend.com/emails",
+        resp = httpx.post("https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={"from": FROM_EMAIL, "to": [to_email],
                   "subject": f"You're in — welcome to the Uncivilised Beta",
                   "html": html},
             timeout=10)
+        if resp.status_code < 300:
+            print(f"[EMAIL] Access email sent to {to_email}")
+        else:
+            print(f"[EMAIL] Failed to send access email to {to_email}: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"[EMAIL] Error sending access email to {to_email}: {e}")
 
@@ -142,6 +147,7 @@ def _send_access_email(to_email: str, username: str, token: str):
 def _send_waitlisted_email(to_email: str, username: str, position: int):
     """Send waitlist confirmation email when spots are full."""
     if not RESEND_API_KEY:
+        print(f"[EMAIL] Skipping — RESEND_API_KEY not set")
         return
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
@@ -156,12 +162,16 @@ def _send_waitlisted_email(to_email: str, username: str, position: int):
 <tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
 </table></td></tr></table></body></html>"""
     try:
-        httpx.post("https://api.resend.com/emails",
+        resp = httpx.post("https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
             json={"from": FROM_EMAIL, "to": [to_email],
                   "subject": "You're on the Uncivilised Beta waitlist",
                   "html": html},
             timeout=10)
+        if resp.status_code < 300:
+            print(f"[EMAIL] Waitlist email sent to {to_email}")
+        else:
+            print(f"[EMAIL] Failed to send waitlist email to {to_email}: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"[EMAIL] Error sending waitlist email to {to_email}: {e}")
 
