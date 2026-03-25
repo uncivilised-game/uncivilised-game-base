@@ -1,0 +1,53 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm production deployment'
+        required: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'deploy'
+    steps:
+      - name: Checkout base repo
+        uses: actions/checkout@v4
+
+      - name: Checkout diplomacy repo
+        uses: actions/checkout@v4
+        with:
+          repository: jamieoutlierV/uncivilised-diplomacy
+          token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
+          path: ../uncivilised-diplomacy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (with diplomacy plugin)
+        run: npm run build
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Production
+        run: |
+          vercel deploy --prod \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --yes
+          echo "### Production deployed" >> $GITHUB_STEP_SUMMARY
+          echo "Live at: https://uncivilized.fun" >> $GITHUB_STEP_SUMMARY
