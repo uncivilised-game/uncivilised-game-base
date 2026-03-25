@@ -1,8 +1,9 @@
 """Uncivilized — API (Vercel Serverless Function)
 Handles diplomacy chat, leaderboard, username registration, save/load,
-waitlist, session tracking, and diplomacy interaction logging.
+waitlist, session tracking, feedback, and diplomacy interaction logging.
 Uses direct HTTP calls to Supabase PostgREST API (no SDK — saves ~1.5GB).
 All Supabase operations use graceful degradation (try/except with fallback).
+Includes admin endpoints for email recovery (resend-missed-emails).
 """
 import json
 import os
@@ -36,6 +37,7 @@ _VISITOR_ID_RE = re.compile(
     r'|anon-\d+)$',                                                         # anon-timestamp fallback
     re.I,
 )
+_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 # ═══════════════════════════════════════════════════
 # Supabase REST config (PostgREST via httpx)
@@ -350,6 +352,7 @@ def _check_rate_limit(caller_id: str) -> tuple[bool, str]:
 client = Anthropic()
 
 GAME_VERSION = 5
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 
 # ═══════════════════════════════════════════════════
 # Pydantic models
@@ -1224,7 +1227,7 @@ async def get_profile(username: str):
 async def add_to_waitlist(entry: WaitlistEntry):
     """Add an email to the waitlist."""
     email = entry.email.strip().lower()
-    if not email or "@" not in email:
+    if not email or not _EMAIL_RE.match(email):
         return {"success": False, "error": "Invalid email"}
 
     if _sb_ok:
@@ -1274,7 +1277,7 @@ async def player_signup(data: SignupRequest):
 
     if not username or len(username) < 3 or len(username) > 20:
         return {"success": False, "error": "Username must be 3-20 characters"}
-    if not email or "@" not in email:
+    if not email or not _EMAIL_RE.match(email):
         return {"success": False, "error": "Invalid email address"}
     import re as _re
     if not _re.match(r'^[a-zA-Z0-9_]+$', username):
@@ -1725,6 +1728,117 @@ async def db_proxy(path: str, request: Request):
         )
     except Exception as e:
         return {"error": str(e)}
+
+
+# ═══════════════════════════════════════════════════
+# /api/admin/resend-missed-emails — admin utility
+# ═══════════════════════════════════════════════════
+@app.get("/api/admin/resend-missed-emails")
+async def resend_missed_emails(secret: str = "", limit: int = 25, offset: int = 0, type: str = "all"):
+    """Resend access/waitlist emails to users who didn't receive them.
+
+    Query params:
+        secret: must match ADMIN_SECRET environment variable
+        limit:  max emails to send per call (default 25, keeps within 30s timeout)
+        offset: skip first N unverified players (for pagination)
+        type:   "active", "waitlisted", or "all" (default "all")
+
+    Call repeatedly with increasing offset to process all users in batches.
+    """
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        return {"success": False, "error": "Invalid or missing admin secret"}
+
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    # Clamp limit to prevent timeout
+    limit = min(max(1, limit), 50)
+    total_found = 0
+    total_sent = 0
+    errors = []
+    remaining_active = 0
+    remaining_waitlisted = 0
+
+    try:
+        budget = limit  # emails we can still send this call
+
+        # Process active players who haven't verified
+        if type in ("all", "active") and budget > 0:
+            print("[ADMIN] Fetching unverified active players...")
+            active_rows = _sb_select(
+                "players",
+                select="username,email,access_token,status",
+                filters="status=eq.active&email_verified=eq.false",
+                order="created_at.asc",
+            )
+            remaining_active = len(active_rows)
+
+            print(f"[ADMIN] Found {len(active_rows)} unverified active players (offset={offset}, limit={budget})")
+            batch = active_rows[offset:offset + budget] if type == "active" else active_rows[:budget]
+            for row in batch:
+                total_found += 1
+                username = row.get("username", "")
+                email = row.get("email", "")
+                token = row.get("access_token", "")
+
+                if not email or not _EMAIL_RE.match(email):
+                    errors.append(f"Active player {username}: missing/invalid email")
+                    continue
+
+                try:
+                    print(f"[ADMIN] Sending access email to {username} ({email})...")
+                    _send_access_email(email, username, token)
+                    total_sent += 1
+                    budget -= 1
+                except Exception as e:
+                    errors.append(f"Active player {username}: {str(e)}")
+                    print(f"[ADMIN] Error sending to {username}: {e}")
+
+        # Process waitlisted players who haven't verified
+        if type in ("all", "waitlisted") and budget > 0:
+            print("[ADMIN] Fetching unverified waitlisted players...")
+            waitlist_rows = _sb_select(
+                "players",
+                select="username,email,status",
+                filters="status=eq.waitlisted&email_verified=eq.false",
+                order="created_at.asc",
+            )
+            remaining_waitlisted = len(waitlist_rows)
+
+            print(f"[ADMIN] Found {len(waitlist_rows)} unverified waitlisted players (budget={budget})")
+            wl_offset = offset if type == "waitlisted" else 0
+            batch = waitlist_rows[wl_offset:wl_offset + budget]
+            for idx, row in enumerate(batch, start=wl_offset + 1):
+                total_found += 1
+                username = row.get("username", "")
+                email = row.get("email", "")
+
+                if not email or not _EMAIL_RE.match(email):
+                    errors.append(f"Waitlisted player {username}: missing/invalid email")
+                    continue
+
+                try:
+                    print(f"[ADMIN] Sending waitlist email to {username} ({email}), position #{idx}...")
+                    _send_waitlisted_email(email, username, idx)
+                    total_sent += 1
+                    budget -= 1
+                except Exception as e:
+                    errors.append(f"Waitlisted player {username}: {str(e)}")
+                    print(f"[ADMIN] Error sending to {username}: {e}")
+
+        return {
+            "success": True,
+            "total_found": total_found,
+            "total_sent": total_sent,
+            "remaining_unverified_active": remaining_active,
+            "remaining_unverified_waitlisted": remaining_waitlisted,
+            "errors": errors if errors else None,
+            "summary": f"Sent {total_sent}/{total_found} emails (batch limit={limit})"
+        }
+
+    except Exception as e:
+        print(f"[ADMIN] Resend failed: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # /api/health — health check
