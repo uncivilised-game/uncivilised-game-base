@@ -115,7 +115,7 @@ function endTurn() {
   game.maxTradeRoutes = maxRoutes;
   for (const route of (game.tradeRoutes || [])) {
     const fc = game.factionCities[route.factionId];
-    if (!fc) continue;
+    if (!fc || !game.cities.length) continue;
     const dist = hexDistance(game.cities[0].col, game.cities[0].row, fc.col, fc.row);
     let rGold = 2 + Math.floor(dist / 5);
     const rel = game.relationships[route.factionId] || 0;

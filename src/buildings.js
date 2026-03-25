@@ -57,26 +57,26 @@ export function useGreatPerson(gpEntry, gpDef) {
           if (eff.science) game.sciencePerTurn += eff.science;
           if (eff.production) game.productionPerTurn += eff.production;
           if (eff.culture) game.culture += eff.culture;
-      // Apply special wonder effects
-      if (eff.freeUnit) {
-        const city = game.cities[0];
-        if (city) {
-          const neighbors = getHexNeighbors(city.col, city.row);
-          for (const nb of neighbors) {
-            const tile = game.map[nb.row][nb.col];
-            if (!isTilePassable(tile)) continue;
-            if (getUnitAt(nb.col, nb.row)) continue;
-            const freeU = createUnit(eff.freeUnit, nb.col, nb.row, 'player');
-            game.units.push(freeU);
-            events.push('Free ' + UNIT_TYPES[eff.freeUnit].name + ' from ' + wdata.name + '!');
-            break;
+          // Apply special wonder effects
+          if (eff.freeUnit) {
+            const city = game.cities[0];
+            if (city) {
+              const neighbors = getHexNeighbors(city.col, city.row);
+              for (const nb of neighbors) {
+                const tile = game.map[nb.row][nb.col];
+                if (!isTilePassable(tile)) continue;
+                if (getUnitAt(nb.col, nb.row)) continue;
+                const freeU = createUnit(eff.freeUnit, nb.col, nb.row, 'player');
+                game.units.push(freeU);
+                addEvent('Free ' + UNIT_TYPES[eff.freeUnit].name + ' from ' + wd.name + '!', 'gold');
+                break;
+              }
+            }
           }
-        }
-      }
-      if (eff.growthBonus) game.foodPerTurn += 2; // Hanging Gardens growth bonus as flat food
-      if (eff.sightBonus) {
-        for (const u of game.units) { if (u.owner === 'player') u.sightBonus = (u.sightBonus || 0) + eff.sightBonus; }
-      }
+          if (eff.growthBonus) game.foodPerTurn += 2;
+          if (eff.sightBonus) {
+            for (const u of game.units) { if (u.owner === 'player') u.sightBonus = (u.sightBonus || 0) + eff.sightBonus; }
+          }
           addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + wd.name + '!', 'gold');
           game.currentWonderBuild = null;
           game.wonderBuildProgress = 0;

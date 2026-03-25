@@ -412,7 +412,7 @@ function render() {
             if (nr < 0 || nr >= MAP_ROWS || hexDistance(nc, nr, aic.col, aic.row) > br) continue;
             const bp = hexToPixel(nc, nr);
             ctx.fillStyle = (aic.color || '#888') + '18';
-            drawHexShape(ctx, bp.x - camX, bp.y - camY); ctx.fill();
+            drawHex(ctx, bp.x - camX, bp.y - camY, HEX_SIZE - 1); ctx.fill();
           }
         }
         ctx.beginPath(); ctx.arc(ax, ay, 9, 0, Math.PI * 2);
