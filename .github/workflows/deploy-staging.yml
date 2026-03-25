@@ -14,38 +14,44 @@ jobs:
     steps:
       - name: Checkout base repo
         uses: actions/checkout@v4
+        with:
+          path: uncivilised-game-base
 
       - name: Checkout diplomacy repo
         uses: actions/checkout@v4
         with:
           repository: jamieoutlierV/uncivilised-diplomacy
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
-          path: ../uncivilised-diplomacy
+          path: uncivilised-diplomacy
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: uncivilised-game-base/package-lock.json
 
       - name: Install dependencies
+        working-directory: uncivilised-game-base
         run: npm ci
 
       - name: Build (with diplomacy plugin)
+        working-directory: uncivilised-game-base
         run: npm run build
 
       - name: Install Vercel CLI
         run: npm install -g vercel
 
       - name: Pull Vercel project settings
+        working-directory: uncivilised-game-base
         run: vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }}
 
-      - name: Deploy to Staging (preview)
+      - name: Deploy to Staging
+        working-directory: uncivilised-game-base
         run: |
           vercel deploy \
             --token=${{ secrets.VERCEL_TOKEN }} \
             --yes \
             2>&1 | tee deploy-output.txt
-          PREVIEW_URL=$(tail -1 deploy-output.txt)
           echo "### Staging deployed" >> $GITHUB_STEP_SUMMARY
-          echo "Preview: $PREVIEW_URL" >> $GITHUB_STEP_SUMMARY
+          grep -oP 'https://\S+\.vercel\.app' deploy-output.txt | tail -1 >> $GITHUB_STEP_SUMMARY || true
