@@ -5,3 +5,9 @@ game.js
 game.js.map
 game.original.js
 src/_diplomacy-plugin.gen.js
+.vercel/
+.vercel-static/
+.vercel_python_packages/
+.python-version
+pyproject.toml
+uv.lock
