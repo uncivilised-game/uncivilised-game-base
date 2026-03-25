@@ -18,33 +18,40 @@ jobs:
     steps:
       - name: Checkout base repo
         uses: actions/checkout@v4
+        with:
+          path: uncivilised-game-base
 
       - name: Checkout diplomacy repo
         uses: actions/checkout@v4
         with:
           repository: jamieoutlierV/uncivilised-diplomacy
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
-          path: ../uncivilised-diplomacy
+          path: uncivilised-diplomacy
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: uncivilised-game-base/package-lock.json
 
       - name: Install dependencies
+        working-directory: uncivilised-game-base
         run: npm ci
 
       - name: Build (with diplomacy plugin)
+        working-directory: uncivilised-game-base
         run: npm run build
 
       - name: Install Vercel CLI
         run: npm install -g vercel
 
       - name: Pull Vercel project settings
+        working-directory: uncivilised-game-base
         run: vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy to Production
+        working-directory: uncivilised-game-base
         run: |
           vercel deploy --prod \
             --token=${{ secrets.VERCEL_TOKEN }} \
