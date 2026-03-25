@@ -125,10 +125,16 @@ The service key gives full database read/write access. These must be environment
 
 ## Deployment
 
-Deployed on Vercel:
-- `vercel.json` runs `npm run build` to bundle `src/` -> `game.js` at deploy time
-- `api/index.py` runs as a serverless Python function
-- `vercel.json` rewrites `/api/*` -> `api/index.py`
+Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disabled (`vercel.json` → `git.deploymentEnabled: false`) because builds require both repos (base + diplomacy). GitHub Actions handles all deployments.
+
+**Branches:**
+- **`main`** → Production (`uncivilized.fun`) — `vercel deploy --prod`
+- **`devel`** → Staging (`staging.uncivilized.fun`) — `vercel deploy` + `vercel alias`
+- Other branches are ignored by CI
+
+**Workflow:** Single `.github/workflows/deploy.yml` triggers on push to `main` or `devel`. It checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
+
+**Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
 **Local dev:** `npm run dev` (or `npm run watch` + `python server.py` separately)
 
