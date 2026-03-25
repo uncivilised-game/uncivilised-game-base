@@ -223,6 +223,14 @@ function createInitialState() {
 // --- Register all event listeners ---
 initInputHandlers();
 
+// --- Wire up all .panel-close buttons (delegated handler) ---
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.panel-close');
+  if (!btn) return;
+  const panel = btn.closest('.panel');
+  if (panel) panel.style.display = 'none';
+});
+
 // --- startNewGame / continueGame ---
 async function startNewGame() {
   const playerName = safeStorage.getItem('uncivilised_username');
@@ -343,6 +351,19 @@ async function continueGame() {
     render();
     addEvent('Game loaded \u2014 welcome back', '');
     if (activeGameRecord) addEvent('Session ' + activeGameRecord.sessions_used + '/3', 'gold');
+  } else {
+    // Save not found — clean up stale active_games record so player isn't stuck
+    if (currentCompetition) {
+      const check = await checkSessionLimit(playerName);
+      if (check.existing) {
+        await sbFetch('active_games?id=eq.' + check.existing.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ finished: true }),
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => {});
+      }
+    }
+    alert('No saved game found. Please start a new game.');
   }
 }
 
@@ -570,7 +591,9 @@ async function refreshAuthUI() {
       } catch (_) {}
       if (!hasSave) {
         try {
-          const sr = await fetch(API + '/api/load');
+          const sr = await fetch(API + '/api/load', {
+            headers: { 'x-visitor-id': safeStorage.getItem('uncivilised_visitor_id') || 'anonymous' },
+          });
           const sd = await sr.json();
           if (sd.found) hasSave = true;
         } catch (_) {}

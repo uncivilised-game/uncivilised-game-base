@@ -51,9 +51,14 @@ export function zoomAtCenter(delta) {
 }
 
 export function panCameraTo(col, row) {
+  // Guard: skip if canvas not sized or zoom invalid
+  if (!canvasW || !canvasH || !gameZoom || !isFinite(gameZoom)) return;
   const pos = hexToPixel(col, row);
   game.cameraX = pos.x - (canvasW / gameZoom) / 2;
   game.cameraY = pos.y - (canvasH / gameZoom) / 2;
+  // Sanitize: if camera coords ended up NaN/Infinity, reset to 0
+  if (!isFinite(game.cameraX)) game.cameraX = 0;
+  if (!isFinite(game.cameraY)) game.cameraY = 0;
   clampCamera();
 }
 
