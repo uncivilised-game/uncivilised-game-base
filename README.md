@@ -160,4 +160,4 @@ The base game is open source — contributions to gameplay, rendering, UI, map g
 
 ## License
 
-TBD — Contact contact@uncivilized.fun for licensing inquiries.
+TBD
