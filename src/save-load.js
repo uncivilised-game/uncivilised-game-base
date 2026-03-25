@@ -155,7 +155,7 @@ async function autoSave() {
   try {
     await fetch(`${API}/api/save`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-visitor-id': safeStorage.getItem('uncivilised_visitor_id') || 'anonymous' },
       body: JSON.stringify({ game_state: game }),
     });
   } catch (e) {
@@ -182,7 +182,9 @@ async function loadGame() {
   }
   // Fallback to API
   try {
-    const res = await fetch(`${API}/api/load`);
+    const res = await fetch(`${API}/api/load`, {
+      headers: { 'x-visitor-id': safeStorage.getItem('uncivilised_visitor_id') || 'anonymous' },
+    });
     const data = await res.json();
     if (data.found && data.game_state) {
       setGame(migrateTiles(data.game_state));

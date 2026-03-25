@@ -87,6 +87,9 @@ function render() {
   if (!game) return;
   // Ensure canvas dimensions are set before rendering
   if (!canvasW || !canvasH) resizeCanvas();
+  // Sanitize camera state — prevent NaN/Infinity from corrupting the frame
+  if (!isFinite(game.cameraX)) game.cameraX = 0;
+  if (!isFinite(game.cameraY)) game.cameraY = 0;
   // Fill entire canvas with fog-of-war color (prevents black edges at zoom)
   ctx.fillStyle = '#0a0c0b';
   ctx.fillRect(0, 0, canvasW, canvasH);
