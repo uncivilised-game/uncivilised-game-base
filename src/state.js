@@ -133,3 +133,8 @@ export function setActiveGameRecord(v) { activeGameRecord = v; }
 
 export let animRunning = false;
 export function setAnimRunning(v) { animRunning = v; }
+
+// Unit movement animation state — null when idle
+// { unitId, path: [{col,row},...], stepIndex, stepMs, onDone }
+export let unitMoveAnim = null;
+export function setUnitMoveAnim(v) { unitMoveAnim = v; }

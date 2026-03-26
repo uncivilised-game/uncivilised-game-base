@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning, unitMoveAnim } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -734,10 +734,18 @@ function render() {
   const pulseRadius = 13 + 3 * Math.abs(Math.sin(pulseT * Math.PI));
 
   for (const unit of game.units) {
-    if (!game.fogOfWar[unit.row] || !game.fogOfWar[unit.row][unit.col]) continue;
+    // Determine display position (animated or actual)
+    let displayCol = unit.col;
+    let displayRow = unit.row;
+    if (unitMoveAnim && unitMoveAnim.unitId === unit.id && unitMoveAnim.stepIndex < unitMoveAnim.path.length) {
+      const step = unitMoveAnim.path[unitMoveAnim.stepIndex];
+      displayCol = step.col;
+      displayRow = step.row;
+    }
+    if (!game.fogOfWar[displayRow] || !game.fogOfWar[displayRow][displayCol]) continue;
     // Hide non-player units in explored-but-not-visible areas
-    if (unit.owner !== 'player' && game.visibleTiles && !(game.visibleTiles[unit.row] && game.visibleTiles[unit.row][unit.col])) continue;
-    const pos = hexToPixel(unit.col, unit.row);
+    if (unit.owner !== 'player' && game.visibleTiles && !(game.visibleTiles[displayRow] && game.visibleTiles[displayRow][displayCol])) continue;
+    const pos = hexToPixel(displayCol, displayRow);
     const sx = pos.x - camX;
     const sy = pos.y - camY;
     const ut = UNIT_TYPES[unit.type];

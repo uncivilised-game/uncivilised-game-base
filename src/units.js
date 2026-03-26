@@ -1,5 +1,5 @@
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS } from './constants.js';
-import { game, getNextUnitId } from './state.js';
+import { game, getNextUnitId, unitMoveAnim, setUnitMoveAnim } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
 import { resolveCombat, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
@@ -230,7 +230,7 @@ function computeAttackRange() {
   return attackable.size > 0 ? attackable : null;
 }
 
-function moveUnitTo(unit, targetCol, targetRow) {
+function moveUnitTo(unit, targetCol, targetRow, onDone) {
   // Block movement if worker is building an improvement
   if (unit.type === 'worker' && unit.sleeping) {
     const tile = game.map[unit.row]?.[unit.col];
@@ -247,28 +247,68 @@ function moveUnitTo(unit, targetCol, targetRow) {
 
   const remaining = moveRange.get(key);
   const sightRange = unit.type === 'scout' ? 4 : 3;
-
-  // Reveal fog along the path, not just at destination
-  // Trace path using BFS parent pointers
   const path = reconstructMovePath(unit.col, unit.row, targetCol, targetRow, unit);
-  for (const step of path) {
-    revealAround(step.col, step.row, sightRange);
+
+  // Animate movement tile by tile (150ms per step)
+  const STEP_MS = 150;
+
+  // Cancel any previous animation
+  if (unitMoveAnim) setUnitMoveAnim(null);
+
+  if (path.length <= 1) {
+    // Single step or same tile — no animation needed, apply immediately
+    for (const step of path) revealAround(step.col, step.row, sightRange);
+    unit.col = targetCol;
+    unit.row = targetRow;
+    markVisibilityDirty();
+    unit.moveLeft = remaining;
+    unit.fortified = false;
+    unit.sleeping = false;
+    revealAround(unit.col, unit.row, sightRange);
+    logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
+    checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+    if (onDone) onDone();
+    return true;
   }
 
-  unit.col = targetCol;
-  unit.row = targetRow;
-  markVisibilityDirty();
-  unit.moveLeft = remaining;
-  unit.fortified = false;
-  unit.sleeping = false;
+  // Multi-tile path: animate step by step
+  // Reveal start position immediately, then reveal each step as we reach it
+  let stepIndex = 0;
+  setUnitMoveAnim({ unitId: unit.id, path, stepIndex, stepMs: STEP_MS });
 
-  // Reveal at destination too (in case path was empty)
-  revealAround(unit.col, unit.row, sightRange);
-  logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
+  function advanceStep() {
+    if (!unitMoveAnim || unitMoveAnim.unitId !== unit.id) return; // animation was cancelled
 
-  // Auto-clear barbarian camps when stepping on them
-  checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+    const step = path[stepIndex];
+    // Update unit position and game state for this step
+    unit.col = step.col;
+    unit.row = step.row;
+    revealAround(step.col, step.row, sightRange);
+    markVisibilityDirty();
 
+    stepIndex++;
+    setUnitMoveAnim({ unitId: unit.id, path, stepIndex, stepMs: STEP_MS });
+    render();
+
+    if (stepIndex < path.length) {
+      setTimeout(advanceStep, STEP_MS);
+    } else {
+      // Animation complete — apply final state
+      setUnitMoveAnim(null);
+      unit.moveLeft = remaining;
+      unit.fortified = false;
+      unit.sleeping = false;
+      revealAround(unit.col, unit.row, sightRange);
+      logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
+      checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+      render();
+      if (onDone) onDone();
+    }
+  }
+
+  // Start the animation
+  render(); // Show unit at step 0 immediately
+  setTimeout(advanceStep, STEP_MS);
   return true;
 }
 
@@ -315,6 +355,81 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
     current = parents.get(current);
   }
   return path;
+}
+
+// Animate moving a unit toward its waypoint step by step
+function animateMoveTowardWaypoint(unit, onDone) {
+  if (!unit.waypoint || unit.moveLeft <= 0) {
+    if (onDone) onDone();
+    return;
+  }
+  const STEP_MS = 150;
+  const sightRange = unit.type === 'scout' ? 4 : 3;
+
+  // Collect the path greedy-style (same logic as moveTowardWaypoint)
+  const path = [];
+  let simCol = unit.col, simRow = unit.row;
+  let simMove = unit.moveLeft;
+  const target = unit.waypoint;
+  while (simMove > 0 && !(simCol === target.col && simRow === target.row)) {
+    const neighbors = getHexNeighbors(simCol, simRow);
+    let best = null, bestDist = hexDistance(simCol, simRow, target.col, target.row);
+    for (const nb of neighbors) {
+      const tile = game.map[nb.row][nb.col];
+      if (!isTilePassable(tile)) continue;
+      if (game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id)) continue;
+      const cost = getTileMoveCost(tile);
+      if (cost >= 99) continue;
+      const d = hexDistance(nb.col, nb.row, target.col, target.row);
+      if (d < bestDist) { bestDist = d; best = nb; }
+    }
+    if (!best) break;
+    const cost = getTileMoveCost(game.map[best.row][best.col]);
+    simCol = best.col;
+    simRow = best.row;
+    simMove = cost <= simMove ? simMove - cost : 0;
+    path.push({ col: simCol, row: simRow, moveLeft: simMove });
+  }
+
+  if (path.length <= 1) {
+    // Single step or no movement — apply directly via moveTowardWaypoint
+    moveTowardWaypoint(unit);
+    if (onDone) onDone();
+    return;
+  }
+
+  // Cancel any previous animation
+  if (unitMoveAnim) setUnitMoveAnim(null);
+  let stepIndex = 0;
+  setUnitMoveAnim({ unitId: unit.id, path, stepIndex, stepMs: STEP_MS });
+
+  function advanceStep() {
+    if (!unitMoveAnim || unitMoveAnim.unitId !== unit.id) return;
+    const step = path[stepIndex];
+    unit.col = step.col;
+    unit.row = step.row;
+    unit.moveLeft = step.moveLeft;
+    unit.fortified = false;
+    unit.sleeping = false;
+    revealAround(step.col, step.row, sightRange);
+    markVisibilityDirty();
+    stepIndex++;
+    setUnitMoveAnim({ unitId: unit.id, path, stepIndex, stepMs: STEP_MS });
+    render();
+
+    if (stepIndex < path.length) {
+      setTimeout(advanceStep, STEP_MS);
+    } else {
+      setUnitMoveAnim(null);
+      if (unit.col === target.col && unit.row === target.row) unit.waypoint = null;
+      revealAround(unit.col, unit.row, sightRange);
+      render();
+      if (onDone) onDone();
+    }
+  }
+
+  render();
+  setTimeout(advanceStep, STEP_MS);
 }
 
 function selectUnit(unit) {
@@ -491,14 +606,14 @@ function handleHexClick(col, row) {
       const moveRange = computeMoveRange();
       const mKey = `${col},${row}`;
       if (moveRange && moveRange.has(mKey)) {
-        moveUnitTo(unit, col, row);
-
-        if (unit.moveLeft <= 0) {
-          autoSelectNext();
-        } else {
-          showSelectionPanel(unit);
-          render();
-        }
+        moveUnitTo(unit, col, row, () => {
+          if (unit.moveLeft <= 0) {
+            autoSelectNext();
+          } else {
+            showSelectionPanel(unit);
+            render();
+          }
+        });
         game.selectedHex = null;
         return;
       }
@@ -508,10 +623,11 @@ function handleHexClick(col, row) {
     if (!getUnitAt(col, row) && !getCityAt(col, row) && isTilePassable(game.map[row][col])) {
       unit.waypoint = { col, row };
       addEvent(`${(UNIT_TYPES[unit.type]?.name || unit.type)} waypoint set`, 'combat');
-      // Move toward waypoint this turn if possible
-      moveTowardWaypoint(unit);
-      if (unit.moveLeft <= 0) autoSelectNext();
-      else { showSelectionPanel(unit); render(); }
+      // Move toward waypoint this turn if possible (animated)
+      animateMoveTowardWaypoint(unit, () => {
+        if (unit.moveLeft <= 0) autoSelectNext();
+        else { showSelectionPanel(unit); render(); }
+      });
       return;
     }
 
