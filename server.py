@@ -1018,10 +1018,12 @@ async def add_to_waitlist(entry: WaitlistEntry):
 
 @app.get("/api/waitlist/count")
 async def get_waitlist_count():
-    """Get the total number of waitlist signups."""
+    """Get the total number of people waiting (email signups + waitlisted players)."""
     if _sb_ok:
         try:
-            return {"count": _sb_count("waitlist")}
+            email_signups = _sb_count("waitlist")
+            waitlisted_players = _sb_count("players", filters="status=eq.waitlisted")
+            return {"count": email_signups + waitlisted_players}
         except Exception:
             pass
 
