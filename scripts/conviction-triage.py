@@ -230,7 +230,7 @@ def get_existing_conviction_issues():
         batch = gh_get(f"/repos/{GITHUB_REPO}/issues?labels=conviction&state=open&per_page=100&page={page}")
         if not batch:
             break
-        issues.extend(batch)
+        issues.extend(item for item in batch if "pull_request" not in item)
         if len(batch) < 100:
             break
         page += 1
@@ -379,23 +379,25 @@ def run():
     new_feedback = actionable
 
     # 2. Generate embeddings for new feedback
-    print("\n2. Generating embeddings...")
-    texts = [
-        f"[{f.get('category', 'other')}] {f.get('message', '')}"
-        for f in new_feedback
-    ]
-    embeddings = embed_texts(texts)
-    print(f"   Generated {len(embeddings)} embeddings ({len(embeddings[0])} dims)")
+    if new_feedback:
+        print("\n2. Generating embeddings...")
+        texts = [
+            f"[{f.get('category', 'other')}] {f.get('message', '')}"
+            for f in new_feedback
+        ]
+        embeddings = embed_texts(texts)
+        print(f"   Generated {len(embeddings)} embeddings ({len(embeddings[0])} dims)")
 
-    # 3. Store embeddings in Supabase
-    print("\n3. Storing embeddings...")
-    for i, fb in enumerate(new_feedback):
-        store_embedding(fb["id"], embeddings[i])
-        fb["embedding"] = embeddings[i]
-        # Extract game turn from snapshot if available
-        snapshot = fb.get("game_state_snapshot") or {}
-        fb["game_turn"] = snapshot.get("turn", "?")
-    print(f"   Stored {len(new_feedback)} embeddings")
+        # 3. Store embeddings in Supabase
+        print("\n3. Storing embeddings...")
+        for i, fb in enumerate(new_feedback):
+            store_embedding(fb["id"], embeddings[i])
+            fb["embedding"] = embeddings[i]
+            snapshot = fb.get("game_state_snapshot") or {}
+            fb["game_turn"] = snapshot.get("turn", "?")
+        print(f"   Stored {len(new_feedback)} embeddings")
+    else:
+        print("\n2. No new feedback to embed, using pending pool only.")
 
     # 4. Fetch existing conviction issues from GitHub
     print("\n4. Checking existing GitHub issues...")
@@ -506,7 +508,7 @@ def run():
                 for fb in cluster:
                     sb_patch("feedback", {"status": "pending"}, f"id=eq.{fb['id']}")
                 skipped_count += 1
-                print(f"   Cluster below threshold (score={score}): {cluster[0].get('ai_summary', cluster[0].get('message', '')[:60])}")
+                print(f"   Cluster below threshold (score={score}, size={len(cluster)}, ids={[fb.get('id') for fb in cluster]})")
                 continue
 
             # Summarize with Claude

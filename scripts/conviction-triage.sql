@@ -71,5 +71,5 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION match_feedback TO service_role;
-GRANT EXECUTE ON FUNCTION issue_centroid TO service_role;
+GRANT EXECUTE ON FUNCTION match_feedback(vector(768), float, int) TO service_role;
+GRANT EXECUTE ON FUNCTION issue_centroid(int) TO service_role;
