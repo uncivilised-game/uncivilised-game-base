@@ -338,7 +338,6 @@ async function continueGame() {
     }
     if (check.existing) {
       await incrementSession(check.existing);
-      addEvent('Session ' + (check.existing.sessions_used + 1) + '/3 for ' + currentCompetition.name, 'gold');
     }
   }
 
@@ -358,7 +357,7 @@ async function continueGame() {
       return;
     }
     addEvent('Game loaded \u2014 welcome back', '');
-    if (activeGameRecord) addEvent('Session ' + activeGameRecord.sessions_used + '/3', 'gold');
+    if (activeGameRecord && currentCompetition) addEvent('Session ' + activeGameRecord.sessions_used + '/3 for ' + currentCompetition.name, 'gold');
   } else {
     // Save not found — clean up stale active_games record so player isn't stuck
     if (currentCompetition) {
