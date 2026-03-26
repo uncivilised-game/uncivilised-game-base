@@ -12,7 +12,7 @@ import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin i
 import { SAVE_KEY, GAME_VERSION } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
-  currentCompetition, activeGameRecord
+  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS
 } from './state.js';
 import { setRenderCallback } from './assets.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
@@ -182,7 +182,7 @@ function createInitialState() {
     food: 0, foodPerTurn: 4,
     production: 0, productionPerTurn: 3,
     culture: 0, military: 10, defense: 5, population: 1000,
-    cities: [{ name: 'Capital', col: startCol, row: startRow, buildings: [], population: 1000, borderRadius: 2, cultureAccum: 0 }],
+    cities: [{ name: 'Capital', col: startCol, row: startRow, buildings: [], population: 1000, borderRadius: 2, cultureAccum: 0, ...CITY_WALL_DEFAULTS }],
     factionCities: factionCities,
     map: map,
     riverPaths: riverPaths,

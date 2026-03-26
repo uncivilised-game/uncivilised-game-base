@@ -1,5 +1,5 @@
 import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
-import { game } from './state.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileMoveCost, isTilePassable } from './map.js';
 import { addEvent, logAction } from './events.js';
@@ -265,6 +265,7 @@ window.foundCity = function(unitId) {
     population: 500,
     borderRadius: 1,
     cultureAccum: 0,
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove the settler

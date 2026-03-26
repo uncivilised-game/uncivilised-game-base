@@ -1,5 +1,5 @@
 import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
-import { game } from './state.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction } from './events.js';
@@ -365,6 +365,7 @@ function captureExpansionCity(factionId, cityIdx) {
     borderRadius: ec.borderRadius || 1,
     cultureAccum: 0,
     owner: 'player',
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove garrison units
@@ -545,6 +546,7 @@ function captureFactionCity(factionId) {
     population: 500,
     borderRadius: 2,
     cultureAccum: 0,
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove from faction cities
