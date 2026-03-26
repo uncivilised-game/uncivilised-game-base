@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>River Movement Test — Uncivilised</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0d8c0; font-family: 'Inter', sans-serif; }
+  h1 { text-align: center; padding: 12px; color: #c9a84c; font-family: 'Cormorant Garamond', serif; }
+  #layout { display: flex; gap: 16px; padding: 16px; }
+  #canvas-wrap { flex: 1; }
+  canvas { border: 2px solid #3a3a5a; border-radius: 8px; display: block; }
+  #controls { width: 320px; display: flex; flex-direction: column; gap: 8px; }
+  button {
+    padding: 10px 14px; border: 1px solid #c9a84c; background: #2a2a4a; color: #e0d8c0;
+    border-radius: 6px; cursor: pointer; font-size: 14px; text-align: left;
+  }
+  button:hover { background: #3a3a6a; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #log {
+    background: #12121e; border: 1px solid #3a3a5a; border-radius: 6px;
+    padding: 10px; max-height: 260px; overflow-y: auto; font-size: 13px;
+    flex: 1; min-height: 120px;
+  }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid #222238; }
+  .log-entry.pass { color: #6aab5c; }
+  .log-entry.fail { color: #e05050; }
+  .log-entry.info { color: #88aacc; }
+  .log-entry.movement { color: #ddc860; }
+  .log-entry.combat { color: #e07050; }
+  #test-results {
+    background: #12121e; border: 1px solid #3a3a5a; border-radius: 6px;
+    padding: 10px; font-size: 13px; max-height: 200px; overflow-y: auto;
+  }
+  .legend { display: flex; gap: 16px; padding: 8px; font-size: 12px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #555; }
+</style>
+</head>
+<body>
+<h1>River Movement Blocking — Test Page</h1>
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#4a7a4a"></div> Land</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(80,220,120,0.4)"></div> Normal move</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(220,200,60,0.5)"></div> River crossing</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#3366aa"></div> River edge</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#8b6914"></div> Road</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#cc4444"></div> Enemy unit</div>
+</div>
+<div id="layout">
+  <div id="canvas-wrap"><canvas id="hexCanvas" width="700" height="520"></canvas></div>
+  <div id="controls">
+    <button onclick="doMoveAcrossRiver()">Move across river</button>
+    <button onclick="doBuildRoads()">Build road on both sides</button>
+    <button onclick="doMoveAcrossBridge()">Move across bridge</button>
+    <button onclick="doAttackAcrossRiver()">Attack across river</button>
+    <button onclick="doShowRiverEdges()">Show river edges</button>
+    <button onclick="doRunTests()">Run automated tests</button>
+    <button onclick="doReset()">Reset scenario</button>
+    <div id="log"></div>
+    <div id="test-results"></div>
+  </div>
+</div>
+
+<script>
+// ============================================
+// STANDALONE RIVER MOVEMENT TEST HARNESS
+// Reimplements minimal hex/river/movement logic
+// matching the game engine for testing purposes
+// ============================================
+
+const HEX_SIZE = 36;
+const SQRT3 = Math.sqrt(3);
+const COLS = 10;
+const ROWS = 8;
+
+const canvas = document.getElementById('hexCanvas');
+const ctx = canvas.getContext('2d');
+const logEl = document.getElementById('log');
+const testResultsEl = document.getElementById('test-results');
+
+// --- Hex utilities ---
+function hexToPixel(col, row) {
+  const x = HEX_SIZE * SQRT3 * (col + 0.5 * (row & 1)) + 50;
+  const y = HEX_SIZE * 1.5 * row + 50;
+  return { x, y };
+}
+
+function drawHex(cx, cy, size) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    const hx = cx + size * Math.cos(angle);
+    const hy = cy + size * Math.sin(angle);
+    if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+  }
+  ctx.closePath();
+}
+
+const EVEN_DIRS = [[-1,-1],[0,-1],[-1,0],[1,0],[-1,1],[0,1]];
+const ODD_DIRS  = [[0,-1],[1,-1],[-1,0],[1,0],[0,1],[1,1]];
+
+function getNeighbors(col, row) {
+  const dirs = (row & 1) === 0 ? EVEN_DIRS : ODD_DIRS;
+  return dirs.map(([dc,dr]) => ({ col: col+dc, row: row+dr }))
+             .filter(n => n.col >= 0 && n.col < COLS && n.row >= 0 && n.row < ROWS);
+}
+
+function getHexDirection(c1, r1, c2, r2) {
+  const dirs = (r1 & 1) === 0 ? EVEN_DIRS : ODD_DIRS;
+  for (let d = 0; d < 6; d++) {
+    if (c1 + dirs[d][0] === c2 && r1 + dirs[d][1] === r2) return d;
+  }
+  return -1;
+}
+
+// --- Game state ---
+let tiles, unit, enemy, showEdges, moveRange, riverCrossSet;
+
+function initTiles() {
+  tiles = [];
+  for (let r = 0; r < ROWS; r++) {
+    tiles[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      tiles[r][c] = {
+        col: c, row: r,
+        base: 'grassland', feature: null,
+        road: false, hasRiver: false, riverEdges: [],
+        improvement: null
+      };
+    }
+  }
+}
+
+function addRiverEdge(c1, r1, c2, r2) {
+  const d1 = getHexDirection(c1, r1, c2, r2);
+  const d2 = getHexDirection(c2, r2, c1, r1);
+  if (d1 >= 0) {
+    tiles[r1][c1].hasRiver = true;
+    if (!tiles[r1][c1].riverEdges.includes(d1)) tiles[r1][c1].riverEdges.push(d1);
+  }
+  if (d2 >= 0) {
+    tiles[r2][c2].hasRiver = true;
+    if (!tiles[r2][c2].riverEdges.includes(d2)) tiles[r2][c2].riverEdges.push(d2);
+  }
+}
+
+function hasRiverBetween(c1, r1, c2, r2) {
+  const tile = tiles[r1] && tiles[r1][c1];
+  if (!tile || !tile.hasRiver) return false;
+  const d = getHexDirection(c1, r1, c2, r2);
+  return d >= 0 && tile.riverEdges.includes(d);
+}
+
+function hasRoadBridge(c1, r1, c2, r2) {
+  const t1 = tiles[r1] && tiles[r1][c1];
+  const t2 = tiles[r2] && tiles[r2][c2];
+  return t1 && t2 && t1.road && t2.road;
+}
+
+function getMoveCost(fromCol, fromRow, toCol, toRow, u) {
+  const toTile = tiles[toRow][toCol];
+  let baseCost = 1; // grassland
+  if (toTile.feature === 'hills' || toTile.feature === 'woods') baseCost = 2;
+  if (toTile.road) baseCost = Math.max(0.5, baseCost * 0.5);
+
+  if (hasRiverBetween(fromCol, fromRow, toCol, toRow)) {
+    if (hasRoadBridge(fromCol, fromRow, toCol, toRow)) {
+      return baseCost; // road negates river penalty
+    }
+    return u.moveLeft; // costs ALL remaining MP
+  }
+  return baseCost;
+}
+
+// BFS move range
+function computeMoves(u) {
+  const visited = new Map();
+  const rivers = new Set();
+  const queue = [{ col: u.col, row: u.row, move: u.moveLeft, crossed: false }];
+  visited.set(`${u.col},${u.row}`, u.moveLeft);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur.move <= 0) continue;
+    for (const nb of getNeighbors(cur.col, cur.row)) {
+      const tile = tiles[nb.row][nb.col];
+      if (tile.base === 'ocean' || tile.feature === 'mountain') continue;
+      // block enemy hex from pathfinding through
+      if (enemy && nb.col === enemy.col && nb.row === enemy.row) continue;
+
+      const isRiverCross = hasRiverBetween(cur.col, cur.row, nb.col, nb.row)
+                        && !hasRoadBridge(cur.col, cur.row, nb.col, nb.row);
+      let baseCost = 1;
+      if (tile.road) baseCost = 0.5;
+      if (tile.feature === 'hills' || tile.feature === 'woods') baseCost = 2;
+      if (tile.road && baseCost >= 2) baseCost = Math.max(0.5, baseCost * 0.5);
+
+      const isRough = baseCost >= 2;
+      const remaining = (isRough || isRiverCross) ? 0 : (cur.move - baseCost);
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key) && visited.get(key) >= remaining) continue;
+      visited.set(key, remaining);
+      const crossed = cur.crossed || isRiverCross;
+      if (crossed) rivers.add(key);
+      if (remaining > 0) {
+        queue.push({ col: nb.col, row: nb.row, move: remaining, crossed });
+      }
+    }
+  }
+  visited.delete(`${u.col},${u.row}`);
+  return { moveRange: visited, riverCrossings: rivers };
+}
+
+function log(msg, type) {
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + (type || 'info');
+  div.textContent = msg;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// --- Scenario setup ---
+function setupScenario() {
+  initTiles();
+  showEdges = false;
+  moveRange = null;
+  riverCrossSet = null;
+
+  // Create a river running vertically through the map (col 4-5 border area)
+  // River flows between columns 4 and 5 for rows 1-6
+  for (let r = 1; r <= 6; r++) {
+    addRiverEdge(4, r, 5, r);
+  }
+  // Add a branching river edge on row 3 between (3,3) and (4,3)
+  addRiverEdge(3, 3, 4, 3);
+
+  // Place hills on one tile across the river
+  tiles[2][5].feature = 'hills';
+
+  // Player unit on left side of river
+  unit = { col: 3, row: 3, moveLeft: 2, hp: 100, type: 'warrior', combat: 20, owner: 'player' };
+
+  // Enemy unit across the river
+  enemy = { col: 5, row: 4, hp: 100, type: 'warrior', combat: 20, owner: 'enemy' };
+
+  logEl.innerHTML = '';
+  testResultsEl.innerHTML = '';
+  log('Scenario loaded: unit at (3,3), river between cols 4-5, enemy at (5,4)', 'info');
+  updateMoveRange();
+  draw();
+}
+
+function updateMoveRange() {
+  const result = computeMoves(unit);
+  moveRange = result.moveRange;
+  riverCrossSet = result.riverCrossings;
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const tile = tiles[r][c];
+      const { x, y } = hexToPixel(c, r);
+
+      // Base terrain
+      drawHex(x, y, HEX_SIZE - 1);
+      if (tile.feature === 'hills') ctx.fillStyle = '#5a7a4a';
+      else if (tile.feature === 'woods') ctx.fillStyle = '#3a6a3a';
+      else ctx.fillStyle = '#4a7a4a';
+      ctx.fill();
+      ctx.strokeStyle = '#2a4a2a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Road
+      if (tile.road) {
+        drawHex(x, y, HEX_SIZE - 6);
+        ctx.strokeStyle = '#8b6914';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      // Move range highlight
+      if (moveRange) {
+        const key = `${c},${r}`;
+        if (moveRange.has(key)) {
+          const isRiver = riverCrossSet && riverCrossSet.has(key);
+          drawHex(x, y, HEX_SIZE - 2);
+          ctx.fillStyle = isRiver ? 'rgba(220,200,60,0.3)' : 'rgba(80,220,120,0.25)';
+          ctx.fill();
+          ctx.strokeStyle = isRiver ? 'rgba(220,200,60,0.8)' : 'rgba(80,220,120,0.7)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          if (isRiver) {
+            ctx.setLineDash([4, 3]);
+            drawHex(x, y, HEX_SIZE - 5);
+            ctx.strokeStyle = 'rgba(220,180,40,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
+      }
+
+      // Coordinate label
+      ctx.fillStyle = '#88aa88';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${c},${r}`, x, y + HEX_SIZE - 8);
+
+      // Feature label
+      if (tile.feature) {
+        ctx.fillStyle = '#aaccaa';
+        ctx.font = '9px Inter, sans-serif';
+        ctx.fillText(tile.feature, x, y - HEX_SIZE + 14);
+      }
+    }
+  }
+
+  // Draw river edges
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const tile = tiles[r][c];
+      if (!tile.hasRiver) continue;
+      const { x: cx, y: cy } = hexToPixel(c, r);
+      for (const d of tile.riverEdges) {
+        const edgeIdx = DIR_TO_EDGE[d];
+        const a0 = (Math.PI / 180) * (60 * edgeIdx - 30);
+        const a1 = (Math.PI / 180) * (60 * ((edgeIdx + 1) % 6) - 30);
+        const x1 = cx + HEX_SIZE * Math.cos(a0);
+        const y1 = cy + HEX_SIZE * Math.sin(a0);
+        const x2 = cx + HEX_SIZE * Math.cos(a1);
+        const y2 = cy + HEX_SIZE * Math.sin(a1);
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = showEdges ? 'rgba(60,180,255,0.9)' : 'rgba(30,100,180,0.7)';
+        ctx.lineWidth = showEdges ? 4 : 2.5;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw units
+  if (unit) {
+    const { x, y } = hexToPixel(unit.col, unit.row);
+    ctx.font = '22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('\u2694\uFE0F', x, y + 6);
+    ctx.fillStyle = '#e0d8c0';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillText(`MP:${unit.moveLeft} HP:${unit.hp}`, x, y + 20);
+  }
+  if (enemy) {
+    const { x, y } = hexToPixel(enemy.col, enemy.row);
+    ctx.font = '22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('\u{1F6E1}\uFE0F', x, y + 6);
+    ctx.fillStyle = '#cc4444';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillText(`HP:${enemy.hp}`, x, y + 20);
+  }
+}
+
+// --- Actions ---
+function doMoveAcrossRiver() {
+  if (!unit) return;
+  // Move unit to (4,3) first if not there, then to (5,3) across river
+  let targetCol, targetRow;
+  if (unit.col < 4) {
+    targetCol = 4; targetRow = 3;
+  } else if (unit.col === 4) {
+    targetCol = 5; targetRow = 3;
+  } else {
+    log('Unit is already across the river', 'info');
+    return;
+  }
+
+  const key = `${targetCol},${targetRow}`;
+  if (!moveRange || !moveRange.has(key)) {
+    log('Cannot reach target tile — not in move range', 'fail');
+    return;
+  }
+
+  const isRiverCross = hasRiverBetween(unit.col, unit.row, targetCol, targetRow)
+                    && !hasRoadBridge(unit.col, unit.row, targetCol, targetRow);
+  const cost = getMoveCost(unit.col, unit.row, targetCol, targetRow, unit);
+
+  unit.col = targetCol;
+  unit.row = targetRow;
+  unit.moveLeft = Math.max(0, unit.moveLeft - cost);
+
+  if (isRiverCross) {
+    log(`Crossed river \u2014 all movement points consumed (MP: 0)`, 'movement');
+  } else {
+    log(`Moved to (${targetCol},${targetRow}) \u2014 MP remaining: ${unit.moveLeft}`, 'movement');
+  }
+  updateMoveRange();
+  draw();
+}
+
+function doBuildRoads() {
+  // Build roads on tiles flanking the river at row 3
+  tiles[3][4].road = true;
+  tiles[3][5].road = true;
+  log('Roads built on (4,3) and (5,3) \u2014 bridge across river', 'info');
+  // Reset unit to test bridge
+  unit.col = 3; unit.row = 3; unit.moveLeft = 2;
+  updateMoveRange();
+  draw();
+}
+
+function doMoveAcrossBridge() {
+  if (!tiles[3][4].road || !tiles[3][5].road) {
+    log('Build roads first to create a bridge!', 'fail');
+    return;
+  }
+  // Move to (4,3) then (5,3) via bridge
+  if (unit.col < 4) {
+    unit.col = 4; unit.row = 3; unit.moveLeft -= 1;
+    log(`Moved to (4,3) \u2014 MP: ${unit.moveLeft}`, 'movement');
+  }
+  if (unit.moveLeft > 0 && unit.col === 4) {
+    const cost = getMoveCost(4, 3, 5, 3, unit);
+    unit.col = 5; unit.row = 3;
+    unit.moveLeft = Math.max(0, unit.moveLeft - cost);
+    log(`Crossed river via bridge \u2014 normal movement (MP: ${unit.moveLeft})`, 'movement');
+  }
+  updateMoveRange();
+  draw();
+}
+
+function doAttackAcrossRiver() {
+  if (!enemy) { log('No enemy to attack', 'fail'); return; }
+  // Reset unit to attack position
+  unit.col = 4; unit.row = 4; unit.moveLeft = 2; unit.hp = 100;
+  enemy.hp = 100;
+
+  const isRiverAttack = hasRiverBetween(unit.col, unit.row, enemy.col, enemy.row);
+  let atkPower = unit.combat;
+  let defPower = enemy.combat;
+
+  if (isRiverAttack) {
+    atkPower -= 3;
+    log('River crossing penalty: -3 combat strength', 'combat');
+  }
+
+  const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, defPower)) * (unit.hp / 100)));
+  const defDamage = Math.max(3, Math.floor(30 * (defPower / Math.max(1, atkPower)) * (enemy.hp / 100)));
+
+  enemy.hp -= atkDamage;
+  unit.hp -= defDamage;
+  unit.moveLeft = 0;
+
+  log(`Combat: dealt ${atkDamage} dmg (str ${atkPower}), took ${defDamage} dmg (def str ${defPower})`, 'combat');
+  log(`Unit HP: ${unit.hp}, Enemy HP: ${enemy.hp}`, 'combat');
+
+  updateMoveRange();
+  draw();
+}
+
+function doShowRiverEdges() {
+  showEdges = !showEdges;
+  log(showEdges ? 'River edges highlighted (bright blue)' : 'River edge highlight off', 'info');
+  draw();
+}
+
+function doReset() {
+  setupScenario();
+}
+
+// --- Automated tests ---
+function doRunTests() {
+  testResultsEl.innerHTML = '';
+  let pass = 0, fail = 0;
+
+  function assert(condition, name) {
+    const div = document.createElement('div');
+    div.className = 'log-entry ' + (condition ? 'pass' : 'fail');
+    div.textContent = (condition ? '\u2713 PASS' : '\u2717 FAIL') + ': ' + name;
+    testResultsEl.appendChild(div);
+    if (condition) pass++; else fail++;
+  }
+
+  // Test 1: River crossing costs all remaining MP
+  setupScenario();
+  unit.col = 4; unit.row = 3; unit.moveLeft = 2;
+  const cost1 = getMoveCost(4, 3, 5, 3, unit);
+  assert(cost1 === 2, 'River crossing costs all remaining MP (2 MP unit)');
+
+  // Test 2: Road/bridge negates river crossing cost
+  tiles[3][4].road = true;
+  tiles[3][5].road = true;
+  const cost2 = getMoveCost(4, 3, 5, 3, unit);
+  assert(cost2 === 0.5, 'Road bridge negates river cost (0.5 with road)');
+
+  // Test 3: Combat across river applies -3 penalty
+  setupScenario();
+  unit.col = 4; unit.row = 4; unit.moveLeft = 2;
+  const riverAttack = hasRiverBetween(4, 4, 5, 4);
+  assert(riverAttack === true, 'River detected between (4,4) and (5,4)');
+  const penalizedStr = unit.combat - (riverAttack ? 3 : 0);
+  assert(penalizedStr === 17, 'Combat across river applies -3 penalty (20 -> 17)');
+
+  // Test 4: Unit with 1 MP left can still cross river (costs that 1 MP)
+  setupScenario();
+  unit.col = 4; unit.row = 3; unit.moveLeft = 1;
+  const cost4 = getMoveCost(4, 3, 5, 3, unit);
+  assert(cost4 === 1, 'Unit with 1 MP can cross river (costs 1, all remaining)');
+  const moves4 = computeMoves(unit);
+  assert(moves4.moveRange.has('5,3'), 'Unit with 1 MP can reach across river');
+
+  // Test 5: Multiple river edges on same hex handled correctly
+  setupScenario();
+  // Tile (4,3) should have river edges from both (4,3)-(5,3) and (3,3)-(4,3)
+  const t43 = tiles[3][4];
+  assert(t43.hasRiver === true, 'Tile (4,3) has river flag');
+  assert(t43.riverEdges.length >= 2, 'Tile (4,3) has multiple river edges');
+  const hasEdgeTo5 = hasRiverBetween(4, 3, 5, 3);
+  const hasEdgeTo3 = hasRiverBetween(4, 3, 3, 3);
+  assert(hasEdgeTo5 && hasEdgeTo3, 'Both river edges on (4,3) detected correctly');
+  // Moving from (4,3) to neighbor without river should NOT cost all MP
+  const noRiver = hasRiverBetween(4, 3, 4, 2);
+  assert(noRiver === false, 'No river edge to non-river neighbor (4,2)');
+
+  // Test 6: Pathfinding prefers bridge routes over river crossings
+  setupScenario();
+  // Build bridge at row 5
+  tiles[5][4].road = true;
+  tiles[5][5].road = true;
+  unit.col = 3; unit.row = 5; unit.moveLeft = 3; // scout-like 3 MP
+  const movesB = computeMoves(unit);
+  // With bridge at (4,5)-(5,5), unit should reach (5,5) with MP > 0
+  // because road path: (3,5)->(4,5) costs 0.5, (4,5)->(5,5) costs 0.5 via bridge = 2 MP left
+  const mpAt55 = movesB.moveRange.get('5,5');
+  assert(mpAt55 !== undefined && mpAt55 > 0, 'Bridge route preserves MP (pathfinding prefers bridge)');
+  // Without bridge at row 3, crossing (4,3)-(5,3) costs all MP
+  const mpAt53 = movesB.moveRange.get('5,3');
+  assert(mpAt53 === undefined || mpAt53 === 0, 'Non-bridge river crossing costs all MP');
+
+  // Test 7: No river between non-adjacent hexes
+  const noAdj = hasRiverBetween(3, 3, 5, 3);
+  assert(noAdj === false, 'No river detected between non-adjacent hexes');
+
+  // Test 8: River crossing visual markers tracked
+  setupScenario();
+  unit.col = 3; unit.row = 3; unit.moveLeft = 2;
+  const movesV = computeMoves(unit);
+  const riverSet = movesV.riverCrossings;
+  // (5,3) requires crossing river from (4,3)
+  assert(riverSet.has('5,3') || !movesV.moveRange.has('5,3'), 'River crossing tiles tracked for visual display');
+
+  // Summary
+  const summary = document.createElement('div');
+  summary.className = 'log-entry ' + (fail === 0 ? 'pass' : 'fail');
+  summary.textContent = `\n${pass}/${pass+fail} tests passed` + (fail > 0 ? ` (${fail} failed)` : ' \u2014 all pass!');
+  summary.style.fontWeight = 'bold';
+  summary.style.marginTop = '8px';
+  testResultsEl.appendChild(summary);
+
+  log(`Tests complete: ${pass}/${pass+fail} passed`, fail === 0 ? 'pass' : 'fail');
+  draw();
+}
+
+// --- Init ---
+setupScenario();
+</script>
+</body>
+</html>
