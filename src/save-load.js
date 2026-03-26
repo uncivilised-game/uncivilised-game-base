@@ -82,6 +82,7 @@ function migrateTiles(state) {
   if (!state.minorFactions) state.minorFactions = [];
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
+  if (!state.tribalVillages) state.tribalVillages = [];
   // --- Reputation system migration ---
   if (!state.reputation) {
     state.reputation = {};

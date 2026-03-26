@@ -211,6 +211,34 @@ function render() {
         }
       }
 
+      // Tribal village icon (canvas-drawn hut)
+      if (game.tribalVillages) {
+        const village = game.tribalVillages.find(v => v.col === c && v.row === r && !v.discovered);
+        if (village) {
+          const hx = sx, hy = sy - 4;
+          const hs = HEX_SIZE * 0.38;
+          ctx.save();
+          // Hut base (brown rectangle)
+          ctx.fillStyle = '#8B5E3C';
+          ctx.fillRect(hx - hs * 0.5, hy, hs, hs * 0.55);
+          // Hut roof (triangle)
+          ctx.beginPath();
+          ctx.moveTo(hx - hs * 0.7, hy);
+          ctx.lineTo(hx + hs * 0.7, hy);
+          ctx.lineTo(hx, hy - hs * 0.7);
+          ctx.closePath();
+          ctx.fillStyle = '#D4A843';
+          ctx.fill();
+          ctx.strokeStyle = '#5C3A1E';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          // Door
+          ctx.fillStyle = '#3E2014';
+          ctx.fillRect(hx - hs * 0.12, hy + hs * 0.15, hs * 0.24, hs * 0.4);
+          ctx.restore();
+        }
+      }
+
       // Draw tile improvements as images
       if (tile.improvement) {
         const impImg = IMPROVEMENT_IMAGES[tile.improvement];

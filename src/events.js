@@ -1,6 +1,6 @@
-import { BUILDINGS, TECHNOLOGIES, FACTIONS, MAP_COLS, MAP_ROWS } from './constants.js';
-import { game } from './state.js';
-import { hexDistance } from './hex.js';
+import { BUILDINGS, TECHNOLOGIES, FACTIONS, MAP_COLS, MAP_ROWS, TRIBAL_VILLAGE_REWARDS, UNIT_TYPES, CIVICS, BASE_TERRAIN } from './constants.js';
+import { game, getNextUnitId } from './state.js';
+import { hexDistance, getHexNeighbors } from './hex.js';
 import { initFactionStats } from './map.js';
 import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
@@ -486,3 +486,160 @@ window.corroborateRumour = function(factionId, rumourIdx) {
   if (banner) banner.style.display = 'none';
   showModBanner('\u{1F91D}', confirmMsg, 'Corroborated by ' + ally.name);
 };
+
+// ============================================
+// TRIBAL VILLAGE DISCOVERY
+// ============================================
+export function rollTribalVillageReward() {
+  const totalWeight = TRIBAL_VILLAGE_REWARDS.reduce((s, r) => s + r.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const reward of TRIBAL_VILLAGE_REWARDS) {
+    roll -= reward.weight;
+    if (roll <= 0) return reward;
+  }
+  return TRIBAL_VILLAGE_REWARDS[0];
+}
+
+export function discoverVillage(col, row, unit) {
+  if (!game || !game.tribalVillages) return null;
+
+  const villageIdx = game.tribalVillages.findIndex(v => v.col === col && v.row === row && !v.discovered);
+  if (villageIdx === -1) return null;
+
+  const village = game.tribalVillages[villageIdx];
+  village.discovered = true;
+
+  const reward = rollTribalVillageReward();
+  let message = '';
+
+  switch (reward.type) {
+    case 'gold': {
+      const amount = reward.min + Math.floor(Math.random() * (reward.max - reward.min + 1));
+      game.gold += amount;
+      message = `Found ${amount} gold!`;
+      break;
+    }
+    case 'tech_boost': {
+      const unresearched = TECHNOLOGIES.filter(t => !game.techs.includes(t.id));
+      if (unresearched.length > 0) {
+        const tech = unresearched[Math.floor(Math.random() * unresearched.length)];
+        const boost = Math.floor(tech.cost * reward.amount);
+        if (game.currentResearch === tech.id) {
+          game.researchProgress += boost;
+          message = `Research boost! +${boost} progress on ${tech.name}`;
+        } else {
+          // Start researching it with progress
+          game.currentResearch = tech.id;
+          game.researchProgress = boost;
+          message = `Research boost! Started ${tech.name} with ${boost} progress`;
+        }
+      } else {
+        game.gold += 75;
+        message = 'All techs researched! Found 75 gold instead.';
+      }
+      break;
+    }
+    case 'civic_boost': {
+      const unresearchedCivics = CIVICS.filter(c => !game.civics.includes(c.id));
+      if (unresearchedCivics.length > 0) {
+        const civic = unresearchedCivics[Math.floor(Math.random() * unresearchedCivics.length)];
+        const boost = Math.floor(civic.cost * reward.amount);
+        if (game.currentCivic === civic.id) {
+          game.civicProgress += boost;
+          message = `Civic boost! +${boost} progress on ${civic.name}`;
+        } else {
+          game.currentCivic = civic.id;
+          game.civicProgress = boost;
+          message = `Civic boost! Started ${civic.name} with ${boost} progress`;
+        }
+      } else {
+        game.culture += 50;
+        message = 'All civics researched! +50 culture instead.';
+      }
+      break;
+    }
+    case 'population': {
+      // Find nearest player city
+      let nearest = null;
+      let bestDist = Infinity;
+      for (const city of game.cities) {
+        const d = hexDistance(col, row, city.col, city.row);
+        if (d < bestDist) { bestDist = d; nearest = city; }
+      }
+      if (nearest) {
+        nearest.population += reward.amount;
+        game.population += reward.amount;
+        message = `+${reward.amount} population to ${nearest.name}!`;
+      } else {
+        game.gold += 75;
+        message = 'No cities! Found 75 gold instead.';
+      }
+      break;
+    }
+    case 'map_reveal': {
+      // Reveal tiles in radius around village
+      for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+          if (hexDistance(c, r, col, row) <= reward.radius) {
+            game.fogOfWar[r][c] = true;
+          }
+        }
+      }
+      message = `Map revealed in ${reward.radius}-hex radius!`;
+      break;
+    }
+    case 'free_unit': {
+      const unitType = reward.units[Math.floor(Math.random() * reward.units.length)];
+      // Find an adjacent passable empty tile
+      const neighbors = getHexNeighbors(col, row);
+      let spawnTile = null;
+      for (const nb of neighbors) {
+        const tile = game.map[nb.row]?.[nb.col];
+        if (!tile) continue;
+        const bInfo = BASE_TERRAIN[tile.base];
+        if (!bInfo || !bInfo.movable) continue;
+        if (tile.feature === 'mountain') continue;
+        // Check no unit already there
+        const occupied = game.units.some(u => u.col === nb.col && u.row === nb.row);
+        if (!occupied) { spawnTile = nb; break; }
+      }
+      if (spawnTile) {
+        const ut = UNIT_TYPES[unitType];
+        const newUnit = {
+          id: getNextUnitId(),
+          type: unitType,
+          col: spawnTile.col,
+          row: spawnTile.row,
+          owner: unit.owner,
+          hp: 100,
+          moveLeft: ut.movePoints,
+          combat: ut.combat,
+          fortified: false,
+          sleeping: false,
+          alert: false,
+          xp: 0,
+          promotions: [],
+          pendingPromotion: false,
+        };
+        game.units.push(newUnit);
+        message = `Free ${ut.name} joins your expedition!`;
+      } else {
+        game.gold += 50;
+        message = `No room for a unit! Found 50 gold instead.`;
+      }
+      break;
+    }
+    case 'faith': {
+      // Faith maps to culture in this game (no standalone faith resource yet)
+      game.culture += reward.amount;
+      message = `+${reward.amount} faith (culture)!`;
+      break;
+    }
+  }
+
+  addEvent('\u{1F3D8} Tribal Village: ' + message, 'event');
+  showToast('Tribal Village', message);
+  logAction('event', 'Discovered tribal village at (' + col + ',' + row + ')', { reward: reward.type, message });
+
+  return { reward, message };
+}

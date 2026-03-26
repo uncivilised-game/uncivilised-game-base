@@ -25,7 +25,7 @@ import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, g
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
 import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
 import { getAvailableImprovements, startImprovement, cancelImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary, discoverVillage, rollTribalVillageReward } from './events.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { updateUI, updateEnvoyUI, showLeaderboard, showUsernamePrompt, initUsernameUI, submitToLeaderboard, fetchCurrentCompetition, checkSessionLimit, registerActiveGame, incrementSession, sbFetch } from './leaderboard.js';
 import { migrateTiles, restoreMods, autoSave, loadGame } from './save-load.js';
@@ -33,7 +33,7 @@ import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction } 
 import { updateRankingsHUD, toggleRankingsDropdown, renderRankingsDropdown } from './rankings.js';
 import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
-import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions } from './map.js';
+import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages } from './map.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -86,6 +86,8 @@ window.endTurn = endTurn;
 window.processAITurns = processAITurns;
 window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
+window.discoverVillage = discoverVillage;
+window.rollTribalVillageReward = rollTribalVillageReward;
 
 // --- createInitialState (here to avoid circular deps between map.js and units.js) ---
 function createInitialState() {
@@ -147,6 +149,13 @@ function createInitialState() {
 
   const factionCities = placeFactionCities(map, startCol, startRow, continentId, mainContinent);
 
+  // Place tribal villages — away from all start positions
+  const startPositions = [{ col: startCol, row: startRow }];
+  for (const fc of Object.values(factionCities)) {
+    startPositions.push({ col: fc.col, row: fc.row });
+  }
+  const tribalVillages = placeTribalVillages(map, startPositions);
+
   const startingUnits = [];
   const startNeighbors = getHexNeighbors(startCol, startRow);
   const landNeighbors = startNeighbors.filter(nb => {
@@ -205,7 +214,7 @@ function createInitialState() {
     openBorders: {}, embargoes: {}, ceasefires: {}, vassals: {}, nonAggressionPacts: {},
     metFactions: {}, factionStats: {},
     appliedMods: [], combatBonuses: [], yieldBonuses: [],
-    activeEvents: [], minorFactions: [],
+    activeEvents: [], minorFactions: [], tribalVillages: tribalVillages,
     recentEvents: [], gameLog: [],
     aiCommitments: [], aiWonders: {},
     fogOfWar: createFogOfWar(startCol, startRow),
