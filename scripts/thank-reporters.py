@@ -13,6 +13,7 @@ Optional: DRY_RUN=true to preview without sending
 import os
 import sys
 import json
+import re
 import time
 import html
 import urllib.request
@@ -88,7 +89,12 @@ def resolve_reporter_emails(player_names):
     """Look up emails for player_names via the players table. Returns {name: email}."""
     if not player_names:
         return {}
-    names_csv = ",".join(player_names)
+    # Filter to valid usernames to prevent PostgREST query injection
+    # (player_name in feedback is a free-form string with no server-side validation)
+    safe_names = [n for n in player_names if re.match(r'^[a-zA-Z0-9_-]+$', n)]
+    if not safe_names:
+        return {}
+    names_csv = ",".join(safe_names)
     rows = sb_get("players", f"username=in.({names_csv})&select=username,email,email_verified")
     result = {}
     for row in rows:
@@ -285,14 +291,16 @@ def run():
 
         if not email:
             skipped += 1
+            # No email on file — mark as thanked so they don't get re-processed
             all_thanked_ids.extend(reporter_feedback_ids[name])
             continue
 
         if send_batched_email(email, name, issues, CUSTOM_MESSAGE):
             sent += 1
+            all_thanked_ids.extend(reporter_feedback_ids[name])
         else:
+            # Email failed — don't mark as thanked so they'll be retried next run
             skipped += 1
-        all_thanked_ids.extend(reporter_feedback_ids[name])
 
     # Also collect anonymous feedback IDs
     all_thanked_ids.extend(reporter_feedback_ids.get("__anon__", []))
