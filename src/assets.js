@@ -16,7 +16,7 @@ export function preloadImprovementImages() {
   // Tribal village sprite
   const villageImg = new Image();
   villageImg.crossOrigin = 'anonymous';
-  villageImg.src = './assets/hex/tribal_village.jpg';
+  villageImg.src = './assets/hex/tribal_village.png';
   IMPROVEMENT_IMAGES['tribal_village'] = villageImg;
 }
 

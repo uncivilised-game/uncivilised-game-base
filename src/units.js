@@ -1,5 +1,5 @@
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES } from './constants.js';
-import { game, getNextUnitId, unitMoveAnim, setUnitMoveAnim } from './state.js';
+import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
 import { resolveCombat, isAtWarWith, declareSurpriseWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
@@ -370,7 +370,7 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
   unit.sleeping = false;
 
   // Store animation state so other systems know movement is in progress
-  setUnitMoveAnim({ unitId: unit.id, path, step: 0 });
+  game._unitMoveAnim = { unitId: unit.id, path, step: 0 };
 
   function advanceStep() {
     const step = path[stepIndex];
@@ -393,7 +393,7 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
     }
 
     stepIndex++;
-    setUnitMoveAnim({ unitId: unit.id, path, step: stepIndex });
+    game._unitMoveAnim = { unitId: unit.id, path, step: stepIndex };
     render();
 
     if (stepIndex < path.length) {
@@ -401,7 +401,7 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
     } else {
       // Animation complete — apply final state
       unit.moveLeft = remaining;
-      setUnitMoveAnim(null);
+      game._unitMoveAnim = null;
       logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
       checkAndClearBarbarianCamp(unit, targetCol, targetRow);
       if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
