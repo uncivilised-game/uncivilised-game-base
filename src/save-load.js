@@ -1,4 +1,5 @@
 import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { getDefaultFactionStats } from './map.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
 import { showToast } from './events.js';
@@ -73,6 +74,12 @@ function migrateTiles(state) {
   if (!state.nonAggressionPacts) state.nonAggressionPacts = {};
   if (!state.metFactions) state.metFactions = {};
   if (!state.factionStats) state.factionStats = {};
+  // Ensure all met factions have stats (handles saves from before initFactionStats was called on discovery)
+  for (const fid of Object.keys(state.metFactions)) {
+    if (!state.factionStats[fid]) {
+      state.factionStats[fid] = getDefaultFactionStats(fid, state.turn || 1);
+    }
+  }
   if (!state.relationships) state.relationships = {};
   if (!state.activeAlliances) state.activeAlliances = {};
   if (!state.appliedMods) state.appliedMods = [];
