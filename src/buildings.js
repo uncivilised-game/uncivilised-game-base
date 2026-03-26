@@ -49,37 +49,59 @@ export function useGreatPerson(gpEntry, gpDef) {
           game.buildProgress = 0;
         }
       } else if (game.currentWonderBuild) {
-        const wd = WONDERS.find(w => w.id === game.currentWonderBuild);
-        if (wd) {
-          game.wonders.push(game.currentWonderBuild);
-          const eff = wd.effect;
-          if (eff.gold) game.goldPerTurn += eff.gold;
-          if (eff.science) game.sciencePerTurn += eff.science;
-          if (eff.production) game.productionPerTurn += eff.production;
-          if (eff.culture) game.culture += eff.culture;
-          // Apply special wonder effects
-          if (eff.freeUnit) {
-            const city = game.cities[0];
-            if (city) {
-              const neighbors = getHexNeighbors(city.col, city.row);
-              for (const nb of neighbors) {
-                const tile = game.map[nb.row][nb.col];
-                if (!isTilePassable(tile)) continue;
-                if (getUnitAt(nb.col, nb.row)) continue;
-                const freeU = createUnit(eff.freeUnit, nb.col, nb.row, 'player');
-                game.units.push(freeU);
-                addEvent('Free ' + UNIT_TYPES[eff.freeUnit].name + ' from ' + wd.name + '!', 'gold');
-                break;
-              }
-            }
-          }
-          if (eff.growthBonus) game.foodPerTurn += 2;
-          if (eff.sightBonus) {
-            for (const u of game.units) { if (u.owner === 'player') u.sightBonus = (u.sightBonus || 0) + eff.sightBonus; }
-          }
-          addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + wd.name + '!', 'gold');
+        // Check if wonder was already scooped
+        if (game.builtWonders && game.builtWonders[game.currentWonderBuild]) {
+          addEvent(gpDef.icon + ' ' + gpDef.name + ' cannot complete ' + game.currentWonderBuild + ' — already built!', 'gold');
           game.currentWonderBuild = null;
           game.wonderBuildProgress = 0;
+        } else {
+          const wd = WONDERS.find(w => w.id === game.currentWonderBuild);
+          if (wd) {
+            game.wonders.push(game.currentWonderBuild);
+            if (!game.builtWonders) game.builtWonders = {};
+            game.builtWonders[game.currentWonderBuild] = 'player';
+            const eff = wd.effect;
+            if (eff.gold) game.goldPerTurn += eff.gold;
+            if (eff.science) game.sciencePerTurn += eff.science;
+            if (eff.production) game.productionPerTurn += eff.production;
+            if (eff.culture) game.culture += eff.culture;
+            // Apply special wonder effects
+            if (eff.freeUnit) {
+              const city = game.cities[0];
+              if (city) {
+                const neighbors = getHexNeighbors(city.col, city.row);
+                for (const nb of neighbors) {
+                  const tile = game.map[nb.row][nb.col];
+                  if (!isTilePassable(tile)) continue;
+                  if (getUnitAt(nb.col, nb.row)) continue;
+                  const freeU = createUnit(eff.freeUnit, nb.col, nb.row, 'player');
+                  game.units.push(freeU);
+                  addEvent('Free ' + UNIT_TYPES[eff.freeUnit].name + ' from ' + wd.name + '!', 'gold');
+                  break;
+                }
+              }
+            }
+            if (eff.growthBonus) game.foodPerTurn += 2;
+            if (eff.sightBonus) {
+              for (const u of game.units) { if (u.owner === 'player') u.sightBonus = (u.sightBonus || 0) + eff.sightBonus; }
+            }
+            // Cancel AI factions building the same wonder
+            if (game.aiWonderProgress) {
+              for (const [fid, wp] of Object.entries(game.aiWonderProgress)) {
+                if (wp.wonderId === game.currentWonderBuild) {
+                  const refundGold = Math.floor(wp.progress * 0.5);
+                  if (game.factionStats && game.factionStats[fid]) {
+                    game.factionStats[fid].gold = (game.factionStats[fid].gold || 0) + refundGold;
+                  }
+                  delete game.aiWonderProgress[fid];
+                }
+              }
+            }
+            addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + wd.name + '!', 'gold');
+            showToast('Wonder Complete!', wd.name + ' has been built!');
+            game.currentWonderBuild = null;
+            game.wonderBuildProgress = 0;
+          }
         }
       } else {
         game.productionPerTurn += 3;

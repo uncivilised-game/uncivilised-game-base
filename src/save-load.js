@@ -51,6 +51,8 @@ function migrateTiles(state) {
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];
   if (!state.aiWonders) state.aiWonders = {};
+  if (!state.builtWonders) state.builtWonders = {};
+  if (!state.aiWonderProgress) state.aiWonderProgress = {};
   // Ensure every tile has col/row (missing in saves before v4)
   if (state.map) {
     for (let r = 0; r < state.map.length; r++) {
