@@ -1,4 +1,5 @@
 import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { getDefaultFactionStats } from './map.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
 import { showToast } from './events.js';
@@ -76,16 +77,7 @@ function migrateTiles(state) {
   // Ensure all met factions have stats (handles saves from before initFactionStats was called on discovery)
   for (const fid of Object.keys(state.metFactions)) {
     if (!state.factionStats[fid]) {
-      const personalities = {
-        emperor_valerian:          { gold: 60,  military: 18, science: 4, population: 1200, territory: 12, techs: 2, score: 40 },
-        shadow_kael:               { gold: 45,  military: 12, science: 5, population: 900,  territory: 8,  techs: 3, score: 35 },
-        merchant_prince_castellan: { gold: 80,  military: 8,  science: 3, population: 1100, territory: 10, techs: 2, score: 38 },
-        pirate_queen_elara:        { gold: 55,  military: 15, science: 2, population: 800,  territory: 6,  techs: 1, score: 30 },
-        commander_thane:           { gold: 40,  military: 22, science: 3, population: 1000, territory: 14, techs: 2, score: 42 },
-        rebel_leader_sera:         { gold: 35,  military: 10, science: 4, population: 700,  territory: 5,  techs: 2, score: 28 },
-      };
-      const p = personalities[fid] || { gold: 50, military: 10, science: 3, population: 1000, territory: 8, techs: 2, score: 30 };
-      state.factionStats[fid] = { ...p, lastUpdated: state.turn || 1 };
+      state.factionStats[fid] = getDefaultFactionStats(fid, state.turn || 1);
     }
   }
   if (!state.relationships) state.relationships = {};
