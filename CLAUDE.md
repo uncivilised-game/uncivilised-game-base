@@ -137,6 +137,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 

@@ -1,0 +1,112 @@
+name: PR Assist
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  assist:
+    if: >-
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: React to comment
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=eyes
+
+      - name: Get PR info
+        id: pr
+        run: |
+          if [ -n "${{ github.event.issue.number }}" ]; then
+            PR_NUM=${{ github.event.issue.number }}
+          else
+            PR_NUM=${{ github.event.pull_request.number }}
+          fi
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM)
+          echo "number=$PR_NUM" >> "$GITHUB_OUTPUT"
+          echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Check auth method
+        id: auth
+        run: |
+          if [ -n "$OAUTH_TOKEN" ]; then
+            echo "method=oauth" >> "$GITHUB_OUTPUT"
+          else
+            echo "method=apikey" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Assist with Claude Code (OAuth)
+        if: steps.auth.outputs.method == 'oauth'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are assisting on PR #${{ steps.pr.outputs.number }} in the Uncivilised game repo.
+
+            The user commented on the PR with the following request:
+            ${{ github.event.comment.body }}
+
+            INSTRUCTIONS:
+            1. Read CLAUDE.md for codebase context and conventions
+            2. Understand the existing PR changes (look at recent commits on this branch)
+            3. Address the user's request — fix issues, improve code, or answer questions
+            4. If you make changes, commit them to the current branch and push
+            5. Reply with a summary of what you did
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - Read the relevant source files before making any changes
+            - Run npm run build to verify your changes compile
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+
+      - name: Assist with Claude Code (API key)
+        if: steps.auth.outputs.method == 'apikey'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are assisting on PR #${{ steps.pr.outputs.number }} in the Uncivilised game repo.
+
+            The user commented on the following request:
+            ${{ github.event.comment.body }}
+
+            INSTRUCTIONS:
+            1. Read CLAUDE.md for codebase context and conventions
+            2. Understand the existing PR changes (look at recent commits on this branch)
+            3. Address the user's request — fix issues, improve code, or answer questions
+            4. If you make changes, commit them to the current branch and push
+            5. Reply with a summary of what you did
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - Read the relevant source files before making any changes
+            - Run npm run build to verify your changes compile
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
