@@ -27,6 +27,7 @@ jobs:
       id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DIPLOMACY_REPO_TOKEN: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
 
     steps:
       - name: React to comment
@@ -35,11 +36,33 @@ jobs:
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             -f content=rocket
 
-      - name: Checkout
+      - name: Checkout base repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: devel
+
+      - name: Checkout diplomacy repo
+        uses: actions/checkout@v4
+        with:
+          repository: uncivilised-game/uncivilised-diplomacy
+          token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
+          path: ../uncivilised-diplomacy
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup diplomacy CLI auth
+        run: |
+          printf '#!/bin/sh\nGH_TOKEN="$DIPLOMACY_REPO_TOKEN" gh "$@"\n' > /usr/local/bin/gh-diplomacy
+          chmod +x /usr/local/bin/gh-diplomacy
 
       - name: Check auth method
         id: auth
@@ -132,28 +155,51 @@ jobs:
             ADDITIONAL INSTRUCTIONS FROM THE /fix COMMENT:
             ${{ steps.instructions.outputs.text }}
 
+            REPO LAYOUT:
+            This project spans TWO repositories, both checked out and available:
+            - Base game (current directory): uncivilised-game-base (open source)
+            - Diplomacy plugin (at ../uncivilised-diplomacy): uncivilised-diplomacy (private)
+
+            The diplomacy repo contains: AI diplomacy (diplomacy.js), game mods (game-mods.js),
+            and AI faction logic (ai.js). The base game imports diplomacy functions via
+            src/diplomacy-api.js which delegates to the plugin at build time.
+
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
             2. Read CLAUDE.md for codebase context and conventions
-            3. Find the relevant code and understand it before making changes
-            4. Implement the fix or feature
-            5. Keep changes minimal and focused — fix exactly what the issue describes
-            6. Test your changes if possible (npm run build at minimum)
-            7. Create a branch named "fix/${{ steps.issue.outputs.number }}" and commit your changes
-            8. Push the branch and create a PR targeting the "devel" branch with:
-               - Title referencing the issue
-               - Description explaining what you changed and why
-               - "Fixes #${{ steps.issue.outputs.number }}" in the body to auto-close the issue
-            9. Do NOT push to main directly
+            3. Determine which repo(s) the fix belongs in:
+               - Base game bugs/features → changes in this repo
+               - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
+               - Some issues may need changes in both repos
+            4. Read the relevant source files in whichever repo before making changes
+            5. Implement the fix or feature
+            6. Keep changes minimal and focused — fix exactly what the issue describes
+            7. Test your changes if possible (npm run build at minimum)
+            8. For changes in the BASE GAME repo (this directory):
+               - Create a branch named "fix/${{ steps.issue.outputs.number }}"
+               - Commit and push, then create a PR targeting "devel" branch
+               - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
+            9. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+               - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+               - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+               - Stage, commit, and push from the base directory using git -C
+               - Create a PR using the diplomacy-authenticated CLI:
+                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base main --title "..." --body "..."
+               - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+                with a link to the diplomacy PR so admins can find it. Use:
+                gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
+            11. Do NOT push to main/devel directly in either repo
 
             IMPORTANT:
             - This is a browser-based 4X strategy game
             - Frontend is ES modules bundled by esbuild into game.js
             - Backend is Python FastAPI (api/index.py for production, server.py for local)
-            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - If modifying diplomacy-api.js (the plugin interface in the base repo), ensure the
+              corresponding implementation exists in the diplomacy repo's src/plugin.js
             - Read the relevant source files before making any changes
 
-          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(gh-diplomacy:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
 
       - name: Implement with Claude Code (API key)
         if: steps.auth.outputs.method == 'apikey'
@@ -170,25 +216,48 @@ jobs:
             ADDITIONAL INSTRUCTIONS FROM THE /fix COMMENT:
             ${{ steps.instructions.outputs.text }}
 
+            REPO LAYOUT:
+            This project spans TWO repositories, both checked out and available:
+            - Base game (current directory): uncivilised-game-base (open source)
+            - Diplomacy plugin (at ../uncivilised-diplomacy): uncivilised-diplomacy (private)
+
+            The diplomacy repo contains: AI diplomacy (diplomacy.js), game mods (game-mods.js),
+            and AI faction logic (ai.js). The base game imports diplomacy functions via
+            src/diplomacy-api.js which delegates to the plugin at build time.
+
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
             2. Read CLAUDE.md for codebase context and conventions
-            3. Find the relevant code and understand it before making changes
-            4. Implement the fix or feature
-            5. Keep changes minimal and focused — fix exactly what the issue describes
-            6. Test your changes if possible (npm run build at minimum)
-            7. Create a branch named "fix/${{ steps.issue.outputs.number }}" and commit your changes
-            8. Push the branch and create a PR targeting the "devel" branch with:
-               - Title referencing the issue
-               - Description explaining what you changed and why
-               - "Fixes #${{ steps.issue.outputs.number }}" in the body to auto-close the issue
-            9. Do NOT push to main directly
+            3. Determine which repo(s) the fix belongs in:
+               - Base game bugs/features → changes in this repo
+               - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
+               - Some issues may need changes in both repos
+            4. Read the relevant source files in whichever repo before making changes
+            5. Implement the fix or feature
+            6. Keep changes minimal and focused — fix exactly what the issue describes
+            7. Test your changes if possible (npm run build at minimum)
+            8. For changes in the BASE GAME repo (this directory):
+               - Create a branch named "fix/${{ steps.issue.outputs.number }}"
+               - Commit and push, then create a PR targeting "devel" branch
+               - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
+            9. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+               - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+               - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+               - Stage, commit, and push from the base directory using git -C
+               - Create a PR using the diplomacy-authenticated CLI:
+                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base main --title "..." --body "..."
+               - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+                with a link to the diplomacy PR so admins can find it. Use:
+                gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
+            11. Do NOT push to main/devel directly in either repo
 
             IMPORTANT:
             - This is a browser-based 4X strategy game
             - Frontend is ES modules bundled by esbuild into game.js
             - Backend is Python FastAPI (api/index.py for production, server.py for local)
-            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - If modifying diplomacy-api.js (the plugin interface in the base repo), ensure the
+              corresponding implementation exists in the diplomacy repo's src/plugin.js
             - Read the relevant source files before making any changes
 
-          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(gh-diplomacy:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
