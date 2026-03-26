@@ -8,12 +8,13 @@ function migrateTiles(state) {
   if (!state.tradeRoutes) state.tradeRoutes = [];
   if (state.maxTradeRoutes === undefined) state.maxTradeRoutes = 1;
   if (state.happiness === undefined) state.happiness = 5;
-  // Ensure units have promotion fields
+  // Ensure units have promotion fields and build charges
   if (state.units) {
     for (const u of state.units) {
       if (u.xp === undefined) u.xp = 0;
       if (!u.promotions) u.promotions = [];
       if (u.pendingPromotion === undefined) u.pendingPromotion = false;
+      if (u.type === 'worker' && u.buildCharges === undefined) u.buildCharges = 2;
     }
   }
 

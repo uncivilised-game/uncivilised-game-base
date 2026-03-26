@@ -15,7 +15,7 @@ import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCam
 
 function createUnit(type, col, row, owner) {
   const ut = UNIT_TYPES[type];
-  return {
+  const unit = {
     id: getNextUnitId(),
     type: type,
     col: col,
@@ -31,6 +31,10 @@ function createUnit(type, col, row, owner) {
     promotions: [],
     pendingPromotion: false,
   };
+  if (ut.buildCharges !== undefined) {
+    unit.buildCharges = ut.buildCharges;
+  }
+  return unit;
 }
 
 function placeFactionCities(map, playerCol, playerRow, continentId, mainContinent) {

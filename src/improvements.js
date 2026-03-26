@@ -115,9 +115,22 @@ export function processImprovements() {
         logAction('build', 'Improvement completed: ' + imp.name + ' at (' + c + ',' + r + ')', { improvement: builder.improvementId, col: c, row: r });
         }
 
-        // Wake the worker
+        // Wake the worker and decrement build charges
         const worker = game.units.find(u => u.id === builder.unitId);
-        if (worker) { worker.sleeping = false; }
+        if (worker) {
+          if (worker.buildCharges !== undefined) {
+            worker.buildCharges--;
+            if (worker.buildCharges <= 0) {
+              game.units = game.units.filter(u => u.id !== worker.id);
+              if (game.selectedUnitId === worker.id) game.selectedUnitId = null;
+              addEvent('Worker exhausted all build charges and was consumed', 'warning');
+            } else {
+              worker.sleeping = false;
+            }
+          } else {
+            worker.sleeping = false;
+          }
+        }
 
         tile.improvementBuilder = null;
         showCompletionNotification('improvement', imp.name, imp.desc);
@@ -156,8 +169,14 @@ export function showWorkerActions(unitOrId) {
   const available = getAvailableImprovements(unit.col, unit.row);
 
   const panel = document.getElementById('selection-panel');
+  const chargesLeft = unit.buildCharges !== undefined ? unit.buildCharges : null;
+  const chargesDisplay = chargesLeft !== null ? ` (${chargesLeft} charge${chargesLeft !== 1 ? 's' : ''} left)` : '';
   let html = `<div class="panel-header"><h3>👷 Worker Actions</h3><button class="panel-close" onclick="hideSelectionPanel()">&times;</button></div>`;
   html += `<div class="panel-body" style="padding:8px">`;
+  if (chargesLeft !== null) {
+    const color = chargesLeft > 1 ? 'var(--color-gold)' : '#ff9800';
+    html += `<p style="color:${color};margin-bottom:6px">Build charges: ${chargesLeft}</p>`;
+  }
 
   // Show current improvement if building
   if (tile.improvementBuilder) {
@@ -172,7 +191,9 @@ export function showWorkerActions(unitOrId) {
   }
   if (tile.road) html += `<p style="color:var(--color-text-muted)">Has Road</p>`;
 
-  if (available.length === 0 && !tile.improvementBuilder) {
+  if (chargesLeft !== null && chargesLeft <= 0) {
+    html += `<p style="color:#d9534f;font-style:italic">This worker has no build charges remaining.</p>`;
+  } else if (available.length === 0 && !tile.improvementBuilder) {
     html += `<p style="color:var(--color-text-faint);font-style:italic">City tile \u2014 move to an adjacent tile to build improvements</p>`;
   } else {
     for (const imp of available) {
