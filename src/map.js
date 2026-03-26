@@ -755,6 +755,20 @@ const CROSS_EVEN_DIRS = [[-1,-1],[0,-1],[-1,0],[1,0],[-1,1],[0,1]];
 const CROSS_ODD_DIRS  = [[0,-1],[1,-1],[-1,0],[1,0],[0,1],[1,1]];
 
 /**
+ * Returns the hex direction index (0-5) from (c1,r1) to adjacent (c2,r2).
+ * Returns -1 if they are not neighbors.
+ */
+function getHexDirection(c1, r1, c2, r2) {
+  const dirs = (r1 & 1) === 0 ? CROSS_EVEN_DIRS : CROSS_ODD_DIRS;
+  for (let d = 0; d < 6; d++) {
+    const nc = ((c1 + dirs[d][0]) % MAP_COLS + MAP_COLS) % MAP_COLS;
+    const nr = ((r1 + dirs[d][1]) % MAP_ROWS + MAP_ROWS) % MAP_ROWS;
+    if (nc === c2 && nr === r2) return d;
+  }
+  return -1;
+}
+
+/**
  * Returns true if moving from (fromCol,fromRow) to (toCol,toRow) crosses a river edge.
  * Both tiles must be valid and the 'from' tile must have a riverEdge in the direction of 'to'.
  */
@@ -763,17 +777,13 @@ function crossesRiver(fromCol, fromRow, toCol, toRow) {
   const fromTile = game.map[fromRow] && game.map[fromRow][fromCol];
   if (!fromTile || !fromTile.hasRiver) return false;
 
-  // Find which direction 'to' is from 'from'
-  const dirs = (fromRow & 1) === 0 ? CROSS_EVEN_DIRS : CROSS_ODD_DIRS;
-  for (let d = 0; d < 6; d++) {
-    const nc = ((fromCol + dirs[d][0]) % MAP_COLS + MAP_COLS) % MAP_COLS;
-    const nr = ((fromRow + dirs[d][1]) % MAP_ROWS + MAP_ROWS) % MAP_ROWS;
-    if (nc === toCol && nr === toRow) {
-      return fromTile.riverEdges.includes(d);
-    }
-  }
-  return false;
+  const d = getHexDirection(fromCol, fromRow, toCol, toRow);
+  if (d < 0) return false;
+  return fromTile.riverEdges.includes(d);
 }
+
+/** Alias for crossesRiver — checks if a river edge exists between two adjacent hexes. */
+const hasRiverBetween = crossesRiver;
 
 /**
  * Returns true if roads negate the river crossing penalty (road on both sides).
@@ -784,6 +794,9 @@ function roadBridgesRiver(fromCol, fromRow, toCol, toRow) {
   const toTile = game.map[toRow] && game.map[toRow][toCol];
   return fromTile && toTile && fromTile.road && toTile.road;
 }
+
+/** Alias for roadBridgesRiver — checks if roads bridge a river between two hexes. */
+const hasRoadBridge = roadBridgesRiver;
 
 function getTileName(tile) {
   const bt = BASE_TERRAIN[tile.base];
@@ -927,5 +940,8 @@ export {
   getComparisonData,
   getUnmetFactions,
   placeTribalVillages,
-  isResourceRevealed
+  isResourceRevealed,
+  getHexDirection,
+  hasRiverBetween,
+  hasRoadBridge
 };

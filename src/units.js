@@ -208,6 +208,47 @@ function computeMoveRange() {
   return visited;
 }
 
+/**
+ * Returns a Set of "col,row" keys for tiles in the move range that require
+ * an unbridged river crossing to reach (used for visual highlighting).
+ */
+function computeRiverCrossings() {
+  if (!game || !game.selectedUnitId) return null;
+  const unit = game.units.find(u => u.id === game.selectedUnitId);
+  if (!unit || unit.moveLeft <= 0 || unit.owner !== 'player') return null;
+
+  const riverTiles = new Set();
+  const visited = new Map();
+  const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft, crossedRiver: false }];
+  visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur.move <= 0) continue;
+    const neighbors = getHexNeighbors(cur.col, cur.row);
+    for (const nb of neighbors) {
+      const tile = game.map[nb.row][nb.col];
+      const cost = getTileMoveCost(tile);
+      if (cost >= 99) continue;
+      const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
+                        && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
+      const isRoughTerrain = cost >= 2;
+      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key) && visited.get(key) >= remaining) continue;
+      const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
+      if (blockingUnit) continue;
+      visited.set(key, remaining);
+      const crossed = cur.crossedRiver || isRiverCross;
+      if (crossed) riverTiles.add(key);
+      if (remaining > 0) {
+        queue.push({ col: nb.col, row: nb.row, move: remaining, crossedRiver: crossed });
+      }
+    }
+  }
+  return riverTiles;
+}
+
 function computeAttackRange() {
   if (!game || !game.selectedUnitId) return null;
   const unit = game.units.find(u => u.id === game.selectedUnitId);
@@ -299,12 +340,24 @@ function moveUnitTo(unit, targetCol, targetRow) {
     revealAround(step.col, step.row, sightRange);
   }
 
+  // Check if move crosses a river (for logging)
+  const prevCol = unit.col, prevRow = unit.row;
   unit.col = targetCol;
   unit.row = targetRow;
   markVisibilityDirty();
   unit.moveLeft = remaining;
   unit.fortified = false;
   unit.sleeping = false;
+
+  // Log river crossing info
+  const riverCrossed = crossesRiver(prevCol, prevRow, targetCol, targetRow);
+  if (riverCrossed) {
+    if (roadBridgesRiver(prevCol, prevRow, targetCol, targetRow)) {
+      addEvent('Crossed river via bridge — normal movement', 'movement');
+    } else {
+      addEvent('Crossed river — all movement points consumed', 'movement');
+    }
+  }
 
   // Reveal at destination too (in case path was empty)
   revealAround(unit.col, unit.row, sightRange);
@@ -701,6 +754,7 @@ export {
   createUnit,
   placeFactionCities,
   computeMoveRange,
+  computeRiverCrossings,
   computeAttackRange,
   moveUnitTo,
   reconstructMovePath,

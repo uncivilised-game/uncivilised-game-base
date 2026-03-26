@@ -1,7 +1,7 @@
 import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileMoveCost, isTilePassable } from './map.js';
+import { getTileMoveCost, isTilePassable, hasRoadBridge } from './map.js';
 import { addEvent, logAction } from './events.js';
 import { render } from './render.js';
 import { isResourceRevealed } from './map.js';
@@ -367,3 +367,6 @@ export function getWaypointPath(unit) {
   }
   return path;
 }
+
+// Re-export hasRoadBridge from map.js for convenience
+export { hasRoadBridge };

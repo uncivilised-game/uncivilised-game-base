@@ -3,8 +3,8 @@ import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
-import { getTileYields, getTileName, getTileMoveCost, isResourceRevealed } from './map.js';
-import { computeMoveRange, computeAttackRange, getEnemyZOCHexes } from './units.js';
+import { getTileYields, getTileName, getTileMoveCost, isResourceRevealed, crossesRiver, roadBridgesRiver } from './map.js';
+import { computeMoveRange, computeRiverCrossings, computeAttackRange, getEnemyZOCHexes } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
 import { getRelationLabel } from './diplomacy-api.js';
@@ -148,6 +148,7 @@ function render() {
   const endRow = Math.min(MAP_ROWS, Math.ceil((camY + viewH + HEX_SIZE * 2) / (HEX_SIZE * 1.5)));
 
   const moveRange = computeMoveRange();
+  const riverCrossings = computeRiverCrossings();
   const attackRange = computeAttackRange();
   // ZOC overlay: show enemy ZOC hexes when a player unit is selected
   const zocHexes = game.selectedUnitId ? getEnemyZOCHexes('player') : null;
@@ -352,20 +353,31 @@ function render() {
         }
       }
 
-      // Move range highlight
+      // Move range highlight (yellow for river crossings, green for normal)
       if (moveRange) {
         const key = `${c},${r}`;
         if (moveRange.has(key)) {
+          const isRiverCross = riverCrossings && riverCrossings.has(key);
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          ctx.fillStyle = 'rgba(80,220,120,0.22)';
+          ctx.fillStyle = isRiverCross ? 'rgba(220,200,60,0.25)' : 'rgba(80,220,120,0.22)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(80,220,120,0.65)';
+          ctx.strokeStyle = isRiverCross ? 'rgba(220,200,60,0.75)' : 'rgba(80,220,120,0.65)';
           ctx.lineWidth = 2;
           ctx.stroke();
-          drawHex(ctx, sx, sy, HEX_SIZE - 4);
-          ctx.strokeStyle = 'rgba(80,220,120,0.25)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
+          if (isRiverCross) {
+            // Dashed inner stroke for river crossing tiles
+            ctx.setLineDash([4, 3]);
+            drawHex(ctx, sx, sy, HEX_SIZE - 4);
+            ctx.strokeStyle = 'rgba(220,180,40,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            drawHex(ctx, sx, sy, HEX_SIZE - 4);
+            ctx.strokeStyle = 'rgba(80,220,120,0.25)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
         }
       }
 

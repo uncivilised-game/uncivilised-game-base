@@ -32,10 +32,12 @@ function resolveCombat(attacker, defender) {
   if (defTile.feature === 'hills') defPower += 3;
   if (defTile.feature === 'woods' || defTile.feature === 'rainforest') defPower += 3;
 
-  // River crossing penalty: attacker loses -5 combat when attacking across a river edge
+  // River crossing penalty: attacker loses -3 combat when attacking across a river edge
   // (Classic Civ rule — rivers are natural defensive barriers)
-  if (crossesRiver(attacker.col, attacker.row, defender.col, defender.row)) {
-    atkPower -= 5;
+  const isRiverCrossingAttack = crossesRiver(attacker.col, attacker.row, defender.col, defender.row);
+  if (isRiverCrossingAttack) {
+    atkPower -= 3;
+    addEvent('River crossing penalty: -3 combat strength', 'combat');
   }
 
   // Flanking bonus: +2 per friendly unit adjacent to defender (Civ 6 style)

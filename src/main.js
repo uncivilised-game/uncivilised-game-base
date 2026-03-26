@@ -33,7 +33,7 @@ import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction } 
 import { updateRankingsHUD, toggleRankingsDropdown, renderRankingsDropdown } from './rankings.js';
 import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
-import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages } from './map.js';
+import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages, getHexDirection, hasRiverBetween, hasRoadBridge } from './map.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -95,6 +95,9 @@ window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
 window.discoverVillage = discoverVillage;
 window.rollTribalVillageReward = rollTribalVillageReward;
+window.hasRiverBetween = hasRiverBetween;
+window.hasRoadBridge = hasRoadBridge;
+window.getHexDirection = getHexDirection;
 
 // --- createInitialState (here to avoid circular deps between map.js and units.js) ---
 /** Build Set of resource IDs revealed by a given list of techs */
