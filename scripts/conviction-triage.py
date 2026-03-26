@@ -31,6 +31,7 @@ MIN_MESSAGE_LENGTH = 10  # skip very short/empty messages
 ACTIONABLE_CATEGORIES = {"bug_report", "feature_request", "gameplay_feedback"}
 
 PRIORITY_WEIGHTS = {"critical": 5, "high": 3, "medium": 2, "low": 1}
+ADMIN_SCORE_BONUS = 5  # bonus per admin report — admin feedback is high-signal
 CATEGORY_LABELS = {
     "bug_report": "bug",
     "feature_request": "enhancement",
@@ -174,10 +175,11 @@ def score_cluster(cluster):
     - 1 person spamming 3 reports   = 6+2 = 8  (barely passes — unique reporters matter)
 
     Formula:
-      priority_sum + (unique_reporters * 2) + recency_bonus
+      priority_sum + (unique_reporters * 2) + recency_bonus + admin_bonus
 
     Unique reporters are weighted 2x because independent confirmation
-    is the strongest conviction signal.
+    is the strongest conviction signal. Admin feedback gets a flat bonus
+    per report because admins have deeper context on what matters.
     """
     priority_score = sum(PRIORITY_WEIGHTS.get(item.get("priority", "medium"), 2) for item in cluster)
     unique_reporters = len(set(item.get("player_name", "") for item in cluster if item.get("player_name")))
@@ -195,7 +197,10 @@ def score_cluster(cluster):
             except (ValueError, TypeError):
                 pass
 
-    return priority_score + (unique_reporters * 2) + recency_bonus
+    # Admin bonus: admin reports carry extra weight
+    admin_bonus = sum(ADMIN_SCORE_BONUS for item in cluster if item.get("is_admin"))
+
+    return priority_score + (unique_reporters * 2) + recency_bonus + admin_bonus
 
 
 # ── GitHub issues ──────────────────────────────────────────────────
@@ -258,7 +263,8 @@ def update_github_issue(issue_number, body):
 def summarize_cluster(cluster, conviction_score):
     """Use Claude to generate an issue title and description from a cluster of feedback."""
     reports_text = "\n".join(
-        f"- [{item.get('category', 'other')}][{item.get('priority', 'medium')}] "
+        f"- [{item.get('category', 'other')}][{item.get('priority', 'medium')}]"
+        f"{'[ADMIN]' if item.get('is_admin') else ''} "
         f"**{item.get('player_name', 'anon')}** (turn {item.get('game_turn', '?')}): "
         f"\"{item.get('message', '')}\""
         for item in cluster
@@ -319,7 +325,7 @@ def format_issue_body(cluster, conviction_score, description):
             dates.append(item["created_at"][:10])
 
     reports_section = "\n".join(
-        f"- **{item.get('player_name', 'anon')}** "
+        f"- {'🛡️ ' if item.get('is_admin') else ''}**{item.get('player_name', 'anon')}** "
         f"({item.get('created_at', '?')[:10]}): "
         f"\"{item.get('message', '')}\""
         for item in sorted(cluster, key=lambda x: x.get("created_at", ""))
@@ -350,7 +356,7 @@ def run():
 
     # 1. Fetch new (unprocessed) feedback
     print("\n1. Fetching new feedback...")
-    new_feedback = sb_get("feedback", "status=eq.new&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at&order=created_at.asc")
+    new_feedback = sb_get("feedback", "status=eq.new&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at,is_admin&order=created_at.asc")
     print(f"   Found {len(new_feedback)} new feedback entries")
 
     # 1b. Filter out non-actionable feedback (questions, other, spam, too short)
@@ -374,7 +380,7 @@ def run():
         print(f"   Skipped {len(skipped)} ({', '.join(r for _, r in skipped[:5])}{'...' if len(skipped) > 5 else ''})")
 
     # 1c. Also fetch 'pending' feedback from previous runs (below threshold, waiting for more signal)
-    pending_feedback = sb_get("feedback", "status=eq.pending&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at,embedding&order=created_at.asc")
+    pending_feedback = sb_get("feedback", "status=eq.pending&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at,embedding,is_admin&order=created_at.asc")
     print(f"   Actionable: {len(actionable)} new + {len(pending_feedback)} pending")
 
     if not actionable and not pending_feedback:
@@ -474,7 +480,7 @@ def run():
 
         # Re-fetch all feedback for this issue to rebuild the body
         all_linked = sb_get("feedback",
-            f"github_issue_number=eq.{issue_num}&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at&order=created_at.asc")
+            f"github_issue_number=eq.{issue_num}&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at,is_admin&order=created_at.asc")
         for item in all_linked:
             snapshot = item.get("game_state_snapshot") or {}
             item["game_turn"] = snapshot.get("turn", "?")

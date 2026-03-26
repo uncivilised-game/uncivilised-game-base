@@ -87,6 +87,7 @@ export async function sendFeedback() {
         visitor_id: safeStorage.getItem('uncivilised_visitor_id') || null,
         player_name: safeStorage.getItem('uncivilised_username') || null,
         game_state: gameContext,
+        admin_secret: safeStorage.getItem('uncivilised_admin_secret') || undefined,
       }),
     });
 

@@ -425,6 +425,7 @@ class FeedbackMessage(BaseModel):
     visitor_id: str | None = None
     player_name: str | None = None
     game_state: dict | None = None
+    admin_secret: str | None = None
 
 
 # ═══════════════════════════════════════════════════
@@ -1600,6 +1601,7 @@ async def submit_feedback(data: FeedbackMessage, request: Request):
         return {"success": False, "error": "Feedback message too short"}
 
     visitor_id = data.visitor_id or request.headers.get("x-visitor-id", "anonymous")
+    is_admin = bool(ADMIN_SECRET and data.admin_secret and data.admin_secret == ADMIN_SECRET)
 
     # ── Rate limit (in-memory) ──
     now = time.time()
@@ -1674,6 +1676,7 @@ Respond with EXACTLY this JSON format (no other text):
                 "ai_response": ai_response,
                 "game_state_snapshot": data.game_state,
                 "status": "new",
+                "is_admin": is_admin,
             })
             if rows:
                 feedback_id = rows[0].get("id")

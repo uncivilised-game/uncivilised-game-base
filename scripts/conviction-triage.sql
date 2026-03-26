@@ -7,7 +7,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 2. Add embedding column to feedback table (768 dims for gemini-embedding-001)
 ALTER TABLE feedback
   ADD COLUMN IF NOT EXISTS embedding vector(768),
-  ADD COLUMN IF NOT EXISTS github_issue_number INT;
+  ADD COLUMN IF NOT EXISTS github_issue_number INT,
+  ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
 
 -- 3. Index for fast similarity search (ivfflat — good up to ~1M rows)
 -- Using cosine distance operator class
