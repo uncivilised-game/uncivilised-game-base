@@ -1,9 +1,10 @@
 import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
-import { game } from './state.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileMoveCost, isTilePassable } from './map.js';
-import { addEvent, logAction } from './events.js';
+import { getTileMoveCost, isTilePassable, hasRoadBridge } from './map.js';
+import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
 import { render } from './render.js';
+import { isResourceRevealed } from './map.js';
 import { createUnit } from './units.js';
 import { revealAround } from './discovery.js';
 import { getUnitAt } from './combat.js';
@@ -34,6 +35,8 @@ export function getAvailableImprovements(col, row) {
     if (imp.requiresRiver && !tile.hasRiver) continue;
     // Check resource requirement
     if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
+    // Cannot build on unrevealed strategic resources
+    if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) continue;
     // Terraforming checks
     if (imp.terraform) {
       if (imp.terraform.removeFeature && !tile.feature) continue;
@@ -113,6 +116,31 @@ export function processImprovements() {
           tile.improvement = builder.improvementId;
           addEvent(`${imp.name} completed!`, 'gold');
         logAction('build', 'Improvement completed: ' + imp.name + ' at (' + c + ',' + r + ')', { improvement: builder.improvementId, col: c, row: r });
+
+          // --- Eureka/Inspiration triggers for improvements ---
+          // Track total improvements for craftsmanship inspiration
+          game.improvementCount = (game.improvementCount || 0) + 1;
+          if (game.improvementCount >= 3) triggerInspiration('craftsmanship');
+
+          if (builder.improvementId === 'quarry') {
+            triggerEureka('mining');
+            triggerEureka('masonry');
+          }
+          if (builder.improvementId === 'pasture') {
+            triggerEureka('animal_husbandry');
+            triggerEureka('wheel');
+          }
+          if (builder.improvementId === 'mine') {
+            game.mineCount = (game.mineCount || 0) + 1;
+            if (game.mineCount >= 3) triggerEureka('construction');
+          }
+          if (builder.improvementId === 'farm') {
+            // Check if adjacent to river
+            const farmTile = game.map[r][c];
+            if (farmTile && farmTile.hasRiver) {
+              triggerEureka('irrigation_tech');
+            }
+          }
         }
 
         // Wake the worker
@@ -173,7 +201,12 @@ export function showWorkerActions(unitOrId) {
   if (tile.road) html += `<p style="color:var(--color-text-muted)">Has Road</p>`;
 
   if (available.length === 0 && !tile.improvementBuilder) {
-    html += `<p style="color:var(--color-text-faint);font-style:italic">City tile \u2014 move to an adjacent tile to build improvements</p>`;
+    // Check if blocked by an unrevealed strategic resource
+    if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) {
+      html += `<p style="color:var(--color-text-faint);font-style:italic">\u{2753} Unknown resource \u{2014} research needed</p>`;
+    } else {
+      html += `<p style="color:var(--color-text-faint);font-style:italic">City tile \u{2014} move to an adjacent tile to build improvements</p>`;
+    }
   } else {
     for (const imp of available) {
       const yieldParts = [];
@@ -265,6 +298,7 @@ window.foundCity = function(unitId) {
     population: 500,
     borderRadius: 1,
     cultureAccum: 0,
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove the settler
@@ -280,6 +314,11 @@ window.foundCity = function(unitId) {
 
   addEvent('🏛 City of ' + cityName + ' founded!', 'gold');
   logAction('build', 'Founded city: ' + cityName + ' at (' + unit.col + ',' + unit.row + ')', { cityName, col: unit.col, row: unit.row });
+  // --- Eureka/Inspiration: founding second city ---
+  if (game.cities.length > 1) {
+    triggerEureka('pottery');
+    triggerInspiration('early_empire');
+  }
   showCompletionNotification('building', cityName + ' Founded', 'New city established! Population: 500');
 
   hideSelectionPanel();
@@ -358,3 +397,6 @@ export function getWaypointPath(unit) {
   }
   return path;
 }
+
+// Re-export hasRoadBridge from map.js for convenience
+export { hasRoadBridge };

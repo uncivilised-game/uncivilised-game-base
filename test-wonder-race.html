@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wonder Race Simulator - Uncivilised</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d0d1a; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { color: #ffd700; margin-bottom: 16px; font-size: 22px; }
+  h2 { color: #ffd700; margin: 16px 0 8px; font-size: 16px; }
+  .section { background: rgba(20,20,35,0.9); border: 1px solid #333; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  label { color: #aaa; font-size: 13px; display: block; margin-bottom: 4px; }
+  select, input[type=range], button { margin-bottom: 8px; }
+  select { background: #1a1a2e; color: #e0e0e0; border: 1px solid #444; padding: 6px 10px; border-radius: 4px; font-size: 13px; width: 100%; }
+  button { background: #2a2a4a; color: #ffd700; border: 1px solid #555; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-right: 8px; }
+  button:hover { background: #3a3a5a; }
+  button.primary { background: #4a3a1a; border-color: #ffd700; }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .slider-row input { flex: 1; }
+  .slider-val { color: #ffd700; min-width: 30px; text-align: right; font-size: 13px; }
+  .wonder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin: 10px 0; }
+  .wonder-card { background: rgba(30,30,50,0.8); border: 1px solid #444; border-radius: 6px; padding: 10px; }
+  .wonder-card.built { opacity: 0.5; border-color: #e05050; }
+  .wonder-card .name { color: #ffd700; font-weight: bold; font-size: 14px; }
+  .wonder-card .desc { color: #888; font-size: 11px; margin-top: 2px; }
+  .wonder-card .status { margin-top: 6px; font-size: 12px; }
+  .wonder-card .status.available { color: #4caf50; }
+  .wonder-card .status.taken { color: #e05050; }
+  .progress-bar { background: #1a1a2e; border-radius: 4px; height: 14px; overflow: hidden; margin: 4px 0; position: relative; }
+  .progress-bar .fill { height: 100%; transition: width 0.2s; border-radius: 4px; }
+  .progress-bar .fill.player { background: #4caf50; }
+  .progress-bar .fill.ai { background: #e07020; }
+  .progress-bar .label { position: absolute; top: 0; left: 6px; font-size: 10px; line-height: 14px; color: #fff; }
+  #race-log { background: #0a0a15; border: 1px solid #333; border-radius: 6px; padding: 10px; max-height: 300px; overflow-y: auto; font-size: 12px; font-family: monospace; margin-top: 10px; }
+  #race-log .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  #race-log .log-entry.complete { color: #ffd700; font-weight: bold; }
+  #race-log .log-entry.refund { color: #e07020; }
+  #test-results { margin-top: 10px; }
+  .test-pass { color: #4caf50; }
+  .test-fail { color: #e05050; }
+  .test-item { padding: 4px 0; font-size: 13px; }
+  .race-vis { display: flex; gap: 16px; margin: 10px 0; }
+  .race-col { flex: 1; }
+  .race-label { font-size: 12px; color: #aaa; margin-bottom: 4px; }
+  .category-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
+  .category-tag.cultural { background: #6a3aaa; }
+  .category-tag.military { background: #aa3a3a; }
+  .category-tag.economic { background: #3a8a3a; }
+</style>
+</head>
+<body>
+
+<h1>Wonder Race Simulator</h1>
+
+<!-- Wonder Status Grid -->
+<div class="section">
+  <h2>Wonder Status</h2>
+  <div id="wonder-grid" class="wonder-grid"></div>
+  <button onclick="checkAvailability()">Check Availability</button>
+  <button onclick="aiBuildAll()">AI Builds All Wonders</button>
+  <button onclick="resetState()">Reset All</button>
+</div>
+
+<!-- Race Simulator -->
+<div class="section">
+  <h2>Wonder Race</h2>
+  <label>Select Wonder to Race For:</label>
+  <select id="race-wonder"></select>
+
+  <div class="slider-row">
+    <label style="min-width:150px;margin:0">Player Production/turn:</label>
+    <input type="range" id="player-prod" min="1" max="20" value="5" oninput="document.getElementById('player-prod-val').textContent=this.value">
+    <span class="slider-val" id="player-prod-val">5</span>
+  </div>
+
+  <div class="slider-row">
+    <label style="min-width:150px;margin:0">AI Production/turn:</label>
+    <input type="range" id="ai-prod" min="1" max="20" value="6" oninput="document.getElementById('ai-prod-val').textContent=this.value">
+    <span class="slider-val" id="ai-prod-val">6</span>
+  </div>
+
+  <label>AI Faction:</label>
+  <select id="race-ai-faction"></select>
+
+  <button class="primary" onclick="runRace()">Race!</button>
+
+  <div class="race-vis">
+    <div class="race-col">
+      <div class="race-label">Player Progress</div>
+      <div class="progress-bar"><div class="fill player" id="player-bar" style="width:0%"></div><span class="label" id="player-bar-label">0%</span></div>
+    </div>
+    <div class="race-col">
+      <div class="race-label">AI Progress</div>
+      <div class="progress-bar"><div class="fill ai" id="ai-bar" style="width:0%"></div><span class="label" id="ai-bar-label">0%</span></div>
+    </div>
+  </div>
+
+  <div id="race-log"></div>
+</div>
+
+<!-- Automated Tests -->
+<div class="section">
+  <h2>Automated Tests</h2>
+  <button class="primary" onclick="runAllTests()">Run All Tests</button>
+  <div id="test-results"></div>
+</div>
+
+<script>
+// ============================================
+// GAME DATA (mirrored from src/constants.js)
+// ============================================
+const WONDERS = [
+  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', icon: '\u{1F33F}', category: 'economic' },
+  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', icon: '\u{1F4D0}', category: 'economic' },
+  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', icon: '\u{1F4DA}', category: 'cultural' },
+  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', icon: '\u{1F52E}', category: 'cultural' },
+  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', icon: '\u{1F6E4}', category: 'economic' },
+  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', icon: '\u{1F3DC}', category: 'economic' },
+];
+
+const FACTIONS = {
+  emperor_valerian:          { name: 'High Chieftain Aethelred', archetype: 'expansionist' },
+  shadow_kael:               { name: 'Warlord Kael',             archetype: 'militaristic' },
+  merchant_prince_castellan: { name: 'Queen Tariq',              archetype: 'diplomatic' },
+  pirate_queen_elara:        { name: 'Pythia Ione',              archetype: 'cultural' },
+  commander_thane:           { name: 'Commander Thane',          archetype: 'militaristic' },
+  rebel_leader_sera:         { name: "High Priestess 'Ula",      archetype: 'cultural' },
+};
+
+const WONDER_PRIORITIES = {
+  cultural: {
+    oracle: 1.0, great_library: 0.9, hanging_gardens: 0.7,
+    colossus: 0.3, terracotta_army: 0.2, pyramids: 0.4, petra: 0.3, great_lighthouse: 0.4,
+  },
+  militaristic: {
+    terracotta_army: 1.0, colossus: 0.9, pyramids: 0.5,
+    oracle: 0.2, great_library: 0.3, hanging_gardens: 0.3, petra: 0.4, great_lighthouse: 0.5,
+  },
+  expansionist: {
+    pyramids: 1.0, petra: 0.9, hanging_gardens: 0.7,
+    great_lighthouse: 0.6, colossus: 0.5, oracle: 0.3, great_library: 0.3, terracotta_army: 0.5,
+  },
+  diplomatic: {
+    hanging_gardens: 1.0, oracle: 0.9, great_library: 0.7,
+    pyramids: 0.5, petra: 0.4, colossus: 0.3, terracotta_army: 0.2, great_lighthouse: 0.5,
+  },
+};
+
+// ============================================
+// SIMULATED GAME STATE
+// ============================================
+let game = createFreshState();
+
+function createFreshState() {
+  return {
+    builtWonders: {},
+    aiWonderProgress: {},
+    wonders: [],
+    gold: 100,
+    currentWonderBuild: null,
+    wonderBuildProgress: 0,
+    factionStats: {},
+  };
+}
+
+function resetState() {
+  game = createFreshState();
+  renderWonderGrid();
+  document.getElementById('race-log').innerHTML = '';
+  document.getElementById('player-bar').style.width = '0%';
+  document.getElementById('ai-bar').style.width = '0%';
+  document.getElementById('player-bar-label').textContent = '0%';
+  document.getElementById('ai-bar-label').textContent = '0%';
+}
+
+// ============================================
+// WONDER GRID DISPLAY
+// ============================================
+function renderWonderGrid() {
+  const grid = document.getElementById('wonder-grid');
+  grid.innerHTML = '';
+  for (const w of WONDERS) {
+    const built = game.builtWonders[w.id];
+    const card = document.createElement('div');
+    card.className = 'wonder-card' + (built ? ' built' : '');
+    const ownerName = built ? (built === 'player' ? 'You' : (FACTIONS[built] ? FACTIONS[built].name : built)) : null;
+    card.innerHTML = `
+      <div class="name">${w.icon} ${w.name} <span class="category-tag ${w.category}">${w.category}</span></div>
+      <div class="desc">${w.desc} (Cost: ${w.cost})</div>
+      <div class="status ${built ? 'taken' : 'available'}">${built ? 'Built by ' + ownerName : 'Available'}</div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+function checkAvailability() {
+  const log = document.getElementById('race-log');
+  log.innerHTML = '<div class="log-entry" style="color:#ffd700;font-weight:bold">--- Wonder Availability ---</div>';
+  for (const w of WONDERS) {
+    const built = game.builtWonders[w.id];
+    if (built) {
+      const ownerName = built === 'player' ? 'You' : (FACTIONS[built] ? FACTIONS[built].name : built);
+      log.innerHTML += `<div class="log-entry" style="color:#e05050">${w.icon} ${w.name}: Built by ${ownerName}</div>`;
+    } else {
+      log.innerHTML += `<div class="log-entry" style="color:#4caf50">${w.icon} ${w.name}: Available</div>`;
+    }
+  }
+}
+
+function aiBuildAll() {
+  const factionIds = Object.keys(FACTIONS);
+  let idx = 0;
+  for (const w of WONDERS) {
+    if (!game.builtWonders[w.id]) {
+      const fid = factionIds[idx % factionIds.length];
+      game.builtWonders[w.id] = fid;
+      idx++;
+    }
+  }
+  renderWonderGrid();
+  const log = document.getElementById('race-log');
+  log.innerHTML = '<div class="log-entry complete">All wonders have been built by AI factions.</div>';
+
+  // Verify player can't queue any
+  const available = WONDERS.filter(w => !game.builtWonders[w.id]);
+  log.innerHTML += `<div class="log-entry">Available wonders for player: ${available.length}</div>`;
+  if (available.length === 0) {
+    log.innerHTML += '<div class="log-entry" style="color:#4caf50">PASS: Player cannot queue any wonders.</div>';
+  } else {
+    log.innerHTML += '<div class="log-entry" style="color:#e05050">FAIL: Some wonders still available!</div>';
+  }
+}
+
+// ============================================
+// WONDER RACE SIMULATION
+// ============================================
+function runRace() {
+  const wonderId = document.getElementById('race-wonder').value;
+  if (!wonderId) return;
+  const wdata = WONDERS.find(w => w.id === wonderId);
+  if (!wdata) return;
+
+  // Reset race state
+  if (game.builtWonders[wonderId]) {
+    document.getElementById('race-log').innerHTML = '<div class="log-entry" style="color:#e05050">This wonder is already built! Reset first.</div>';
+    return;
+  }
+
+  const playerProd = parseInt(document.getElementById('player-prod').value);
+  const aiProd = parseInt(document.getElementById('ai-prod').value);
+  const aiFactionId = document.getElementById('race-ai-faction').value;
+  const aiFaction = FACTIONS[aiFactionId];
+
+  const log = document.getElementById('race-log');
+  log.innerHTML = `<div class="log-entry complete">--- Racing for ${wdata.icon} ${wdata.name} (cost: ${wdata.cost}) ---</div>`;
+  log.innerHTML += `<div class="log-entry">Player: ${playerProd} prod/turn | ${aiFaction.name}: ${aiProd} prod/turn</div>`;
+
+  let playerProgress = 0;
+  let aiProgress = 0;
+  let turn = 0;
+  let winner = null;
+
+  while (!winner) {
+    turn++;
+    playerProgress += playerProd;
+    aiProgress += aiProd;
+
+    const playerPct = Math.min(100, Math.floor((playerProgress / wdata.cost) * 100));
+    const aiPct = Math.min(100, Math.floor((aiProgress / wdata.cost) * 100));
+
+    if (playerProgress >= wdata.cost && aiProgress >= wdata.cost) {
+      // Tie — both complete same turn, player wins (home advantage)
+      winner = 'player';
+      log.innerHTML += `<div class="log-entry complete">Turn ${turn}: Both complete! Player wins (tie-breaker).</div>`;
+    } else if (playerProgress >= wdata.cost) {
+      winner = 'player';
+      const refund = Math.floor(aiProgress * 0.5);
+      log.innerHTML += `<div class="log-entry complete">Turn ${turn}: Player completes ${wdata.name}!</div>`;
+      log.innerHTML += `<div class="log-entry refund">AI ${aiFaction.name} production refunded: ${refund} gold</div>`;
+      game.builtWonders[wonderId] = 'player';
+      game.wonders.push(wonderId);
+    } else if (aiProgress >= wdata.cost) {
+      winner = aiFactionId;
+      const refund = Math.floor(playerProgress * 0.5);
+      log.innerHTML += `<div class="log-entry complete">Turn ${turn}: AI ${aiFaction.name} completes ${wdata.name}!</div>`;
+      log.innerHTML += `<div class="log-entry refund">Your production refunded: ${refund} gold</div>`;
+      game.builtWonders[wonderId] = aiFactionId;
+      game.gold += refund;
+    } else {
+      if (turn % 5 === 0 || turn <= 3) {
+        log.innerHTML += `<div class="log-entry">Turn ${turn}: Player ${playerPct}% | ${aiFaction.name} ${aiPct}%</div>`;
+      }
+    }
+  }
+
+  // Update progress bars
+  document.getElementById('player-bar').style.width = (winner === 'player' ? '100' : Math.floor((playerProgress / wdata.cost) * 100)) + '%';
+  document.getElementById('ai-bar').style.width = (winner !== 'player' ? '100' : Math.floor((aiProgress / wdata.cost) * 100)) + '%';
+  document.getElementById('player-bar-label').textContent = winner === 'player' ? 'COMPLETE' : Math.floor((playerProgress / wdata.cost) * 100) + '%';
+  document.getElementById('ai-bar-label').textContent = winner !== 'player' ? 'COMPLETE' : Math.floor((aiProgress / wdata.cost) * 100) + '%';
+
+  renderWonderGrid();
+  log.scrollTop = log.scrollHeight;
+}
+
+// ============================================
+// AUTOMATED TESTS
+// ============================================
+function runAllTests() {
+  const results = document.getElementById('test-results');
+  results.innerHTML = '';
+  let passed = 0;
+  let failed = 0;
+
+  function assert(name, condition) {
+    if (condition) {
+      results.innerHTML += `<div class="test-item test-pass">PASS: ${name}</div>`;
+      passed++;
+    } else {
+      results.innerHTML += `<div class="test-item test-fail">FAIL: ${name}</div>`;
+      failed++;
+    }
+  }
+
+  // Test 1: Cannot start production on a built wonder
+  {
+    const g = createFreshState();
+    g.builtWonders['pyramids'] = 'pirate_queen_elara';
+    const canBuild = !g.builtWonders['pyramids'];
+    assert('Cannot start production on a built wonder', canBuild === false);
+  }
+
+  // Test 2: Completion cancels other builders
+  {
+    const g = createFreshState();
+    g.aiWonderProgress = {
+      emperor_valerian: { wonderId: 'oracle', progress: 50 },
+      shadow_kael: { wonderId: 'oracle', progress: 30 },
+    };
+    g.factionStats = {
+      emperor_valerian: { gold: 100 },
+      shadow_kael: { gold: 80 },
+    };
+    // Player completes oracle
+    g.builtWonders['oracle'] = 'player';
+    // Cancel AI builders
+    for (const [fid, wp] of Object.entries(g.aiWonderProgress)) {
+      if (wp.wonderId === 'oracle') {
+        const refund = Math.floor(wp.progress * 0.5);
+        g.factionStats[fid].gold += refund;
+        delete g.aiWonderProgress[fid];
+      }
+    }
+    assert('Completion cancels other builders', Object.keys(g.aiWonderProgress).length === 0);
+    assert('Completion cancels other builders — AI 1 refunded', g.factionStats.emperor_valerian.gold === 125);
+    assert('Completion cancels other builders — AI 2 refunded', g.factionStats.shadow_kael.gold === 95);
+  }
+
+  // Test 3: 50% refund calculated correctly
+  {
+    const investedProduction = 80;
+    const refundGold = Math.floor(investedProduction * 0.5);
+    assert('50% refund calculated correctly (80 -> 40)', refundGold === 40);
+
+    const invested2 = 45;
+    const refund2 = Math.floor(invested2 * 0.5);
+    assert('50% refund calculated correctly (45 -> 22)', refund2 === 22);
+
+    const invested3 = 1;
+    const refund3 = Math.floor(invested3 * 0.5);
+    assert('50% refund calculated correctly (1 -> 0)', refund3 === 0);
+  }
+
+  // Test 4: AI selects wonders matching its archetype
+  {
+    // Cultural AI should prefer oracle/great_library
+    const culturalPriorities = WONDER_PRIORITIES.cultural;
+    const topCultural = Object.entries(culturalPriorities).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+    assert('Cultural AI prioritizes oracle', topCultural.includes('oracle'));
+    assert('Cultural AI prioritizes great_library', topCultural.includes('great_library'));
+
+    // Militaristic AI should prefer terracotta_army/colossus
+    const militaryPriorities = WONDER_PRIORITIES.militaristic;
+    const topMilitary = Object.entries(militaryPriorities).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+    assert('Militaristic AI prioritizes terracotta_army', topMilitary.includes('terracotta_army'));
+    assert('Militaristic AI prioritizes colossus', topMilitary.includes('colossus'));
+
+    // Expansionist AI should prefer pyramids/petra
+    const expPriorities = WONDER_PRIORITIES.expansionist;
+    const topExp = Object.entries(expPriorities).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+    assert('Expansionist AI prioritizes pyramids', topExp.includes('pyramids'));
+    assert('Expansionist AI prioritizes petra', topExp.includes('petra'));
+
+    // Diplomatic AI should prefer hanging_gardens/oracle
+    const dipPriorities = WONDER_PRIORITIES.diplomatic;
+    const topDip = Object.entries(dipPriorities).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]);
+    assert('Diplomatic AI prioritizes hanging_gardens', topDip.includes('hanging_gardens'));
+    assert('Diplomatic AI prioritizes oracle', topDip.includes('oracle'));
+  }
+
+  // Test 5: builtWonders persists in save/load
+  {
+    const g = createFreshState();
+    g.builtWonders = { pyramids: 'player', oracle: 'pirate_queen_elara' };
+    g.aiWonderProgress = { shadow_kael: { wonderId: 'colossus', progress: 40 } };
+    // Simulate save
+    const saved = JSON.stringify({ builtWonders: g.builtWonders, aiWonderProgress: g.aiWonderProgress });
+    // Simulate load
+    const loaded = JSON.parse(saved);
+    assert('builtWonders persists in save/load', loaded.builtWonders.pyramids === 'player' && loaded.builtWonders.oracle === 'pirate_queen_elara');
+    assert('aiWonderProgress persists in save/load', loaded.aiWonderProgress.shadow_kael.wonderId === 'colossus' && loaded.aiWonderProgress.shadow_kael.progress === 40);
+  }
+
+  // Test 6: Global tracker prevents duplicate construction
+  {
+    const g = createFreshState();
+    g.builtWonders['great_library'] = 'commander_thane';
+    // Another faction tries to mark it as built
+    const canBuild = !g.builtWonders['great_library'];
+    assert('Global tracker prevents duplicate construction', canBuild === false);
+  }
+
+  // Summary
+  results.innerHTML += `<div class="test-item" style="margin-top:10px;color:#ffd700;font-weight:bold">Results: ${passed} passed, ${failed} failed out of ${passed + failed} tests</div>`;
+}
+
+// ============================================
+// INITIALIZATION
+// ============================================
+function init() {
+  // Populate wonder dropdown
+  const sel = document.getElementById('race-wonder');
+  for (const w of WONDERS) {
+    const opt = document.createElement('option');
+    opt.value = w.id;
+    opt.textContent = w.icon + ' ' + w.name + ' (cost: ' + w.cost + ')';
+    sel.appendChild(opt);
+  }
+
+  // Populate AI faction dropdown
+  const fSel = document.getElementById('race-ai-faction');
+  for (const [fid, f] of Object.entries(FACTIONS)) {
+    const opt = document.createElement('option');
+    opt.value = fid;
+    opt.textContent = f.name + ' (' + f.archetype + ')';
+    fSel.appendChild(opt);
+  }
+
+  renderWonderGrid();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY, WALL_HP } from './constants.js';
 import { getDefaultFactionStats } from './map.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
@@ -40,18 +40,50 @@ function migrateTiles(state) {
       if (fc.population === undefined) fc.population = 1000;
       if (fc.borderRadius === undefined) fc.borderRadius = 2;
       if (fc.improvements === undefined) fc.improvements = 0;
+      // Wall HP for faction cities (capitals get walls by default if military > 20)
+      if (fc.wallHP === undefined) fc.wallHP = 0;
+      if (fc.wallMaxHP === undefined) fc.wallMaxHP = 0;
+      if (fc.wallLastAttackedTurn === undefined) fc.wallLastAttackedTurn = -99;
     }
   }
-  // Ensure cities have per-city food field
+  // Ensure cities have per-city food field, wall HP fields, and amenity fields
   if (state.cities) {
     for (const city of state.cities) {
       if (city.food === undefined) city.food = 0;
+      // Wall HP: initialize based on whether city has walls building
+      if (city.wallHP === undefined) {
+        const hasWalls = (city.buildings || []).includes('walls');
+        city.wallHP = hasWalls ? WALL_HP.ancient_walls : 0;
+        city.wallMaxHP = hasWalls ? WALL_HP.ancient_walls : 0;
+      }
+      if (city.wallMaxHP === undefined) {
+        const hasWalls = (city.buildings || []).includes('walls');
+        city.wallMaxHP = hasWalls ? WALL_HP.ancient_walls : 0;
+      }
+      if (city.wallLastAttackedTurn === undefined) city.wallLastAttackedTurn = -99;
+      if (city.amenityBalance === undefined) city.amenityBalance = 0;
+      if (city.amenityStatus === undefined) city.amenityStatus = 'CONTENT';
+      if (city.amenityMod === undefined) city.amenityMod = 0;
+      if (city.amenityRequired === undefined) city.amenityRequired = 0;
+      if (city.amenityFromLuxuries === undefined) city.amenityFromLuxuries = 0;
+      if (city.amenityFromBuildings === undefined) city.amenityFromBuildings = 0;
+      if (city.amenityFromAlliance === undefined) city.amenityFromAlliance = 0;
     }
   }
   if (!state.aiFactions) state.aiFactions = {};
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];
   if (!state.aiWonders) state.aiWonders = {};
+  if (!state.builtWonders) state.builtWonders = {};
+  if (!state.aiWonderProgress) state.aiWonderProgress = {};
+  // AI-to-AI diplomacy state
+  if (!state.aiRelations) state.aiRelations = {};
+  if (!state.aiWars) state.aiWars = [];
+  if (!state.aiSecretPacts) state.aiSecretPacts = [];
+  if (!state.aiAlliances) state.aiAlliances = [];
+  if (!state.aiTradeDeals) state.aiTradeDeals = [];
+  if (!state.aiDenouncements) state.aiDenouncements = [];
+  if (!state.rumourQueue) state.rumourQueue = [];
   // Ensure every tile has col/row (missing in saves before v4)
   if (state.map) {
     for (let r = 0; r < state.map.length; r++) {
@@ -89,6 +121,19 @@ function migrateTiles(state) {
   if (!state.minorFactions) state.minorFactions = [];
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
+  if (!state.tribalVillages) state.tribalVillages = [];
+  // --- Resource visibility migration ---
+  // Rebuild revealedResources from techs for saves that pre-date this feature
+  if (!state.revealedResources) {
+    state.revealedResources = [];
+    const techs = state.techs || [];
+    for (const [resId, res] of Object.entries(RESOURCES)) {
+      if (res.revealedBy && techs.includes(res.revealedBy)) {
+        state.revealedResources.push(resId);
+      }
+    }
+  }
+  if (!state.factionRevealedResources) state.factionRevealedResources = {};
   // --- Reputation system migration ---
   if (!state.reputation) {
     state.reputation = {};
@@ -108,6 +153,15 @@ function migrateTiles(state) {
       state.diplomaticSummaries[fid] = null;
     }
   }
+
+  // --- Eureka/Inspiration system migration ---
+  if (!state.eurekas) state.eurekas = [];
+  if (!state.inspirations) state.inspirations = [];
+  if (state.barbarianKills === undefined) state.barbarianKills = 0;
+  if (state.mineCount === undefined) state.mineCount = 0;
+  if (state.improvementCount === undefined) state.improvementCount = 0;
+  if (!state.techProgress) state.techProgress = {};
+  if (!state.civicProgressMap) state.civicProgressMap = {};
 
   // Re-inject any dynamically created content from mods
   restoreMods(state);

@@ -1,17 +1,51 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES } from './constants.js';
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
-import { resolveCombat, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
+import { resolveCombat, isAtWarWith, declareSurpriseWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
-import { addEvent, logAction, showToast } from './events.js';
+import { addEvent, logAction, showToast, discoverVillage } from './events.js';
 import { revealAround } from './discovery.js';
 import { panCameraTo } from './input.js';
 import { updateUI } from './leaderboard.js';
 import { startAnimLoop } from './feedback.js';
 import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
+
+// ---- Zone of Control helpers ----
+
+/** Check if a hex is in an enemy's Zone of Control relative to a given faction */
+function isInEnemyZOC(col, row, movingUnitOwner) {
+  const neighbors = getHexNeighbors(col, row);
+  for (const nb of neighbors) {
+    const unitsOnTile = game.units.filter(u => u.col === nb.col && u.row === nb.row);
+    for (const u of unitsOnTile) {
+      if (u.owner !== movingUnitOwner) {
+        const ut = UNIT_TYPES[u.type];
+        if (ut && !ZOC_EXEMPT_CLASSES.includes(ut.class)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Get all hexes currently in enemy ZOC for a given faction (for rendering) */
+function getEnemyZOCHexes(factionId) {
+  const zocSet = new Set();
+  for (const u of game.units) {
+    if (u.owner === factionId) continue;
+    const ut = UNIT_TYPES[u.type];
+    if (!ut || ZOC_EXEMPT_CLASSES.includes(ut.class)) continue;
+    const neighbors = getHexNeighbors(u.col, u.row);
+    for (const nb of neighbors) {
+      zocSet.add(`${nb.col},${nb.row}`);
+    }
+  }
+  return zocSet;
+}
 
 function createUnit(type, col, row, owner) {
   const ut = UNIT_TYPES[type];
@@ -130,6 +164,9 @@ function computeMoveRange() {
   const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft }];
   visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
 
+  // ZOC: check if unit starts in enemy ZOC
+  const unitStartsInZOC = isInEnemyZOC(unit.col, unit.row, unit.owner);
+
   while (queue.length > 0) {
     const cur = queue.shift();
     if (cur.move <= 0) continue; // No movement left to expand from
@@ -147,7 +184,14 @@ function computeMoveRange() {
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRoughTerrain = cost >= 2;
-      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+
+      // Zone of Control: entering an enemy ZOC hex ends movement
+      const nbInZOC = isInEnemyZOC(nb.col, nb.row, unit.owner);
+      if (nbInZOC) {
+        remaining = 0; // Movement ends in ZOC hex
+      }
+
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       // Can't move through hexes with units (enemy or own)
@@ -162,6 +206,47 @@ function computeMoveRange() {
 
   visited.delete(`${unit.col},${unit.row}`);
   return visited;
+}
+
+/**
+ * Returns a Set of "col,row" keys for tiles in the move range that require
+ * an unbridged river crossing to reach (used for visual highlighting).
+ */
+function computeRiverCrossings() {
+  if (!game || !game.selectedUnitId) return null;
+  const unit = game.units.find(u => u.id === game.selectedUnitId);
+  if (!unit || unit.moveLeft <= 0 || unit.owner !== 'player') return null;
+
+  const riverTiles = new Set();
+  const visited = new Map();
+  const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft, crossedRiver: false }];
+  visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur.move <= 0) continue;
+    const neighbors = getHexNeighbors(cur.col, cur.row);
+    for (const nb of neighbors) {
+      const tile = game.map[nb.row][nb.col];
+      const cost = getTileMoveCost(tile);
+      if (cost >= 99) continue;
+      const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
+                        && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
+      const isRoughTerrain = cost >= 2;
+      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key) && visited.get(key) >= remaining) continue;
+      const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
+      if (blockingUnit) continue;
+      visited.set(key, remaining);
+      const crossed = cur.crossedRiver || isRiverCross;
+      if (crossed) riverTiles.add(key);
+      if (remaining > 0) {
+        queue.push({ col: nb.col, row: nb.row, move: remaining, crossedRiver: crossed });
+      }
+    }
+  }
+  return riverTiles;
 }
 
 function computeAttackRange() {
@@ -255,6 +340,8 @@ function moveUnitTo(unit, targetCol, targetRow) {
     revealAround(step.col, step.row, sightRange);
   }
 
+  // Check if move crosses a river (for logging)
+  const prevCol = unit.col, prevRow = unit.row;
   unit.col = targetCol;
   unit.row = targetRow;
   markVisibilityDirty();
@@ -262,12 +349,27 @@ function moveUnitTo(unit, targetCol, targetRow) {
   unit.fortified = false;
   unit.sleeping = false;
 
+  // Log river crossing info
+  const riverCrossed = crossesRiver(prevCol, prevRow, targetCol, targetRow);
+  if (riverCrossed) {
+    if (roadBridgesRiver(prevCol, prevRow, targetCol, targetRow)) {
+      addEvent('Crossed river via bridge — normal movement', 'movement');
+    } else {
+      addEvent('Crossed river — all movement points consumed', 'movement');
+    }
+  }
+
   // Reveal at destination too (in case path was empty)
   revealAround(unit.col, unit.row, sightRange);
   logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
 
   // Auto-clear barbarian camps when stepping on them
   checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+
+  // Check for tribal village discovery
+  if (unit.owner === 'player') {
+    discoverVillage(targetCol, targetRow, unit);
+  }
 
   return true;
 }
@@ -293,7 +395,13 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRough = cost >= 2;
-      const remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+
+      // ZOC: entering enemy ZOC ends movement
+      if (isInEnemyZOC(nb.col, nb.row, unit.owner)) {
+        remaining = 0;
+      }
+
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
@@ -448,6 +556,14 @@ function handleHexClick(col, row) {
         }
         const target = game.units.find(u => u.id === targetId);
         if (target) {
+          // Surprise attack check: non-barbarian units belonging to a faction we're not at war with
+          if (target.owner !== 'barbarian' && !isAtWarWith(target.owner)) {
+            const faction = FACTIONS[target.owner];
+            const factionName = faction ? faction.name : target.owner;
+            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
+            if (!agreed) return;
+            declareSurpriseWar(target.owner, factionName);
+          }
           // Show tactical battle panel for player attacks
           showBattlePanel(unit, target, (tactic) => {
             const tacticResult = applyTacticModifier(tactic, 0, 0, unit, target);
@@ -646,6 +762,7 @@ export {
   createUnit,
   placeFactionCities,
   computeMoveRange,
+  computeRiverCrossings,
   computeAttackRange,
   moveUnitTo,
   reconstructMovePath,
@@ -656,4 +773,6 @@ export {
   applyPromotion,
   upgradeUnit,
   selectNextUnit,
+  isInEnemyZOC,
+  getEnemyZOCHexes,
 };

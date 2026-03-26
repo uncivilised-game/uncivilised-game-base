@@ -1,10 +1,11 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
+import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
+import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -12,11 +13,126 @@ import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from 
 import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
-import { getUnitAt } from './combat.js';
+import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
+import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
+import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
+
+// --- Per-City Amenity Helpers ---
+
+function getAmenityStatus(balance) {
+  if (balance >= 2) return 'ECSTATIC';
+  if (balance === 1) return 'HAPPY';
+  if (balance === 0) return 'CONTENT';
+  if (balance === -1) return 'DISPLEASED';
+  if (balance === -2) return 'UNHAPPY';
+  return 'REVOLT_RISK'; // -3 or worse
+}
+
+function getAmenityMod(balance) {
+  if (balance >= 2) return 0.10;   // +10% production and growth
+  if (balance === 1) return 0.05;  // +5% production and growth
+  if (balance === 0) return 0;     // no modifier
+  if (balance === -1) return -0.05; // -5% production and growth
+  if (balance === -2) return -0.10; // -10% production and growth
+  return -0.25; // -3 or worse: -25% production and growth
+}
+
+function distributeLuxuries(cities, luxuryTypes) {
+  for (const city of cities) {
+    city.amenityFromLuxuries = 0;
+  }
+  for (const _lux of luxuryTypes) {
+    // Sort cities by current running amenity balance (lowest first = neediest)
+    const sorted = [...cities].sort((a, b) => {
+      const balA = (a.amenityFromLuxuries + a.amenityFromBuildings + a.amenityFromAlliance) - a.amenityRequired;
+      const balB = (b.amenityFromLuxuries + b.amenityFromBuildings + b.amenityFromAlliance) - b.amenityRequired;
+      return balA - balB;
+    });
+    const count = Math.min(4, sorted.length);
+    for (let i = 0; i < count; i++) {
+      sorted[i].amenityFromLuxuries += 1;
+    }
+  }
+}
+
+function calculateCityAmenities(events) {
+  // 1. Collect unique luxury resource types in player territory
+  const luxuryTypesInTerritory = new Set();
+  for (const city of game.cities) {
+    const br = city.borderRadius || 2;
+    for (let r = 0; r < MAP_ROWS; r++) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        if (hexDistance(c, r, city.col, city.row) <= br) {
+          const t = game.map[r][c];
+          if (t.resource && LUXURY_RESOURCES.includes(t.resource)) {
+            luxuryTypesInTerritory.add(t.resource);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Calculate amenity requirements per city: 1 amenity per 2 citizens above base 2
+  for (const city of game.cities) {
+    const citizenCount = Math.floor((city.population || 1000) / 200);
+    city.amenityRequired = Math.max(0, Math.floor((citizenCount - 2) / 2));
+    city.amenityFromLuxuries = 0;
+    city.amenityFromBuildings = 0;
+    city.amenityFromAlliance = 0;
+  }
+
+  // 3. Building amenities: Arena/Garden/Temple each provide +1 to all cities
+  const amenityBuildings = ['arena', 'garden', 'temple'];
+  for (const city of game.cities) {
+    for (const bid of amenityBuildings) {
+      if (game.buildings.includes(bid)) {
+        city.amenityFromBuildings += 1;
+      }
+    }
+  }
+
+  // 4. Alliance bonus: +1 to capital only
+  if (Object.keys(game.activeAlliances).length > 0 && game.cities.length > 0) {
+    game.cities[0].amenityFromAlliance = 1;
+  }
+
+  // 5. Distribute luxury amenities (each unique type -> +1 to up to 4 neediest cities)
+  distributeLuxuries(game.cities, luxuryTypesInTerritory);
+
+  // 6. Calculate final balance, status, and modifier per city
+  let totalBalance = 0;
+  for (const city of game.cities) {
+    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance;
+    city.amenityBalance = totalAmenities - city.amenityRequired;
+    city.amenityStatus = getAmenityStatus(city.amenityBalance);
+    city.amenityMod = getAmenityMod(city.amenityBalance);
+    totalBalance += city.amenityBalance;
+  }
+
+  // 7. Revolt risk: cities at -3 or worse have 5% chance of spawning a rebel warrior
+  for (const city of game.cities) {
+    if (city.amenityStatus === 'REVOLT_RISK' && Math.random() < 0.05) {
+      const neighbors = getHexNeighbors(city.col, city.row);
+      for (const nb of neighbors) {
+        const tile = game.map[nb.row][nb.col];
+        if (!isTilePassable(tile)) continue;
+        if (getUnitAt(nb.col, nb.row)) continue;
+        const rebel = createUnit('warrior', nb.col, nb.row, 'barbarian');
+        game.units.push(rebel);
+        events.push(`Rebels have risen in ${city.name}!`);
+        addEvent(`Rebels have risen in ${city.name}!`, 'combat');
+        break;
+      }
+    }
+  }
+
+  // Keep game.happiness as a summary value for backward compat (UI top bar, save compat)
+  game.happiness = game.cities.length > 0 ? Math.round(totalBalance / game.cities.length) : 0;
+}
 
 let _processingTurn = false;
 
@@ -40,6 +156,17 @@ function endTurn() {
 
   // --- Process AI first ---
   processAITurns();
+
+  // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
+  processZOCCaptures();
+
+  // --- AI Wonder Race production ---
+  processAIWonderTurns();
+
+  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
+  resetTurnActions();
+  processAIDiplomacy();
+  processAITradeIncome();
 
   // --- Reset player unit move points and process waypoints ---
   for (const unit of game.units) {
@@ -125,26 +252,8 @@ function endTurn() {
   }
   if (tradeGold > 0) { game.gold += tradeGold; events.push('Trade: +' + tradeGold + ' Gold'); }
 
-  // --- Happiness calculation ---
-  let hap = 5;
-  // Luxury resources in territory
-  for (const city of game.cities) {
-    const br = city.borderRadius || 2;
-    for (let r = 0; r < MAP_ROWS; r++) for (let c = 0; c < MAP_COLS; c++) {
-      if (hexDistance(c, r, city.col, city.row) <= br) {
-        const t = game.map[r][c];
-        if (t.resource && LUXURY_RESOURCES.includes(t.resource)) hap += 1;
-      }
-    }
-  }
-  // Buildings
-  if (game.buildings.includes('temple')) hap += 2;
-  if (game.buildings.includes('garden')) hap += 1;
-  if (game.buildings.includes('arena')) hap += 2;
-  // Penalties
-  hap -= Math.max(0, game.cities.length - 1);
-  hap -= Math.floor(game.units.filter(u => u.owner === 'player').length / 5);
-  game.happiness = hap;
+  // --- Per-City Amenity System ---
+  calculateCityAmenities(events);
 
 
   // --- Resource bonuses from territory (respects city border radius) ---
@@ -155,7 +264,7 @@ function endTurn() {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, city.col, city.row) <= bRadius) {
           const tile = game.map[r][c];
-          if (tile.resource && RESOURCES[tile.resource]) {
+          if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
             const bonus = RESOURCES[tile.resource].bonus;
             if (bonus.food) resBonus.food += bonus.food;
             if (bonus.gold) resBonus.gold += bonus.gold;
@@ -179,18 +288,66 @@ function endTurn() {
     city.food += cityFood;
     // Growth threshold scales with city population
     const growthThreshold = 15 + Math.floor((city.population || 1000) / 500);
-    // Apply happiness modifier
-    let growthMod = 1.0;
-    if (game.happiness > 10) growthMod = 1.2;
-    else if (game.happiness > 5) growthMod = 1.1;
-    else if (game.happiness < 0) growthMod = 0.75;
-    else if (game.happiness < -5) growthMod = 0.5;
+    // Apply per-city amenity modifier to growth
+    // NOTE: If Housing (Task 09) is implemented, housing modifier should be applied as a separate multiplier here
+    let growthMod = 1.0 + (city.amenityMod || 0);
 
-    if (city.food * growthMod >= growthThreshold) {
+    // Apply housing growth modifier
+    const { housing } = calculateCityHousing(city);
+    const housingMod = getHousingGrowthModifier(housing, city.population || 1000);
+    growthMod *= housingMod;
+
+    if (growthMod > 0 && city.food * growthMod >= growthThreshold) {
       city.food = 0;
       city.population = (city.population || 1000) + 100;
       game.population += 100;
       events.push(city.name + ' grew! (pop ' + city.population + ')');
+    } else if (housingMod === 0) {
+      // Stagnant — food doesn't accumulate past threshold
+      city.food = Math.min(city.food, growthThreshold - 1);
+    }
+  }
+
+  // --- Wall repair: +5 HP per turn if not attacked for 2 turns ---
+  for (const city of game.cities) {
+    // Initialize wall fields if building walls was just completed
+    if ((city.buildings || []).includes('walls') && !city.wallMaxHP) {
+      city.wallMaxHP = WALL_HP.ancient_walls;
+      if (city.wallHP === undefined) city.wallHP = WALL_HP.ancient_walls;
+    }
+    if (city.wallHP !== undefined && city.wallMaxHP > 0 && city.wallHP < city.wallMaxHP) {
+      const lastAttacked = city.wallLastAttackedTurn || -99;
+      if (game.turn - lastAttacked >= 2) {
+        const oldWallHP = city.wallHP;
+        city.wallHP = Math.min(city.wallMaxHP, city.wallHP + 5);
+        if (city.wallHP > oldWallHP) {
+          events.push(city.name + ' walls repaired (+' + (city.wallHP - oldWallHP) + ' wall HP)');
+        }
+      }
+    }
+  }
+  // Wall repair for faction cities
+  if (game.factionCities) {
+    for (const fc of Object.values(game.factionCities)) {
+      if (fc.wallHP !== undefined && fc.wallMaxHP > 0 && fc.wallHP < fc.wallMaxHP) {
+        const lastAttacked = fc.wallLastAttackedTurn || -99;
+        if (game.turn - lastAttacked >= 2) {
+          fc.wallHP = Math.min(fc.wallMaxHP, fc.wallHP + 5);
+        }
+      }
+    }
+  }
+  // Wall repair for AI expansion cities
+  if (game.aiFactionCities) {
+    for (const cities of Object.values(game.aiFactionCities)) {
+      for (const ec of cities) {
+        if (ec.wallHP !== undefined && ec.wallMaxHP > 0 && ec.wallHP < ec.wallMaxHP) {
+          const lastAttacked = ec.wallLastAttackedTurn || -99;
+          if (game.turn - lastAttacked >= 2) {
+            ec.wallHP = Math.min(ec.wallMaxHP, ec.wallHP + 5);
+          }
+        }
+      }
     }
   }
 
@@ -204,9 +361,11 @@ function endTurn() {
     // Oligarchy: +30% building production
     if (game.currentBuild) prodThisTurn = Math.floor(prodThisTurn * 1.3);
   }
-  // Happiness production modifier
-  if (game.happiness > 10) prodThisTurn = Math.floor(prodThisTurn * 1.1);
-  else if (game.happiness < -5) prodThisTurn = Math.floor(prodThisTurn * 0.75);
+  // Amenity production modifier (average across all cities since production is global)
+  if (game.cities.length > 0) {
+    const avgAmenityMod = game.cities.reduce((sum, c) => sum + (c.amenityMod || 0), 0) / game.cities.length;
+    if (avgAmenityMod !== 0) prodThisTurn = Math.floor(prodThisTurn * (1 + avgAmenityMod));
+  }
   if (game.currentBuild) {
     game.buildProgress += prodThisTurn;
     const bdata = BUILDINGS.find(b => b.id === game.currentBuild);
@@ -221,12 +380,32 @@ function endTurn() {
       if (eff.defense) game.defense += eff.defense;
       if (eff.production) game.productionPerTurn += eff.production;
       if (eff.culture) game.culture += eff.culture;
+      // Initialize wall HP when walls building completes
+      if (game.currentBuild === 'walls') {
+        const buildCity = game.cities[0]; // Primary city for global builds
+        if (buildCity) {
+          buildCity.wallMaxHP = WALL_HP.ancient_walls;
+          buildCity.wallHP = WALL_HP.ancient_walls;
+          buildCity.wallLastAttackedTurn = -99;
+        }
+      }
       events.push(`${bdata.name} completed!`);
       addEvent(`${bdata.name} completed!`, 'gold');
+      const completedBuildId = game.currentBuild;
       game.currentBuild = null;
       game.buildProgress = 0;
       showCompletionNotification('building', bdata.name, bdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F3D7} Building Complete', bdata.name + ' constructed!');
+
+      // --- Eureka/Inspiration triggers for buildings ---
+      if (completedBuildId === 'barracks') triggerEureka('iron_working');
+      if (completedBuildId === 'arena') triggerInspiration('games_recreation');
+      // state_workforce: building in 2 cities (approximated: have 2+ cities and 2+ buildings)
+      if (game.cities.length >= 2 && game.buildings.length >= 2) triggerInspiration('state_workforce');
+      // drama_poetry: monument in 2 cities (approximated: have monument and 2+ cities)
+      if (completedBuildId === 'monument' && game.cities.length >= 2) triggerInspiration('drama_poetry');
+      // recorded_history: library in 2 cities (approximated: have library and 2+ cities)
+      if (completedBuildId === 'library' && game.cities.length >= 2) triggerInspiration('recorded_history');
     }
   } else if (game.currentUnitBuild) {
     game.unitBuildProgress += prodThisTurn;
@@ -264,22 +443,39 @@ function endTurn() {
       }
     }
   } else if (game.currentWonderBuild) {
-    game.wonderBuildProgress += prodThisTurn;
-    const wdata = WONDERS.find(w => w.id === game.currentWonderBuild);
-    if (wdata && game.wonderBuildProgress >= wdata.cost) {
-      game.wonders.push(game.currentWonderBuild);
-      const eff = wdata.effect;
-      if (eff.food) game.foodPerTurn += eff.food;
-      if (eff.gold) game.goldPerTurn += eff.gold;
-      if (eff.science) game.sciencePerTurn += eff.science;
-      if (eff.production) game.productionPerTurn += eff.production;
-      if (eff.culture) game.culture += eff.culture;
-      events.push(wdata.icon + ' ' + wdata.name + ' completed!');
-      addEvent(wdata.icon + ' ' + wdata.name + ' completed!', 'gold');
+    // Check if another faction already completed this wonder (AI scooped it)
+    if (game.builtWonders[game.currentWonderBuild]) {
+      const scoopedW = WONDERS.find(w => w.id === game.currentWonderBuild);
+      const ownerFid = game.builtWonders[game.currentWonderBuild];
+      const ownerName = FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid;
+      const refundGold = Math.floor(game.wonderBuildProgress * 0.5);
+      game.gold += refundGold;
+      showWonderScoopedNotification(scoopedW ? scoopedW.name : game.currentWonderBuild, ownerName, refundGold);
       game.currentWonderBuild = null;
       game.wonderBuildProgress = 0;
-      showCompletionNotification('wonder', wdata.name, wdata.desc);
-      if (typeof showToast === 'function') showToast('\u{1F3DB} Wonder Complete', wdata.name + ' has been built!');
+    } else {
+      game.wonderBuildProgress += prodThisTurn;
+      const wdata = WONDERS.find(w => w.id === game.currentWonderBuild);
+      if (wdata && game.wonderBuildProgress >= wdata.cost) {
+        game.wonders.push(game.currentWonderBuild);
+        game.builtWonders[game.currentWonderBuild] = 'player';
+        const eff = wdata.effect;
+        if (eff.food) game.foodPerTurn += eff.food;
+        if (eff.gold) game.goldPerTurn += eff.gold;
+        if (eff.science) game.sciencePerTurn += eff.science;
+        if (eff.production) game.productionPerTurn += eff.production;
+        if (eff.culture) game.culture += eff.culture;
+        events.push(wdata.icon + ' ' + wdata.name + ' completed!');
+        addEvent(wdata.icon + ' ' + wdata.name + ' completed!', 'gold');
+        // Cancel AI factions building the same wonder and refund them
+        cancelAIWonderBuilders(game.currentWonderBuild, 'player');
+        game.currentWonderBuild = null;
+        game.wonderBuildProgress = 0;
+        showCompletionNotification('wonder', wdata.name, wdata.desc);
+        showToast('\u{1F3DB} Wonder Complete', wdata.name + ' has been built!');
+        // --- Eureka: complete a wonder triggers engineering ---
+        triggerEureka('engineering');
+      }
     }
   }
 
@@ -289,7 +485,8 @@ function endTurn() {
     const tdata = TECHNOLOGIES.find(t => t.id === game.currentResearch);
     if (!tdata) { game.currentResearch = null; game.researchProgress = 0; }
     else if (game.researchProgress >= tdata.cost) {
-      game.techs.push(game.currentResearch);
+      const completedTechId = game.currentResearch;
+      game.techs.push(completedTechId);
       events.push(`${tdata.name} discovered!`);
       addEvent(`Technology: ${tdata.name} discovered!`, 'science');
       game.currentResearch = null;
@@ -297,6 +494,31 @@ function endTurn() {
       // Show completion notification with prompt
       showCompletionNotification('research', tdata.name, tdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F4A1} Research Complete', tdata.name + ' researched!');
+
+      // --- Reveal strategic resources gated by this tech ---
+      const newlyRevealed = Object.entries(RESOURCES)
+        .filter(([, res]) => res.revealedBy === completedTechId)
+        .map(([resId]) => resId);
+      if (newlyRevealed.length > 0) {
+        if (!game.revealedResources) game.revealedResources = [];
+        const now = Date.now();
+        for (const resId of newlyRevealed) {
+          if (!game.revealedResources.includes(resId)) game.revealedResources.push(resId);
+          let depositCount = 0;
+          for (let r = 0; r < MAP_ROWS; r++) {
+            for (let c = 0; c < MAP_COLS; c++) {
+              const tile = game.map[r][c];
+              if (tile.resource === resId) {
+                tile._revealedAt = now; // trigger reveal animation
+                depositCount++;
+              }
+            }
+          }
+          const resName = RESOURCES[resId].name;
+          if (typeof showToast === 'function') showToast('\u{26CF}\u{FE0F} Resource Discovered', `Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`);
+          addEvent(`Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`, 'science');
+        }
+      }
     }
   }
 

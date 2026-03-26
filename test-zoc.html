@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zone of Control — Test Page</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #1a1a2e; color: #e0d8c8; display: flex; height: 100vh; }
+  #sidebar { width: 340px; padding: 16px; background: #16213e; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  #sidebar h1 { font-size: 18px; color: #c9a84c; margin-bottom: 4px; }
+  #sidebar h2 { font-size: 14px; color: #8a8070; font-weight: normal; margin-bottom: 8px; }
+  .btn { padding: 8px 14px; background: #0f3460; border: 1px solid #c9a84c44; color: #e0d8c8; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  .btn:hover { background: #1a4a7a; }
+  .btn.active { background: #c9a84c33; border-color: #c9a84c; }
+  #log { flex: 1; background: #0d1b2a; border-radius: 4px; padding: 8px; font-size: 12px; overflow-y: auto; font-family: monospace; line-height: 1.6; min-height: 120px; }
+  .log-entry { border-bottom: 1px solid #ffffff0a; padding: 2px 0; }
+  .log-zoc { color: #e06060; }
+  .log-move { color: #60c080; }
+  .log-capture { color: #f0a030; }
+  .log-test { color: #6090e0; }
+  .log-pass { color: #40d080; font-weight: bold; }
+  .log-fail { color: #e04040; font-weight: bold; }
+  #canvas-wrap { flex: 1; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .legend { font-size: 11px; display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #fff3; }
+  #test-results { background: #0d1b2a; border-radius: 4px; padding: 8px; font-size: 12px; font-family: monospace; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>Zone of Control Test</h1>
+  <h2>Click a green hex to move the player warrior</h2>
+  <div style="display:flex; gap:6px; flex-wrap:wrap;">
+    <button class="btn" id="btn-toggle-zoc">Toggle ZOC Overlay</button>
+    <button class="btn" id="btn-place-civilian">Place Civilian in ZOC</button>
+    <button class="btn" id="btn-reset">Reset Board</button>
+    <button class="btn" id="btn-run-tests">Run Automated Tests</button>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:rgba(80,220,120,0.4)"></div> Move range</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:rgba(180,40,40,0.25)"></div> Enemy ZOC</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:rgba(220,60,60,0.35)"></div> Attack range</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#c9a84c"></div> Selected unit</div>
+  </div>
+  <div id="test-results"></div>
+  <div id="log"></div>
+</div>
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+// ============================================================
+// Self-contained ZOC test — mirrors game hex math and ZOC logic
+// ============================================================
+const COLS = 10, ROWS = 10, HEX_SIZE = 36;
+const SQRT3 = Math.sqrt(3);
+
+const ZOC_EXEMPT_CLASSES = ['civilian'];
+
+// --- Hex math ---
+function hexToPixel(col, row) {
+  return {
+    x: HEX_SIZE * SQRT3 * (col + 0.5 * (row & 1)),
+    y: HEX_SIZE * 1.5 * row
+  };
+}
+function pixelToHex(px, py) {
+  const r = Math.round(py / (HEX_SIZE * 1.5));
+  const c = Math.round((px / (HEX_SIZE * SQRT3)) - 0.5 * (r & 1));
+  return { col: Math.max(0, Math.min(COLS-1, c)), row: Math.max(0, Math.min(ROWS-1, r)) };
+}
+function getHexNeighbors(col, row) {
+  const even = (row & 1) === 0;
+  const dirs = even
+    ? [[-1,-1],[0,-1],[-1,0],[1,0],[-1,1],[0,1]]
+    : [[0,-1],[1,-1],[-1,0],[1,0],[0,1],[1,1]];
+  const out = [];
+  for (const [dc, dr] of dirs) {
+    const nc = col + dc, nr = row + dr;
+    if (nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS) out.push({ col: nc, row: nr });
+  }
+  return out;
+}
+function hexDistance(c1, r1, c2, r2) {
+  const x1 = c1 - (r1 - (r1 & 1)) / 2, z1 = r1, y1 = -x1 - z1;
+  const x2 = c2 - (r2 - (r2 & 1)) / 2, z2 = r2, y2 = -x2 - z2;
+  return Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2), Math.abs(z1 - z2));
+}
+function drawHex(ctx, cx, cy, size) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 180) * (60 * i - 30);
+    const hx = cx + size * Math.cos(a);
+    const hy = cy + size * Math.sin(a);
+    if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+  }
+  ctx.closePath();
+}
+
+// --- Game state ---
+let units = [];
+let showZOC = true;
+let selectedUnit = null;
+
+const UNIT_DEFS = {
+  warrior:  { name: 'Warrior',  icon: '\u2694', class: 'melee',    combat: 20, movePoints: 2 },
+  scout:    { name: 'Scout',    icon: '\uD83D\uDC41', class: 'recon',    combat: 10, movePoints: 3 },
+  worker:   { name: 'Worker',   icon: '\uD83D\uDC77', class: 'civilian', combat: 0,  movePoints: 2 },
+  settler:  { name: 'Settler',  icon: '\uD83C\uDFD5', class: 'civilian', combat: 0,  movePoints: 2 },
+};
+
+function resetBoard() {
+  units = [
+    { id: 1, type: 'warrior', col: 2, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+    { id: 2, type: 'warrior', col: 6, row: 5, owner: 'enemy',  moveLeft: 2, hp: 100 },
+  ];
+  selectedUnit = units[0];
+  logMsg('Board reset. Player warrior at (2,5), Enemy warrior at (6,5).', 'move');
+  draw();
+}
+
+// --- ZOC logic (mirrors src/units.js) ---
+function isInEnemyZOC(col, row, movingUnitOwner) {
+  const neighbors = getHexNeighbors(col, row);
+  for (const nb of neighbors) {
+    const unitsOnTile = units.filter(u => u.col === nb.col && u.row === nb.row);
+    for (const u of unitsOnTile) {
+      if (u.owner !== movingUnitOwner) {
+        const ut = UNIT_DEFS[u.type];
+        if (ut && !ZOC_EXEMPT_CLASSES.includes(ut.class)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function getEnemyZOCHexes(factionId) {
+  const zocSet = new Set();
+  for (const u of units) {
+    if (u.owner === factionId) continue;
+    const ut = UNIT_DEFS[u.type];
+    if (!ut || ZOC_EXEMPT_CLASSES.includes(ut.class)) continue;
+    for (const nb of getHexNeighbors(u.col, u.row)) {
+      zocSet.add(`${nb.col},${nb.row}`);
+    }
+  }
+  return zocSet;
+}
+
+function computeMoveRange(unit) {
+  if (!unit || unit.moveLeft <= 0) return new Map();
+  const visited = new Map();
+  const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft }];
+  visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (cur.move <= 0) continue;
+    for (const nb of getHexNeighbors(cur.col, cur.row)) {
+      const cost = 1; // all flat terrain in test
+      let remaining = cur.move - cost;
+
+      // ZOC: entering enemy ZOC ends movement
+      if (isInEnemyZOC(nb.col, nb.row, unit.owner)) {
+        remaining = 0;
+      }
+
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key) && visited.get(key) >= remaining) continue;
+      // Can't move through occupied hexes
+      const blocking = units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
+      if (blocking) continue;
+      visited.set(key, remaining);
+      if (remaining > 0) queue.push({ col: nb.col, row: nb.row, move: remaining });
+    }
+  }
+  visited.delete(`${unit.col},${unit.row}`);
+  return visited;
+}
+
+// --- Civilian capture ---
+function processZOCCaptures() {
+  const captured = [];
+  for (let i = units.length - 1; i >= 0; i--) {
+    const unit = units[i];
+    const ut = UNIT_DEFS[unit.type];
+    if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue;
+    if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;
+    const hasEscort = units.some(u => {
+      if (u.owner !== unit.owner || u.id === unit.id) return false;
+      const uType = UNIT_DEFS[u.type];
+      if (!uType || ZOC_EXEMPT_CLASSES.includes(uType.class)) return false;
+      return hexDistance(u.col, u.row, unit.col, unit.row) <= 1;
+    });
+    if (!hasEscort) {
+      captured.push(units.splice(i, 1)[0]);
+    }
+  }
+  return captured;
+}
+
+// --- Logging ---
+function logMsg(text, cls) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'log-entry log-' + (cls || '');
+  div.textContent = text;
+  log.prepend(div);
+  // Keep log manageable
+  while (log.children.length > 100) log.removeChild(log.lastChild);
+}
+
+// --- Canvas rendering ---
+const canvasEl = document.getElementById('canvas');
+const ctx = canvasEl.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvasEl.width = wrap.clientWidth * devicePixelRatio;
+  canvasEl.height = wrap.clientHeight * devicePixelRatio;
+  canvasEl.style.width = wrap.clientWidth + 'px';
+  canvasEl.style.height = wrap.clientHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  draw();
+}
+
+function draw() {
+  const w = canvasEl.width / devicePixelRatio;
+  const h = canvasEl.height / devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, w, h);
+
+  // Offset to center the grid
+  const ox = 60, oy = 50;
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  const moveRange = selectedUnit ? computeMoveRange(selectedUnit) : new Map();
+  const zocHexes = showZOC ? getEnemyZOCHexes('player') : new Set();
+
+  // Draw hexes
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const pos = hexToPixel(c, r);
+      // Base hex
+      drawHex(ctx, pos.x, pos.y, HEX_SIZE - 1);
+      ctx.fillStyle = '#2a3a2a';
+      ctx.fill();
+      ctx.strokeStyle = '#3a4a3a';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const key = `${c},${r}`;
+
+      // ZOC overlay
+      if (showZOC && zocHexes.has(key)) {
+        drawHex(ctx, pos.x, pos.y, HEX_SIZE - 1);
+        ctx.fillStyle = 'rgba(180,40,40,0.2)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(180,40,40,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Move range
+      if (moveRange.has(key)) {
+        drawHex(ctx, pos.x, pos.y, HEX_SIZE - 1);
+        ctx.fillStyle = 'rgba(80,220,120,0.25)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(80,220,120,0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      // Coordinate label
+      ctx.fillStyle = '#ffffff20';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${c},${r}`, pos.x, pos.y + HEX_SIZE - 6);
+    }
+  }
+
+  // Draw units
+  for (const u of units) {
+    const pos = hexToPixel(u.col, u.row);
+    const def = UNIT_DEFS[u.type];
+    const isSelected = selectedUnit && selectedUnit.id === u.id;
+
+    // Selection ring
+    if (isSelected) {
+      drawHex(ctx, pos.x, pos.y, HEX_SIZE - 1);
+      ctx.strokeStyle = '#c9a84c';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // Unit circle
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+    ctx.fillStyle = u.owner === 'player' ? '#2060c0' : '#c02020';
+    ctx.fill();
+    ctx.strokeStyle = u.owner === 'player' ? '#4090f0' : '#f04040';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Icon
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.icon, pos.x, pos.y);
+
+    // Label
+    ctx.fillStyle = '#e0d8c8';
+    ctx.font = 'bold 10px Inter, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(def.name, pos.x, pos.y + 16);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '9px Inter, sans-serif';
+    ctx.fillText(`MP:${u.moveLeft}`, pos.x, pos.y + 27);
+  }
+
+  ctx.restore();
+}
+
+// --- Interaction ---
+canvasEl.addEventListener('click', (e) => {
+  const rect = canvasEl.getBoundingClientRect();
+  const mx = e.clientX - rect.left - 60;
+  const my = e.clientY - rect.top - 50;
+  const hex = pixelToHex(mx, my);
+
+  if (!selectedUnit || selectedUnit.owner !== 'player') return;
+  if (hex.col === selectedUnit.col && hex.row === selectedUnit.row) return;
+
+  const moveRange = computeMoveRange(selectedUnit);
+  const key = `${hex.col},${hex.row}`;
+  if (moveRange.has(key)) {
+    const oldCol = selectedUnit.col, oldRow = selectedUnit.row;
+    selectedUnit.col = hex.col;
+    selectedUnit.row = hex.row;
+    selectedUnit.moveLeft = moveRange.get(key);
+
+    const inZOC = isInEnemyZOC(hex.col, hex.row, selectedUnit.owner);
+    if (inZOC) {
+      logMsg(`Unit entered Zone of Control \u2014 movement ended (${hex.col},${hex.row})`, 'zoc');
+    } else {
+      logMsg(`Moved to (${hex.col},${hex.row}), MP remaining: ${selectedUnit.moveLeft}`, 'move');
+    }
+    draw();
+  }
+});
+
+// --- Buttons ---
+document.getElementById('btn-toggle-zoc').addEventListener('click', () => {
+  showZOC = !showZOC;
+  document.getElementById('btn-toggle-zoc').classList.toggle('active', showZOC);
+  logMsg('ZOC overlay: ' + (showZOC ? 'ON' : 'OFF'), 'zoc');
+  draw();
+});
+
+document.getElementById('btn-place-civilian').addEventListener('click', () => {
+  // Place a player worker adjacent to the enemy warrior's ZOC
+  const enemyWarrior = units.find(u => u.owner === 'enemy' && UNIT_DEFS[u.type].class !== 'civilian');
+  if (!enemyWarrior) { logMsg('No enemy military unit to test against.', 'test'); return; }
+  const nbs = getHexNeighbors(enemyWarrior.col, enemyWarrior.row);
+  // Find an empty neighbor
+  const spot = nbs.find(nb => !units.some(u => u.col === nb.col && u.row === nb.row));
+  if (!spot) { logMsg('No empty hex adjacent to enemy for civilian.', 'test'); return; }
+  const civId = 100 + units.length;
+  units.push({ id: civId, type: 'worker', col: spot.col, row: spot.row, owner: 'player', moveLeft: 2, hp: 100 });
+  logMsg(`Placed player Worker at (${spot.col},${spot.row}) in enemy ZOC.`, 'capture');
+
+  // Now process captures
+  const captured = processZOCCaptures();
+  if (captured.length > 0) {
+    for (const c of captured) {
+      logMsg(`CAPTURED: ${UNIT_DEFS[c.type].name} at (${c.col},${c.row}) \u2014 no military escort!`, 'capture');
+    }
+  } else {
+    logMsg('No civilians captured (escort present?).', 'test');
+  }
+  draw();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  resetBoard();
+});
+
+// --- Automated Tests ---
+document.getElementById('btn-run-tests').addEventListener('click', runTests);
+
+function runTests() {
+  const results = [];
+  logMsg('=== Running automated tests ===', 'test');
+
+  // Test 1: Unit with 3 MP entering ZOC on first hex uses all remaining MP
+  {
+    const testUnits = [
+      { id: 10, type: 'scout', col: 2, row: 5, owner: 'player', moveLeft: 3, hp: 100 },
+      { id: 11, type: 'warrior', col: 6, row: 5, owner: 'enemy',  moveLeft: 2, hp: 100 },
+    ];
+    const savedUnits = units;
+    units = testUnits;
+    const moveRange = computeMoveRange(testUnits[0]);
+    // Hex (5,5) is adjacent to enemy at (6,5), so it's in ZOC
+    const zocKey = '5,5';
+    const inZOC = isInEnemyZOC(5, 5, 'player');
+    const mpAtZOC = moveRange.has(zocKey) ? moveRange.get(zocKey) : -1;
+    const pass = inZOC && mpAtZOC === 0;
+    results.push({ name: 'Unit entering ZOC has 0 MP remaining', pass });
+    logMsg(`Test 1: Unit with 3 MP entering ZOC hex \u2192 MP=${mpAtZOC}, inZOC=${inZOC} ${pass ? 'PASS' : 'FAIL'}`, pass ? 'pass' : 'fail');
+    units = savedUnits;
+  }
+
+  // Test 2: Unit starting in ZOC can move to adjacent ZOC hex
+  {
+    const testUnits = [
+      { id: 20, type: 'warrior', col: 5, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+      { id: 21, type: 'warrior', col: 6, row: 5, owner: 'enemy',  moveLeft: 2, hp: 100 },
+    ];
+    const savedUnits = units;
+    units = testUnits;
+    // (5,5) is adjacent to enemy at (6,5) — in ZOC
+    const startsInZOC = isInEnemyZOC(5, 5, 'player');
+    const moveRange = computeMoveRange(testUnits[0]);
+    // Check that at least one neighbor that's also in ZOC is reachable
+    const nbs = getHexNeighbors(5, 5);
+    let canMoveToAdjZOC = false;
+    for (const nb of nbs) {
+      const k = `${nb.col},${nb.row}`;
+      if (moveRange.has(k) && isInEnemyZOC(nb.col, nb.row, 'player')) {
+        canMoveToAdjZOC = true;
+        break;
+      }
+    }
+    const pass = startsInZOC && canMoveToAdjZOC;
+    results.push({ name: 'Unit in ZOC can move to adjacent ZOC hex', pass });
+    logMsg(`Test 2: Start in ZOC=${startsInZOC}, can move to adj ZOC=${canMoveToAdjZOC} ${pass ? 'PASS' : 'FAIL'}`, pass ? 'pass' : 'fail');
+    units = savedUnits;
+  }
+
+  // Test 3: Civilian in ZOC without escort is captured
+  {
+    const testUnits = [
+      { id: 30, type: 'worker', col: 5, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+      { id: 31, type: 'warrior', col: 6, row: 5, owner: 'enemy',  moveLeft: 2, hp: 100 },
+    ];
+    const savedUnits = units;
+    units = testUnits;
+    const captured = processZOCCaptures();
+    const pass = captured.length === 1 && captured[0].type === 'worker';
+    results.push({ name: 'Civilian in ZOC without escort is captured', pass });
+    logMsg(`Test 3: Civilian captured=${captured.length} ${pass ? 'PASS' : 'FAIL'}`, pass ? 'pass' : 'fail');
+    units = savedUnits;
+  }
+
+  // Test 4: Friendly ZOC does not affect friendly units
+  {
+    const testUnits = [
+      { id: 40, type: 'warrior', col: 2, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+      { id: 41, type: 'warrior', col: 4, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+    ];
+    const savedUnits = units;
+    units = testUnits;
+    // (3,5) is adjacent to friendly warrior at (4,5) — should NOT be ZOC for player
+    const inFriendlyZOC = isInEnemyZOC(3, 5, 'player');
+    const moveRange = computeMoveRange(testUnits[0]);
+    const key = '3,5';
+    const mpAt3 = moveRange.has(key) ? moveRange.get(key) : -1;
+    const pass = !inFriendlyZOC && mpAt3 > 0;
+    results.push({ name: 'Friendly ZOC does not affect friendly units', pass });
+    logMsg(`Test 4: Friendly ZOC=${inFriendlyZOC}, MP at (3,5)=${mpAt3} ${pass ? 'PASS' : 'FAIL'}`, pass ? 'pass' : 'fail');
+    units = savedUnits;
+  }
+
+  // Test 5: Civilian units don't project ZOC
+  {
+    const testUnits = [
+      { id: 50, type: 'warrior', col: 2, row: 5, owner: 'player', moveLeft: 2, hp: 100 },
+      { id: 51, type: 'worker',  col: 4, row: 5, owner: 'enemy',  moveLeft: 2, hp: 100 },
+    ];
+    const savedUnits = units;
+    units = testUnits;
+    const inZOC = isInEnemyZOC(3, 5, 'player');
+    const moveRange = computeMoveRange(testUnits[0]);
+    const mp = moveRange.has('3,5') ? moveRange.get('3,5') : -1;
+    const pass = !inZOC && mp > 0;
+    results.push({ name: 'Civilian units do not project ZOC', pass });
+    logMsg(`Test 5: Enemy worker ZOC=${inZOC}, MP at (3,5)=${mp} ${pass ? 'PASS' : 'FAIL'}`, pass ? 'pass' : 'fail');
+    units = savedUnits;
+  }
+
+  // Summary
+  const passed = results.filter(r => r.pass).length;
+  const total = results.length;
+  const allPass = passed === total;
+  logMsg(`=== ${passed}/${total} tests passed ${allPass ? '\u2714' : '\u2718'} ===`, allPass ? 'pass' : 'fail');
+
+  const container = document.getElementById('test-results');
+  container.innerHTML = results.map(r =>
+    `<div style="color:${r.pass ? '#40d080' : '#e04040'}">${r.pass ? '\u2714' : '\u2718'} ${r.name}</div>`
+  ).join('') + `<div style="margin-top:4px;font-weight:bold;color:${allPass ? '#40d080' : '#e04040'}">${passed}/${total} passed</div>`;
+}
+
+// --- Init ---
+window.addEventListener('resize', resizeCanvas);
+document.getElementById('btn-toggle-zoc').classList.add('active');
+resetBoard();
+resizeCanvas();
+</script>
+</body>
+</html>

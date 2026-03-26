@@ -13,6 +13,11 @@ export function preloadImprovementImages() {
     img.src = './assets/hex/' + name + '.png';
     IMPROVEMENT_IMAGES[name.replace('imp_','')] = img;
   }
+  // Tribal village sprite
+  const villageImg = new Image();
+  villageImg.crossOrigin = 'anonymous';
+  villageImg.src = './assets/hex/tribal_village.jpg';
+  IMPROVEMENT_IMAGES['tribal_village'] = villageImg;
 }
 
 export function preloadTerrainTiles() {

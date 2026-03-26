@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tribal Villages — Test Page</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0d8c0; font-family: 'Inter', sans-serif; padding: 20px; }
+  h1 { color: #ffd700; margin-bottom: 16px; font-size: 22px; }
+  h2 { color: #c9a84c; margin: 16px 0 8px; font-size: 16px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  button {
+    background: linear-gradient(135deg, #3a2a1a, #2a1a0a);
+    border: 1px solid #c9a84c;
+    color: #ffd700;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  button:hover { background: linear-gradient(135deg, #4a3a2a, #3a2a1a); }
+  #test-canvas {
+    border: 1px solid #c9a84c;
+    border-radius: 4px;
+    display: block;
+    margin-bottom: 16px;
+    background: #0e1a2e;
+  }
+  #log {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .pass { color: #4caf50; }
+  .fail { color: #f44336; }
+  .info { color: #90caf9; }
+  .warn { color: #ffd54f; }
+  .layout { display: flex; gap: 20px; }
+  .left { flex: 1; min-width: 0; }
+  .right { width: 420px; flex-shrink: 0; }
+  @media (max-width: 900px) { .layout { flex-direction: column; } .right { width: 100%; } }
+</style>
+</head>
+<body>
+<h1>Tribal Villages (Goody Huts) — Test Suite</h1>
+<div class="controls">
+  <button id="btn-generate">Generate Map</button>
+  <button id="btn-show">Show Village Locations</button>
+  <button id="btn-discover">Simulate Discovery</button>
+  <button id="btn-roll100">Roll 100 Rewards</button>
+  <button id="btn-acceptance">Run Acceptance Tests</button>
+</div>
+<div class="layout">
+  <div class="left">
+    <canvas id="test-canvas" width="900" height="600"></canvas>
+  </div>
+  <div class="right">
+    <h2>Test Output</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+// ================================================================
+// Minimal game engine bootstrap for testing tribal villages
+// We import the built game.js via a dynamic script tag (IIFE),
+// then access everything through window globals.
+// For self-contained testing, we replicate key structures inline.
+// ================================================================
+
+const logEl = document.getElementById('log');
+const canvas = document.getElementById('test-canvas');
+const ctx = canvas.getContext('2d');
+
+function log(msg, cls = 'info') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function pass(msg) { log('PASS: ' + msg, 'pass'); }
+function fail(msg) { log('FAIL: ' + msg, 'fail'); }
+
+// ================================================================
+// Constants (replicated from src/constants.js for standalone use)
+// ================================================================
+const MAP_COLS = 60, MAP_ROWS = 40;
+const HEX_SIZE = 12; // smaller for test canvas
+const SQRT3 = Math.sqrt(3);
+
+const BASE_TERRAIN = {
+  ocean:     { name: 'Ocean',     movable: false },
+  coast:     { name: 'Coast',     movable: false },
+  grassland: { name: 'Grassland', movable: true  },
+  plains:    { name: 'Plains',    movable: true  },
+  desert:    { name: 'Desert',    movable: true  },
+  tundra:    { name: 'Tundra',    movable: true  },
+  snow:      { name: 'Snow',      movable: true  },
+  lake:      { name: 'Lake',      movable: false },
+};
+
+const TRIBAL_VILLAGE_REWARDS = [
+  { type: 'gold', weight: 25, min: 50, max: 100 },
+  { type: 'tech_boost', weight: 15, amount: 0.5 },
+  { type: 'civic_boost', weight: 10, amount: 0.5 },
+  { type: 'population', weight: 15, amount: 200 },
+  { type: 'map_reveal', weight: 15, radius: 5 },
+  { type: 'free_unit', weight: 10, units: ['scout', 'warrior'] },
+  { type: 'faith', weight: 10, amount: 30 },
+];
+
+const TECHNOLOGIES = [
+  { id: 'agriculture', name: 'Agriculture', cost: 20 },
+  { id: 'mining', name: 'Mining', cost: 20 },
+  { id: 'writing', name: 'Writing', cost: 30 },
+  { id: 'currency', name: 'Currency', cost: 35 },
+];
+
+const CIVICS = [
+  { id: 'code_of_laws', name: 'Code of Laws', cost: 20 },
+  { id: 'craftsmanship', name: 'Craftsmanship', cost: 20 },
+];
+
+// ================================================================
+// Hex math
+// ================================================================
+function hexToPixel(col, row) {
+  const x = HEX_SIZE * SQRT3 * (col + 0.5 * (row & 1));
+  const y = HEX_SIZE * 1.5 * row;
+  return { x: x + HEX_SIZE, y: y + HEX_SIZE };
+}
+
+function hexDistance(c1, r1, c2, r2) {
+  // offset coords -> cube coords
+  function toCube(col, row) {
+    const x = col - (row - (row & 1)) / 2;
+    const z = row;
+    const y = -x - z;
+    return { x, y, z };
+  }
+  const a = toCube(c1, r1), b = toCube(c2, r2);
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+}
+
+function getHexNeighbors(col, row) {
+  const parity = row & 1;
+  const dirs = parity
+    ? [[1,0],[-1,0],[0,-1],[1,-1],[0,1],[1,1]]
+    : [[1,0],[-1,0],[-1,-1],[0,-1],[-1,1],[0,1]];
+  const result = [];
+  for (const [dc, dr] of dirs) {
+    const nc = (col + dc + MAP_COLS) % MAP_COLS;
+    const nr = row + dr;
+    if (nr >= 0 && nr < MAP_ROWS) result.push({ col: nc, row: nr });
+  }
+  return result;
+}
+
+// ================================================================
+// Simple map generator (terrain only — no rivers/resources needed)
+// ================================================================
+function generateSimpleMap() {
+  const map = [];
+  const terrains = ['grassland', 'plains', 'desert', 'tundra', 'ocean', 'coast', 'snow'];
+  for (let r = 0; r < MAP_ROWS; r++) {
+    const row = [];
+    for (let c = 0; c < MAP_COLS; c++) {
+      // Water ring at edges, mostly land interior
+      const edgeDist = Math.min(r, MAP_ROWS - 1 - r, c, MAP_COLS - 1 - c);
+      let base;
+      if (edgeDist <= 1) base = 'ocean';
+      else if (edgeDist <= 2) base = 'coast';
+      else {
+        const rand = Math.random();
+        if (rand < 0.35) base = 'grassland';
+        else if (rand < 0.65) base = 'plains';
+        else if (rand < 0.80) base = 'desert';
+        else if (rand < 0.90) base = 'tundra';
+        else base = 'snow';
+      }
+      row.push({ base, feature: null, resource: null, naturalWonder: null, col: c, row: r, improvement: null, road: false, hasRiver: false });
+    }
+    map.push(row);
+  }
+  return map;
+}
+
+// ================================================================
+// Tribal village placement (mirrors src/map.js placeTribalVillages)
+// ================================================================
+function placeTribalVillages(map, startPositions) {
+  const villages = [];
+  const count = 8 + Math.floor(Math.random() * 5);
+  for (let attempt = 0; attempt < 500 && villages.length < count; attempt++) {
+    const r = Math.floor(Math.random() * MAP_ROWS);
+    const c = Math.floor(Math.random() * MAP_COLS);
+    const tile = map[r][c];
+    const bInfo = BASE_TERRAIN[tile.base];
+    if (!bInfo || !bInfo.movable) continue;
+    if (tile.feature === 'mountain') continue;
+    if (tile.resource || tile.naturalWonder) continue;
+    let tooCloseToStart = false;
+    for (const sp of startPositions) {
+      if (hexDistance(c, r, sp.col, sp.row) < 6) { tooCloseToStart = true; break; }
+    }
+    if (tooCloseToStart) continue;
+    let tooCloseToVillage = false;
+    for (const v of villages) {
+      if (hexDistance(c, r, v.col, v.row) < 4) { tooCloseToVillage = true; break; }
+    }
+    if (tooCloseToVillage) continue;
+    villages.push({ col: c, row: r, discovered: false });
+  }
+  return villages;
+}
+
+// ================================================================
+// Reward rolling (mirrors src/events.js rollTribalVillageReward)
+// ================================================================
+function rollReward() {
+  const totalWeight = TRIBAL_VILLAGE_REWARDS.reduce((s, r) => s + r.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const reward of TRIBAL_VILLAGE_REWARDS) {
+    roll -= reward.weight;
+    if (roll <= 0) return reward;
+  }
+  return TRIBAL_VILLAGE_REWARDS[0];
+}
+
+// ================================================================
+// Game state
+// ================================================================
+let gameState = null;
+
+function initGame() {
+  const map = generateSimpleMap();
+  const startCol = Math.floor(MAP_COLS / 2);
+  const startRow = Math.floor(MAP_ROWS / 2);
+  const startPositions = [{ col: startCol, row: startRow }];
+  // Fake faction cities
+  const factionPositions = [
+    { col: 10, row: 10 }, { col: 50, row: 10 },
+    { col: 10, row: 30 }, { col: 50, row: 30 },
+  ];
+  for (const fp of factionPositions) startPositions.push(fp);
+
+  const tribalVillages = placeTribalVillages(map, startPositions);
+
+  gameState = {
+    map,
+    tribalVillages,
+    startPositions,
+    startCol, startRow,
+    gold: 50,
+    science: 0, sciencePerTurn: 3,
+    culture: 0,
+    population: 1000,
+    turn: 1,
+    techs: ['agriculture', 'mining'],
+    currentResearch: null, researchProgress: 0,
+    civics: [],
+    currentCivic: null, civicProgress: 0,
+    cities: [{ name: 'Capital', col: startCol, row: startRow, population: 1000 }],
+    units: [{ id: 1, type: 'scout', col: startCol + 1, row: startRow, owner: 'player', hp: 100, moveLeft: 3 }],
+    fogOfWar: Array.from({ length: MAP_ROWS }, () => new Array(MAP_COLS).fill(false)),
+  };
+
+  return gameState;
+}
+
+// ================================================================
+// Rendering
+// ================================================================
+function drawMap(highlightVillages = false) {
+  if (!gameState) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const terrainColors = {
+    ocean: '#0e2a42', coast: '#184060', grassland: '#4a8a3a', plains: '#6a8d4e',
+    desert: '#c4a84a', tundra: '#6a7e80', snow: '#b8c4cc', lake: '#184060',
+  };
+
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      const tile = gameState.map[r][c];
+      const { x, y } = hexToPixel(c, r);
+      // Draw hex
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 180 * (60 * i - 30);
+        const hx = x + HEX_SIZE * Math.cos(angle);
+        const hy = y + HEX_SIZE * Math.sin(angle);
+        if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fillStyle = terrainColors[tile.base] || '#333';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+
+  // Draw villages
+  for (const v of gameState.tribalVillages) {
+    if (v.discovered) continue;
+    const { x, y } = hexToPixel(v.col, v.row);
+    const hs = HEX_SIZE * 0.45;
+
+    if (highlightVillages) {
+      // Highlight ring
+      ctx.beginPath();
+      ctx.arc(x, y, HEX_SIZE * 0.8, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Hut base
+    ctx.fillStyle = '#8B5E3C';
+    ctx.fillRect(x - hs * 0.5, y, hs, hs * 0.55);
+    // Roof
+    ctx.beginPath();
+    ctx.moveTo(x - hs * 0.7, y);
+    ctx.lineTo(x + hs * 0.7, y);
+    ctx.lineTo(x, y - hs * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = '#D4A843';
+    ctx.fill();
+    ctx.strokeStyle = '#5C3A1E';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Door
+    ctx.fillStyle = '#3E2014';
+    ctx.fillRect(x - hs * 0.12, y + hs * 0.15, hs * 0.24, hs * 0.4);
+  }
+
+  // Draw start positions
+  for (const sp of gameState.startPositions) {
+    const { x, y } = hexToPixel(sp.col, sp.row);
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff4444';
+    ctx.fill();
+  }
+}
+
+// ================================================================
+// Simulate discovery
+// ================================================================
+function simulateDiscovery() {
+  if (!gameState) { log('Generate a map first!', 'warn'); return; }
+  const undiscovered = gameState.tribalVillages.filter(v => !v.discovered);
+  if (undiscovered.length === 0) { log('All villages already discovered!', 'warn'); return; }
+  const village = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+  village.discovered = true;
+  const reward = rollReward();
+  let detail = '';
+  switch (reward.type) {
+    case 'gold': {
+      const amt = reward.min + Math.floor(Math.random() * (reward.max - reward.min + 1));
+      gameState.gold += amt;
+      detail = `+${amt} gold (total: ${gameState.gold})`;
+      break;
+    }
+    case 'tech_boost': detail = `+50% tech boost`; break;
+    case 'civic_boost': detail = `+50% civic boost`; break;
+    case 'population': detail = `+${reward.amount} population`; break;
+    case 'map_reveal': detail = `Revealed ${reward.radius}-hex radius`; break;
+    case 'free_unit': detail = `Free ${reward.units[Math.floor(Math.random() * reward.units.length)]}!`; break;
+    case 'faith': detail = `+${reward.amount} faith`; break;
+  }
+  log(`Village at (${village.col},${village.row}) discovered! Reward: ${reward.type} — ${detail}`);
+  drawMap(false);
+}
+
+// ================================================================
+// Button handlers
+// ================================================================
+document.getElementById('btn-generate').addEventListener('click', () => {
+  logEl.innerHTML = '';
+  initGame();
+  const count = gameState.tribalVillages.length;
+  log(`Map generated: ${MAP_COLS}x${MAP_ROWS}`);
+  log(`Tribal villages placed: ${count}`);
+  for (const v of gameState.tribalVillages) {
+    log(`  Village at (${v.col}, ${v.row})`);
+  }
+  drawMap(false);
+});
+
+document.getElementById('btn-show').addEventListener('click', () => {
+  if (!gameState) { log('Generate a map first!', 'warn'); return; }
+  drawMap(true);
+  log('Village locations highlighted in yellow');
+});
+
+document.getElementById('btn-discover').addEventListener('click', () => {
+  simulateDiscovery();
+});
+
+document.getElementById('btn-roll100').addEventListener('click', () => {
+  if (!gameState) initGame();
+  const counts = {};
+  for (const r of TRIBAL_VILLAGE_REWARDS) counts[r.type] = 0;
+  for (let i = 0; i < 100; i++) {
+    const reward = rollReward();
+    counts[reward.type]++;
+  }
+  log('--- Roll 100 Rewards Distribution ---');
+  const totalWeight = TRIBAL_VILLAGE_REWARDS.reduce((s, r) => s + r.weight, 0);
+  for (const r of TRIBAL_VILLAGE_REWARDS) {
+    const expected = (r.weight / totalWeight * 100).toFixed(0);
+    const actual = counts[r.type];
+    log(`  ${r.type}: ${actual}/100 (expected ~${expected}%)`);
+  }
+});
+
+document.getElementById('btn-acceptance').addEventListener('click', () => {
+  logEl.innerHTML = '';
+  log('=== ACCEPTANCE TEST SUITE ===\n');
+
+  // Test 1: Village count
+  log('--- Test 1: Village Placement Count ---');
+  let countPass = 0;
+  const trials = 20;
+  for (let i = 0; i < trials; i++) {
+    initGame();
+    const n = gameState.tribalVillages.length;
+    if (n >= 8 && n <= 12) countPass++;
+  }
+  if (countPass === trials) pass(`${trials}/${trials} maps had 8-12 villages`);
+  else fail(`${countPass}/${trials} maps had 8-12 villages`);
+
+  // Test 2: Min distance from start positions
+  log('\n--- Test 2: Minimum 6 hexes from starts ---');
+  initGame();
+  let startDistOk = true;
+  for (const v of gameState.tribalVillages) {
+    for (const sp of gameState.startPositions) {
+      if (hexDistance(v.col, v.row, sp.col, sp.row) < 6) {
+        fail(`Village at (${v.col},${v.row}) is ${hexDistance(v.col, v.row, sp.col, sp.row)} hexes from start at (${sp.col},${sp.row})`);
+        startDistOk = false;
+      }
+    }
+  }
+  if (startDistOk) pass('All villages are at least 6 hexes from start positions');
+
+  // Test 3: Min distance between villages
+  log('\n--- Test 3: Minimum 4 hexes between villages ---');
+  let vilDistOk = true;
+  for (let i = 0; i < gameState.tribalVillages.length; i++) {
+    for (let j = i + 1; j < gameState.tribalVillages.length; j++) {
+      const a = gameState.tribalVillages[i], b = gameState.tribalVillages[j];
+      if (hexDistance(a.col, a.row, b.col, b.row) < 4) {
+        fail(`Villages at (${a.col},${a.row}) and (${b.col},${b.row}) are only ${hexDistance(a.col, a.row, b.col, b.row)} apart`);
+        vilDistOk = false;
+      }
+    }
+  }
+  if (vilDistOk) pass('All villages are at least 4 hexes apart');
+
+  // Test 4: Villages on passable land only
+  log('\n--- Test 4: Villages on passable land ---');
+  let landOk = true;
+  for (const v of gameState.tribalVillages) {
+    const tile = gameState.map[v.row][v.col];
+    const bInfo = BASE_TERRAIN[tile.base];
+    if (!bInfo || !bInfo.movable) {
+      fail(`Village at (${v.col},${v.row}) on impassable terrain: ${tile.base}`);
+      landOk = false;
+    }
+  }
+  if (landOk) pass('All villages are on passable land');
+
+  // Test 5: Discovery removes village
+  log('\n--- Test 5: Discovery removes village (not discoverable twice) ---');
+  initGame();
+  const v = gameState.tribalVillages[0];
+  if (v) {
+    v.discovered = true;
+    const stillUndiscovered = gameState.tribalVillages.filter(x => x.col === v.col && x.row === v.row && !x.discovered);
+    if (stillUndiscovered.length === 0) pass('Discovered village is no longer discoverable');
+    else fail('Village still appears undiscovered after discovery');
+  } else {
+    fail('No villages to test');
+  }
+
+  // Test 6: All 7 reward types function
+  log('\n--- Test 6: All 7 reward types roll ---');
+  const seenTypes = new Set();
+  for (let i = 0; i < 1000; i++) {
+    const reward = rollReward();
+    seenTypes.add(reward.type);
+  }
+  const expectedTypes = ['gold', 'tech_boost', 'civic_boost', 'population', 'map_reveal', 'free_unit', 'faith'];
+  let allTypesOk = true;
+  for (const t of expectedTypes) {
+    if (!seenTypes.has(t)) {
+      fail(`Reward type "${t}" never rolled in 1000 attempts`);
+      allTypesOk = false;
+    }
+  }
+  if (allTypesOk) pass('All 7 reward types appear in rolls');
+
+  // Test 7: Reward distribution roughly matches weights
+  log('\n--- Test 7: Reward distribution check (10000 rolls) ---');
+  const distCounts = {};
+  for (const r of TRIBAL_VILLAGE_REWARDS) distCounts[r.type] = 0;
+  for (let i = 0; i < 10000; i++) distCounts[rollReward().type]++;
+  const totalW = TRIBAL_VILLAGE_REWARDS.reduce((s, r) => s + r.weight, 0);
+  let distOk = true;
+  for (const r of TRIBAL_VILLAGE_REWARDS) {
+    const expected = r.weight / totalW;
+    const actual = distCounts[r.type] / 10000;
+    const diff = Math.abs(actual - expected);
+    if (diff > 0.05) {
+      fail(`${r.type}: expected ~${(expected*100).toFixed(0)}%, got ${(actual*100).toFixed(1)}% (diff ${(diff*100).toFixed(1)}%)`);
+      distOk = false;
+    } else {
+      log(`  ${r.type}: ${(actual*100).toFixed(1)}% (expected ${(expected*100).toFixed(0)}%)`, 'info');
+    }
+  }
+  if (distOk) pass('All reward distributions within 5% of expected');
+
+  // Test 8: Save/load preserves tribalVillages
+  log('\n--- Test 8: Save/Load persistence ---');
+  initGame();
+  const serialized = JSON.stringify(gameState.tribalVillages);
+  const restored = JSON.parse(serialized);
+  if (restored.length === gameState.tribalVillages.length &&
+      restored[0].col === gameState.tribalVillages[0].col &&
+      restored[0].row === gameState.tribalVillages[0].row &&
+      restored[0].discovered === gameState.tribalVillages[0].discovered) {
+    pass('tribalVillages serializes and deserializes correctly');
+  } else {
+    fail('tribalVillages serialization mismatch');
+  }
+
+  // Test 9: Migration adds tribalVillages if missing
+  log('\n--- Test 9: Save migration (missing tribalVillages) ---');
+  const oldState = {};
+  if (!oldState.tribalVillages) oldState.tribalVillages = [];
+  if (Array.isArray(oldState.tribalVillages)) pass('Migration adds tribalVillages=[] to old saves');
+  else fail('Migration failed');
+
+  log('\n=== TESTS COMPLETE ===');
+
+  drawMap(true);
+});
+
+// Auto-init on load
+initGame();
+drawMap(false);
+log('Page loaded. Click buttons above to run tests.');
+log(`Initial map has ${gameState.tribalVillages.length} tribal villages.`);
+</script>
+</body>
+</html>

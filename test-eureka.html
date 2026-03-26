@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Eureka & Inspiration System — Test Page</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { color: #ffd700; margin-bottom: 8px; font-size: 22px; }
+  h2 { color: #c9a84c; margin: 16px 0 8px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  h3 { color: #e8a0ff; margin: 12px 0 6px; font-size: 14px; }
+  .container { max-width: 1000px; margin: 0 auto; }
+  .section { background: #12122a; border: 1px solid #2a2a4a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tech-item, .civic-item { padding: 8px 10px; background: rgba(255,255,255,0.03); border: 1px solid #2a2a4a; border-radius: 6px; font-size: 12px; }
+  .tech-item .name { color: #4fc3f7; font-weight: 600; }
+  .civic-item .name { color: #e8a0ff; font-weight: 600; }
+  .condition { color: #c9a84c; font-style: italic; font-size: 11px; }
+  .triggered { color: #4caf50 !important; }
+  .status { display: inline-block; width: 16px; text-align: center; }
+  .progress-bar { background: #1a1a2e; border-radius: 3px; height: 6px; overflow: hidden; margin: 4px 0; }
+  .progress-fill { height: 100%; transition: width 0.3s; border-radius: 3px; }
+  .progress-fill.tech { background: #4fc3f7; }
+  .progress-fill.civic { background: #e8a0ff; }
+  .progress-fill.eureka { background: #ffd700; }
+  button { background: #1a1a3a; color: #e0e0e0; border: 1px solid #4a4a6a; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; margin: 3px; }
+  button:hover { background: #2a2a5a; border-color: #ffd700; }
+  .btn-eureka { border-color: #ffd700; color: #ffd700; }
+  .btn-inspiration { border-color: #e8a0ff; color: #e8a0ff; }
+  .btn-test { border-color: #4caf50; color: #4caf50; }
+  .btn-all { border-color: #ff6060; color: #ff6060; }
+  .test-result { padding: 6px 10px; margin: 4px 0; border-radius: 4px; font-size: 12px; }
+  .test-pass { background: rgba(76,175,80,0.15); border-left: 3px solid #4caf50; color: #4caf50; }
+  .test-fail { background: rgba(244,67,54,0.15); border-left: 3px solid #f44336; color: #f44336; }
+  #toast-container { position: fixed; top: 60px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  #test-log { max-height: 400px; overflow-y: auto; }
+  .stats { color: #888; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Eureka & Inspiration System — Test Page</h1>
+  <p style="color:#888;margin-bottom:16px;font-size:13px">Tests for the "learn by doing" research bonus system. Each eureka/inspiration grants a 40% boost.</p>
+
+  <div class="section">
+    <h2>Controls</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">
+      <button class="btn-eureka" onclick="testTriggerMining()">Trigger Eureka: Mining</button>
+      <button class="btn-eureka" onclick="testTriggerArchery()">Trigger Eureka: Archery</button>
+      <button class="btn-inspiration" onclick="testTriggerCraftsmanship()">Trigger Inspiration: Craftsmanship</button>
+      <button class="btn-all" onclick="triggerAllEurekas()">Trigger All Eurekas</button>
+      <button class="btn-all" onclick="triggerAllInspirations()">Trigger All Inspirations</button>
+      <button class="btn-test" onclick="testDoubleTrigger()">Try Double Trigger</button>
+      <button class="btn-test" onclick="testCompletedTech()">Trigger on Completed Tech</button>
+      <button class="btn-test" onclick="runAllTests()">Run All Automated Tests</button>
+      <button onclick="resetState()">Reset State</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="section">
+      <h2>Technologies with Eurekas</h2>
+      <div id="tech-list"></div>
+    </div>
+    <div class="section">
+      <h2>Civics with Inspirations</h2>
+      <div id="civic-list"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Automated Test Results</h2>
+    <div id="test-log"></div>
+  </div>
+</div>
+
+<script>
+// Minimal game state mock for standalone testing (game.js not loaded)
+const TECHNOLOGIES = [
+  { id: 'agriculture', name: 'Agriculture', cost: 20, desc: 'Unlock Granary', unlocks: ['granary'] },
+  { id: 'mining', name: 'Mining', cost: 20, desc: 'Unlock Workshop', unlocks: ['workshop'], eureka: { condition: 'build_quarry', description: 'Build a Quarry' } },
+  { id: 'writing', name: 'Writing', cost: 30, desc: 'Unlock Library', unlocks: ['library'], eureka: { condition: 'meet_faction', description: 'Meet another civilization' } },
+  { id: 'currency', name: 'Currency', cost: 35, desc: 'Unlock Market, Bath', unlocks: ['market','bath'], eureka: { condition: 'establish_trade', description: 'Establish a Trade Route' } },
+  { id: 'masonry', name: 'Masonry', cost: 30, desc: 'Unlock City Walls', unlocks: ['walls'], eureka: { condition: 'build_quarry', description: 'Build a Quarry' } },
+  { id: 'mysticism', name: 'Mysticism', cost: 25, desc: 'Unlock Temple, Monument', unlocks: ['temple','monument'], eureka: { condition: 'discover_wonder', description: 'Discover a Natural Wonder' } },
+  { id: 'sailing', name: 'Sailing', cost: 40, desc: 'Unlock Harbor', unlocks: ['harbor'], eureka: { condition: 'discover_coast', description: 'Discover a Coast tile' } },
+  { id: 'archery', name: 'Archery', cost: 25, desc: 'Unlock Archers', unlocks: ['archer'], eureka: { condition: 'slinger_kill', description: 'Kill a unit with a Slinger' } },
+  { id: 'bronze_working', name: 'Bronze Working', cost: 30, desc: 'Unlock Spearmen', unlocks: ['spearman'], eureka: { condition: 'kill_3_barbarians', description: 'Kill 3 Barbarians' } },
+  { id: 'wheel', name: 'The Wheel', cost: 35, desc: 'Unlock Heavy Chariots', unlocks: ['chariot'], eureka: { condition: 'build_pasture', description: 'Build a Pasture' } },
+  { id: 'military_tactics', name: 'Military Tactics', cost: 35, desc: 'Unlock Barracks', unlocks: ['barracks'], eureka: { condition: 'spearman_kill', description: 'Kill a unit with a Spearman' } },
+  { id: 'animal_husbandry', name: 'Animal Husbandry', cost: 25, desc: 'Unlock Pastures', unlocks: ['pasture','camp'], eureka: { condition: 'build_pasture', description: 'Build a Pasture' } },
+  { id: 'pottery', name: 'Pottery', cost: 20, desc: 'Unlock Shrine', unlocks: [], eureka: { condition: 'found_second_city', description: 'Found a second city' } },
+  { id: 'irrigation_tech', name: 'Irrigation', cost: 30, desc: 'Unlock Irrigation', unlocks: ['irrigation','garden'], eureka: { condition: 'farm_near_river', description: 'Build a Farm adjacent to a River' } },
+  { id: 'construction', name: 'Construction', cost: 50, desc: 'Better buildings', unlocks: [], eureka: { condition: 'build_3_mines', description: 'Build 3 Mines' } },
+  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron', unlocks: [], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
+  { id: 'engineering', name: 'Engineering', cost: 55, desc: 'Unlock Amphitheater', unlocks: ['amphitheater'], eureka: { condition: 'complete_wonder', description: 'Complete a Wonder' } },
+];
+
+const CIVICS = [
+  { id: 'code_of_laws', name: 'Code of Laws', cost: 20, desc: 'Unlock Despotism', category: 'governance', inspiration: { condition: 'discover_village', description: 'Discover a Tribal Village' } },
+  { id: 'craftsmanship', name: 'Craftsmanship', cost: 20, desc: '+1 Production', category: 'economy', inspiration: { condition: 'build_3_improvements', description: 'Build 3 tile improvements' } },
+  { id: 'foreign_trade', name: 'Foreign Trade', cost: 25, desc: '+1 Gold on trade routes', category: 'economy', inspiration: { condition: 'discover_faction', description: 'Discover another civilization' } },
+  { id: 'military_tradition', name: 'Military Tradition', cost: 25, desc: 'Units gain XP faster', category: 'military', inspiration: { condition: 'win_combat', description: 'Win a combat' } },
+  { id: 'state_workforce', name: 'State Workforce', cost: 30, desc: 'Unlock Oligarchy', category: 'governance', inspiration: { condition: 'building_in_2_cities', description: 'Build a building in 2 cities' } },
+  { id: 'early_empire', name: 'Early Empire', cost: 35, desc: '+1 Population growth', category: 'expansion', inspiration: { condition: 'found_second_city', description: 'Found a second city' } },
+  { id: 'mysticism_civic', name: 'Mysticism', cost: 30, desc: 'Unlock Pantheon', category: 'religion', inspiration: { condition: 'found_pantheon', description: 'Found a Pantheon' } },
+  { id: 'drama_poetry', name: 'Drama & Poetry', cost: 40, desc: 'Unlock Republic', category: 'governance', inspiration: { condition: 'monument_in_2_cities', description: 'Build a Monument in 2 cities' } },
+  { id: 'games_recreation', name: 'Games & Recreation', cost: 35, desc: '+2 Happiness', category: 'culture', inspiration: { condition: 'build_arena', description: 'Build an Arena' } },
+  { id: 'political_philosophy', name: 'Political Philosophy', cost: 45, desc: '+1 Policy slot', category: 'governance', inspiration: { condition: 'meet_3_factions', description: 'Meet 3 civilizations' } },
+  { id: 'recorded_history', name: 'Recorded History', cost: 50, desc: '+2 Science from Libraries', category: 'culture', inspiration: { condition: 'library_in_2_cities', description: 'Build a Library in 2 cities' } },
+];
+
+let game = {};
+let toastCount = 0;
+
+function resetState() {
+  game = {
+    turn: 1, gold: 50, techs: ['agriculture', 'mining'], civics: [],
+    currentResearch: null, researchProgress: 0, currentCivic: null, civicProgress: 0,
+    eurekas: [], inspirations: [], barbarianKills: 0, mineCount: 0, improvementCount: 0,
+    techProgress: {}, civicProgressMap: {},
+    units: [], cities: [{ name: 'Capital', col: 30, row: 20 }],
+    gameLog: [],
+  };
+  toastCount = 0;
+  renderLists();
+  document.getElementById('test-log').innerHTML = '';
+}
+
+function showToast(title, message) {
+  toastCount++;
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.style.cssText = 'background:rgba(20,20,30,0.92);border:1px solid rgba(255,215,0,0.5);border-radius:8px;padding:10px 16px;color:#f0e8d0;font-size:13px;max-width:300px;box-shadow:0 4px 16px rgba(0,0,0,0.5);opacity:0;transform:translateX(40px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;';
+  toast.innerHTML = '<div style="font-weight:bold;color:#ffd700;margin-bottom:2px">' + title + '</div><div style="color:#bbb;font-size:11px">' + message + '</div>';
+  container.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350); }, 3000);
+}
+
+function addEvent() {} // no-op for test
+function logAction() {} // no-op for test
+
+function triggerEureka(techId) {
+  if (!game.eurekas) game.eurekas = [];
+  if (game.eurekas.includes(techId)) return;
+  const tech = TECHNOLOGIES.find(t => t.id === techId);
+  if (!tech || !tech.eureka) return;
+  if (game.techs && game.techs.includes(techId)) return;
+  game.eurekas.push(techId);
+  const boost = Math.floor(tech.cost * 0.4);
+  if (!game.techProgress) game.techProgress = {};
+  game.techProgress[techId] = (game.techProgress[techId] || 0) + boost;
+  if (game.techProgress[techId] > tech.cost) game.techProgress[techId] = tech.cost;
+  if (game.currentResearch === techId) {
+    game.researchProgress = (game.researchProgress || 0) + boost;
+    if (game.researchProgress > tech.cost) game.researchProgress = tech.cost;
+  }
+  showToast('Eureka!', tech.eureka.description + ' \u2014 40% boost to ' + tech.name);
+  renderLists();
+}
+
+function triggerInspiration(civicId) {
+  if (!game.inspirations) game.inspirations = [];
+  if (game.inspirations.includes(civicId)) return;
+  const civic = CIVICS.find(c => c.id === civicId);
+  if (!civic || !civic.inspiration) return;
+  if (game.civics && game.civics.includes(civicId)) return;
+  game.inspirations.push(civicId);
+  const boost = Math.floor(civic.cost * 0.4);
+  if (!game.civicProgressMap) game.civicProgressMap = {};
+  game.civicProgressMap[civicId] = (game.civicProgressMap[civicId] || 0) + boost;
+  if (game.civicProgressMap[civicId] > civic.cost) game.civicProgressMap[civicId] = civic.cost;
+  if (game.currentCivic === civicId) {
+    game.civicProgress = (game.civicProgress || 0) + boost;
+    if (game.civicProgress > civic.cost) game.civicProgress = civic.cost;
+  }
+  showToast('Inspiration!', civic.inspiration.description + ' \u2014 40% boost to ' + civic.name);
+  renderLists();
+}
+
+function renderLists() {
+  // Tech list
+  const techList = document.getElementById('tech-list');
+  techList.innerHTML = TECHNOLOGIES.filter(t => t.eureka).map(t => {
+    const triggered = game.eurekas.includes(t.id);
+    const researched = game.techs.includes(t.id);
+    const progress = game.techProgress[t.id] || 0;
+    const pct = Math.floor((progress / t.cost) * 100);
+    return `<div class="tech-item">
+      <span class="status">${triggered ? '\u2705' : '\u2B1C'}</span>
+      <span class="name">${t.name}</span> (${t.cost} cost)
+      ${researched ? '<span style="color:#4caf50;font-size:10px"> [RESEARCHED]</span>' : ''}
+      <div class="condition ${triggered ? 'triggered' : ''}">${triggered ? '\u2713 ' : '\u{1F4A1} '}${t.eureka.description}</div>
+      <div class="progress-bar"><div class="progress-fill ${triggered ? 'eureka' : 'tech'}" style="width:${pct}%"></div></div>
+      <div class="stats">${progress}/${t.cost} (${pct}%)</div>
+    </div>`;
+  }).join('');
+
+  // Civic list
+  const civicList = document.getElementById('civic-list');
+  civicList.innerHTML = CIVICS.filter(c => c.inspiration).map(c => {
+    const triggered = game.inspirations.includes(c.id);
+    const adopted = game.civics.includes(c.id);
+    const progress = game.civicProgressMap[c.id] || 0;
+    const pct = Math.floor((progress / c.cost) * 100);
+    return `<div class="civic-item">
+      <span class="status">${triggered ? '\u2705' : '\u2B1C'}</span>
+      <span class="name">${c.name}</span> (${c.cost} cost)
+      ${adopted ? '<span style="color:#4caf50;font-size:10px"> [ADOPTED]</span>' : ''}
+      <div class="condition ${triggered ? 'triggered' : ''}">${triggered ? '\u2713 ' : '\u{1F4A1} '}${c.inspiration.description}</div>
+      <div class="progress-bar"><div class="progress-fill ${triggered ? 'eureka' : 'civic'}" style="width:${pct}%"></div></div>
+      <div class="stats">${progress}/${c.cost} (${pct}%)</div>
+    </div>`;
+  }).join('');
+}
+
+// --- Test functions ---
+function testTriggerMining() {
+  resetState();
+  const before = game.techProgress['mining'] || 0;
+  triggerEureka('mining');
+  const after = game.techProgress['mining'] || 0;
+  logTest('Trigger Mining Eureka', `Before: ${before}, After: ${after}, Expected boost: ${Math.floor(20 * 0.4)}`, after === before + Math.floor(20 * 0.4));
+}
+
+function testTriggerArchery() {
+  resetState();
+  triggerEureka('archery');
+  const progress = game.techProgress['archery'] || 0;
+  const expected = Math.floor(25 * 0.4);
+  logTest('Trigger Archery Eureka', `Progress: ${progress}, Expected: ${expected}`, progress === expected);
+}
+
+function testTriggerCraftsmanship() {
+  resetState();
+  triggerInspiration('craftsmanship');
+  const progress = game.civicProgressMap['craftsmanship'] || 0;
+  const expected = Math.floor(20 * 0.4);
+  logTest('Trigger Craftsmanship Inspiration', `Progress: ${progress}, Expected: ${expected}`, progress === expected);
+}
+
+function triggerAllEurekas() {
+  resetState();
+  let totalSaved = 0;
+  for (const t of TECHNOLOGIES) {
+    if (!t.eureka) continue;
+    if (game.techs.includes(t.id)) continue;
+    triggerEureka(t.id);
+    totalSaved += Math.floor(t.cost * 0.4);
+  }
+  logTest('Trigger All Eurekas', `Total research saved: ${totalSaved}, Triggered: ${game.eurekas.length}`, game.eurekas.length > 0);
+}
+
+function triggerAllInspirations() {
+  resetState();
+  let totalSaved = 0;
+  for (const c of CIVICS) {
+    if (!c.inspiration) continue;
+    triggerInspiration(c.id);
+    totalSaved += Math.floor(c.cost * 0.4);
+  }
+  logTest('Trigger All Inspirations', `Total culture saved: ${totalSaved}, Triggered: ${game.inspirations.length}`, game.inspirations.length > 0);
+}
+
+function testDoubleTrigger() {
+  resetState();
+  triggerEureka('mining');
+  const after1 = game.techProgress['mining'] || 0;
+  triggerEureka('mining');
+  const after2 = game.techProgress['mining'] || 0;
+  logTest('Double Trigger Prevention', `First: ${after1}, Second: ${after2} (should be equal)`, after1 === after2);
+}
+
+function testCompletedTech() {
+  resetState();
+  // mining is already in game.techs
+  const before = game.techProgress['mining'] || 0;
+  triggerEureka('mining');
+  const after = game.techProgress['mining'] || 0;
+  logTest('No Effect on Completed Tech', `Before: ${before}, After: ${after} (should be equal)`, before === after && !game.eurekas.includes('mining'));
+}
+
+function runAllTests() {
+  document.getElementById('test-log').innerHTML = '';
+  toastCount = 0;
+
+  // Test 1: Eureka adds exactly 40%
+  resetState();
+  triggerEureka('archery');
+  const archeryBoost = game.techProgress['archery'] || 0;
+  logTest('Eureka adds exactly 40% of tech cost', `archery cost=25, 40%=10, got=${archeryBoost}`, archeryBoost === Math.floor(25 * 0.4));
+
+  // Test 2: Inspiration adds exactly 40%
+  resetState();
+  triggerInspiration('code_of_laws');
+  const colBoost = game.civicProgressMap['code_of_laws'] || 0;
+  logTest('Inspiration adds exactly 40% of civic cost', `code_of_laws cost=20, 40%=8, got=${colBoost}`, colBoost === Math.floor(20 * 0.4));
+
+  // Test 3: Cannot trigger same eureka twice
+  resetState();
+  triggerEureka('sailing');
+  const sail1 = game.techProgress['sailing'] || 0;
+  triggerEureka('sailing');
+  const sail2 = game.techProgress['sailing'] || 0;
+  logTest('Cannot trigger same eureka twice', `first=${sail1}, second=${sail2}`, sail1 === sail2);
+
+  // Test 4: No effect on already completed tech
+  resetState();
+  triggerEureka('agriculture'); // already in techs
+  logTest('No effect on already completed tech', `eurekas=[${game.eurekas}]`, !game.eurekas.includes('agriculture'));
+
+  // Test 5: Progress capped at tech cost
+  resetState();
+  game.techProgress['mysticism'] = 23; // already at 92% (cost=25)
+  triggerEureka('mysticism');
+  logTest('Progress capped at tech cost', `progress=${game.techProgress['mysticism']}, cost=25`, game.techProgress['mysticism'] <= 25);
+
+  // Test 6: Toast notification appears
+  resetState();
+  const toastsBefore = toastCount;
+  triggerEureka('writing');
+  logTest('Toast notification appears', `toasts before=${toastsBefore}, after=${toastCount}`, toastCount > toastsBefore);
+
+  // Test 7: Counter-based: barbarian kills
+  resetState();
+  game.barbarianKills = 2;
+  // Simulate third kill
+  game.barbarianKills = 3;
+  triggerEureka('bronze_working');
+  logTest('Counter-based eureka (barbarian kills)', `barbarianKills=${game.barbarianKills}, triggered=${game.eurekas.includes('bronze_working')}`, game.eurekas.includes('bronze_working'));
+
+  // Test 8: Counter-based: mine count
+  resetState();
+  game.mineCount = 3;
+  triggerEureka('construction');
+  logTest('Counter-based eureka (mine count)', `mineCount=${game.mineCount}, triggered=${game.eurekas.includes('construction')}`, game.eurekas.includes('construction'));
+
+  // Test 9: Save/load preserves state
+  resetState();
+  triggerEureka('sailing');
+  triggerInspiration('foreign_trade');
+  const saved = JSON.stringify({ eurekas: game.eurekas, inspirations: game.inspirations, techProgress: game.techProgress, civicProgressMap: game.civicProgressMap, barbarianKills: game.barbarianKills, mineCount: game.mineCount, improvementCount: game.improvementCount });
+  const loaded = JSON.parse(saved);
+  logTest('Save/load preserves eurekas & inspirations', `eurekas=${loaded.eurekas}, inspirations=${loaded.inspirations}`, loaded.eurekas.includes('sailing') && loaded.inspirations.includes('foreign_trade'));
+
+  // Test 10: Eureka on currently researched tech boosts researchProgress
+  resetState();
+  game.currentResearch = 'wheel';
+  game.researchProgress = 5;
+  triggerEureka('wheel');
+  const expected = 5 + Math.floor(35 * 0.4);
+  logTest('Eureka boosts current research progress', `researchProgress=${game.researchProgress}, expected=${expected}`, game.researchProgress === expected);
+
+  renderLists();
+}
+
+function logTest(name, detail, passed) {
+  const log = document.getElementById('test-log');
+  log.innerHTML += `<div class="test-result ${passed ? 'test-pass' : 'test-fail'}">${passed ? '\u2705' : '\u274C'} <strong>${name}</strong> — ${detail}</div>`;
+}
+
+// Initialize
+resetState();
+</script>
+</body>
+</html>

@@ -25,6 +25,12 @@ export const CITY_DEFENSE = {
   CAPTURE_MELEE_ONLY: true,
 };
 
+export const WALL_HP = {
+  ancient_walls: 50,
+};
+
+export const SIEGE_WALL_MULTIPLIER = 2.0;
+
 export const BASE_TERRAIN = {
   ocean:     { name: 'Ocean',     baseColor: '#0e2a42', food: 1, prod: 0, gold: 0, movable: false, moveCost: 99, group: 'water' },
   coast:     { name: 'Coast',     baseColor: '#184060', food: 1, prod: 0, gold: 1, movable: false, moveCost: 99, group: 'water' },
@@ -62,6 +68,11 @@ export let UNIT_TYPES = {
 };
 
 // ============================================
+// ZONE OF CONTROL — civilian units don't project ZOC (but are still affected by it)
+// ============================================
+export const ZOC_EXEMPT_CLASSES = ['civilian'];
+
+// ============================================
 // UNIT UPGRADE PATHS
 // ============================================
 export const UNIT_UPGRADES = {
@@ -72,23 +83,23 @@ export const UNIT_UPGRADES = {
 };
 
 export const RESOURCES = {
-  iron:     { name: 'Iron',     icon: '⛏',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic' },
+  iron:     { name: 'Iron',     icon: '⛏',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
   gold_ore: { name: 'Gold Ore', icon: '◈',  color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
-  horses:   { name: 'Horses',   icon: '♞',  color: '#a0785a', bonus: { prod: 1 }, category: 'strategic' },
+  horses:   { name: 'Horses',   icon: '♞',  color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
   gems:     { name: 'Gems',     icon: '◆',  color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
   wheat:    { name: 'Wheat',    icon: '⌇',  color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
   stone:    { name: 'Stone',    icon: '▢',  color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
   fish:     { name: 'Fish',     icon: '⋈',  color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
   spices:   { name: 'Spices',   icon: '❋',  color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
   silk:     { name: 'Silk',     icon: '≈',  color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  copper:   { name: 'Copper',   icon: '⊕',  color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic' },
+  copper:   { name: 'Copper',   icon: '⊕',  color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
   marble:   { name: 'Marble',   icon: '\u25A1', color: '#d0c8b8', bonus: { prod: 1, gold: 1 }, category: 'bonus' },
   incense:  { name: 'Incense',  icon: '\u2604', color: '#b8a0d0', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
   ivory:    { name: 'Ivory',    icon: '\u2658', color: '#f0e8d0', bonus: { gold: 2 }, category: 'luxury' },
   dyes:     { name: 'Dyes',     icon: '\u2740', color: '#d05080', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
   furs:     { name: 'Furs',     icon: '\u2248', color: '#8a6040', bonus: { gold: 2 }, category: 'luxury' },
   salt:     { name: 'Salt',     icon: '\u2662', color: '#e8e0d0', bonus: { food: 1, gold: 1 }, category: 'bonus' },
-  obsidian: { name: 'Obsidian', icon: '\u25C6', color: '#303030', bonus: { prod: 2 }, category: 'strategic' },
+  obsidian: { name: 'Obsidian', icon: '\u25C6', color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
   jade:     { name: 'Jade',     icon: '\u25C9', color: '#50a060', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
   wine:     { name: 'Wine',     icon: '\u2617', color: '#8a2040', bonus: { gold: 2 }, category: 'luxury' },
   cotton:   { name: 'Cotton',   icon: '\u2055', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
@@ -102,14 +113,14 @@ export let BUILDINGS = [
   { id: 'library',     name: 'Library',       cost: 55,  desc: '+2 Science per turn', effect: { science: 2 } },
   { id: 'walls',       name: 'City Walls',    cost: 60,  desc: '+5 Defense', effect: { defense: 5 } },
   { id: 'workshop',    name: 'Workshop',      cost: 65,  desc: '+2 Production per turn', effect: { production: 2 } },
-  { id: 'temple',      name: 'Temple',        cost: 50,  desc: '+1 Culture, +1 Gold', effect: { culture: 1, gold: 1 } },
+  { id: 'temple',      name: 'Temple',        cost: 50,  desc: '+1 Culture, +1 Gold, +1 Amenity', effect: { culture: 1, gold: 1 } },
   { id: 'harbor',      name: 'Harbor',        cost: 70,  desc: '+3 Gold, +1 Food (coastal)', effect: { gold: 3, food: 1 } },
   { id: 'university',  name: 'University',    cost: 100, desc: '+4 Science per turn', effect: { science: 4 } },
   { id: 'bank',        name: 'Bank',          cost: 90,  desc: '+5 Gold per turn', effect: { gold: 5 } },
   { id: 'fortress',    name: 'Fortress',      cost: 110, desc: '+8 Military, +3 Defense', effect: { military: 8, defense: 3 } },
   { id: 'monument', name: 'Monument', cost: 30, desc: '+2 Culture per turn', effect: { culture: 2 } },
-  { id: 'garden', name: 'Garden', cost: 45, desc: '+2 Food, +1 Happiness', effect: { food: 2 } },
-  { id: 'arena', name: 'Arena', cost: 55, desc: '+2 Culture, +1 Military', effect: { culture: 2, military: 1 } },
+  { id: 'garden', name: 'Garden', cost: 45, desc: '+2 Food, +1 Amenity', effect: { food: 2 } },
+  { id: 'arena', name: 'Arena', cost: 55, desc: '+2 Culture, +1 Military, +1 Amenity', effect: { culture: 2, military: 1 } },
   { id: 'lighthouse', name: 'Lighthouse', cost: 60, desc: '+3 Gold, +1 Food (coastal)', effect: { gold: 3, food: 1 } },
   { id: 'amphitheater', name: 'Amphitheater', cost: 70, desc: '+3 Culture per turn', effect: { culture: 3 } },
   { id: 'academy', name: 'Academy', cost: 80, desc: '+3 Science per turn', effect: { science: 3 } },
@@ -119,45 +130,45 @@ export let BUILDINGS = [
 
 export const TECHNOLOGIES = [
   { id: 'agriculture', name: 'Agriculture',     cost: 20,  desc: 'Unlock Granary', unlocks: ['granary'] },
-  { id: 'mining',      name: 'Mining',          cost: 20,  desc: 'Unlock Workshop', unlocks: ['workshop'] },
-  { id: 'writing',     name: 'Writing',         cost: 30,  desc: 'Unlock Library', unlocks: ['library'] },
-  { id: 'currency', name: 'Currency', cost: 35, desc: 'Unlock Market, Bath', unlocks: ['market', 'bath'] },
-  { id: 'masonry',     name: 'Masonry',         cost: 30,  desc: 'Unlock City Walls', unlocks: ['walls'] },
-  { id: 'mysticism', name: 'Mysticism', cost: 25, desc: 'Unlock Temple, Monument', unlocks: ['temple', 'monument'] },
-  { id: 'sailing',     name: 'Sailing',         cost: 40,  desc: 'Unlock Harbor', unlocks: ['harbor'] },
-  { id: 'archery',     name: 'Archery',         cost: 25,  desc: 'Unlock Archers', unlocks: ['archer'] },
-  { id: 'bronze_working', name: 'Bronze Working', cost: 30, desc: 'Unlock Spearmen', unlocks: ['spearman'] },
-  { id: 'wheel',       name: 'The Wheel',       cost: 35,  desc: 'Unlock Heavy Chariots', unlocks: ['chariot'] },
-  { id: 'military_tactics', name: 'Military Tactics', cost: 35, desc: 'Unlock Barracks', unlocks: ['barracks'] },
+  { id: 'mining',      name: 'Mining',          cost: 20,  desc: 'Unlock Workshop', unlocks: ['workshop'], eureka: { condition: 'build_quarry', description: 'Build a Quarry' } },
+  { id: 'writing',     name: 'Writing',         cost: 30,  desc: 'Unlock Library', unlocks: ['library'], eureka: { condition: 'meet_faction', description: 'Meet another civilization' } },
+  { id: 'currency', name: 'Currency', cost: 35, desc: 'Unlock Market, Bath', unlocks: ['market', 'bath'], eureka: { condition: 'establish_trade', description: 'Establish a Trade Route' } },
+  { id: 'masonry',     name: 'Masonry',         cost: 30,  desc: 'Unlock City Walls', unlocks: ['walls'], eureka: { condition: 'build_quarry', description: 'Build a Quarry' } },
+  { id: 'mysticism', name: 'Mysticism', cost: 25, desc: 'Unlock Temple, Monument', unlocks: ['temple', 'monument'], eureka: { condition: 'discover_wonder', description: 'Discover a Natural Wonder' } },
+  { id: 'sailing',     name: 'Sailing',         cost: 40,  desc: 'Unlock Harbor', unlocks: ['harbor'], eureka: { condition: 'discover_coast', description: 'Discover a Coast tile' } },
+  { id: 'archery',     name: 'Archery',         cost: 25,  desc: 'Unlock Archers', unlocks: ['archer'], eureka: { condition: 'slinger_kill', description: 'Kill a unit with a Slinger' } },
+  { id: 'bronze_working', name: 'Bronze Working', cost: 30, desc: 'Unlock Spearmen', unlocks: ['spearman'], eureka: { condition: 'kill_3_barbarians', description: 'Kill 3 Barbarians' } },
+  { id: 'wheel',       name: 'The Wheel',       cost: 35,  desc: 'Unlock Heavy Chariots', unlocks: ['chariot'], eureka: { condition: 'build_pasture', description: 'Build a Pasture' } },
+  { id: 'military_tactics', name: 'Military Tactics', cost: 35, desc: 'Unlock Barracks', unlocks: ['barracks'], eureka: { condition: 'spearman_kill', description: 'Kill a unit with a Spearman' } },
   { id: 'education',   name: 'Education',       cost: 60,  desc: 'Unlock University', unlocks: ['university'], requires: ['writing'] },
   { id: 'banking',     name: 'Banking',         cost: 70,  desc: 'Unlock Bank', unlocks: ['bank'], requires: ['currency'] },
   { id: 'fortification', name: 'Fortification', cost: 80,  desc: 'Unlock Fortress', unlocks: ['fortress'], requires: ['masonry', 'military_tactics'] },
-  { id: 'animal_husbandry', name: 'Animal Husbandry', cost: 25, desc: 'Unlock Pastures, Camps, reveals Horses', unlocks: ['pasture','camp'] },
-  { id: 'pottery', name: 'Pottery', cost: 20, desc: 'Unlock Shrine, storage', unlocks: [] },
-  { id: 'irrigation_tech', name: 'Irrigation', cost: 30, desc: 'Unlock Irrigation improvement, Garden', unlocks: ['irrigation', 'garden'], requires: ['agriculture'] },
-  { id: 'construction', name: 'Construction', cost: 50, desc: 'Better buildings and roads', unlocks: [], requires: ['masonry'] },
-  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, stronger units', unlocks: [], requires: ['bronze_working'] },
+  { id: 'animal_husbandry', name: 'Animal Husbandry', cost: 25, desc: 'Unlock Pastures, Camps, reveals Horses', unlocks: ['pasture','camp'], eureka: { condition: 'build_pasture', description: 'Build a Pasture' } },
+  { id: 'pottery', name: 'Pottery', cost: 20, desc: 'Unlock Shrine, storage', unlocks: [], eureka: { condition: 'found_second_city', description: 'Found a second city' } },
+  { id: 'irrigation_tech', name: 'Irrigation', cost: 30, desc: 'Unlock Irrigation improvement, Garden', unlocks: ['irrigation', 'garden'], requires: ['agriculture'], eureka: { condition: 'farm_near_river', description: 'Build a Farm adjacent to a River' } },
+  { id: 'construction', name: 'Construction', cost: 50, desc: 'Better buildings and roads', unlocks: [], requires: ['masonry'], eureka: { condition: 'build_3_mines', description: 'Build 3 Mines' } },
+  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, stronger units', unlocks: [], requires: ['bronze_working'], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
   { id: 'mathematics', name: 'Mathematics', cost: 70, desc: 'Unlock Academy, Pyramid of Sun', unlocks: ['academy'], requires: ['engineering'] },
   { id: 'philosophy', name: 'Philosophy', cost: 60, desc: '+1 Envoy, cultural growth', unlocks: [], requires: ['mysticism', 'writing'] },
   { id: 'theology', name: 'Theology', cost: 65, desc: 'Temple upgrades', unlocks: [], requires: ['philosophy'] },
-  { id: 'engineering', name: 'Engineering', cost: 55, desc: 'Unlock Amphitheater, bridges', unlocks: ['amphitheater'], requires: ['bronze_working', 'currency'] },
+  { id: 'engineering', name: 'Engineering', cost: 55, desc: 'Unlock Amphitheater, bridges', unlocks: ['amphitheater'], requires: ['bronze_working', 'currency'], eureka: { condition: 'complete_wonder', description: 'Complete a Wonder' } },
   { id: 'navigation', name: 'Navigation', cost: 55, desc: 'Unlock Lighthouse, Quadrireme', unlocks: ['lighthouse'], requires: ['currency'] },
   { id: 'military_training', name: 'Military Training', cost: 55, desc: 'Unlock Arena, Blacksmith, flanking', unlocks: ['arena', 'blacksmith'], requires: ['wheel'] },
 ];
 
 export const CIVICS = [
-  { id: 'code_of_laws', name: 'Code of Laws', cost: 20, desc: 'Unlock Despotism government', unlocks: ['despotism_gov'], category: 'governance' },
-  { id: 'craftsmanship', name: 'Craftsmanship', cost: 20, desc: '+1 Production on improved tiles', unlocks: [], category: 'economy' },
-  { id: 'foreign_trade', name: 'Foreign Trade', cost: 25, desc: '+1 Gold on trade routes', unlocks: [], requires: ['code_of_laws'], category: 'economy' },
-  { id: 'military_tradition', name: 'Military Tradition', cost: 25, desc: 'Units gain XP 25% faster', unlocks: [], requires: ['craftsmanship'], category: 'military' },
-  { id: 'state_workforce', name: 'State Workforce', cost: 30, desc: 'Unlock Oligarchy government', unlocks: ['oligarchy_gov'], requires: ['code_of_laws'], category: 'governance' },
-  { id: 'early_empire', name: 'Early Empire', cost: 35, desc: '+1 Population growth, +1 settler', unlocks: [], requires: ['foreign_trade'], category: 'expansion' },
-  { id: 'mysticism_civic', name: 'Mysticism', cost: 30, desc: 'Unlock Pantheon selection', unlocks: ['pantheon'], requires: ['code_of_laws'], category: 'religion' },
-  { id: 'drama_poetry', name: 'Drama & Poetry', cost: 40, desc: 'Unlock Classical Republic, +2 Culture', unlocks: ['republic_gov'], requires: ['early_empire'], category: 'governance' },
-  { id: 'games_recreation', name: 'Games & Recreation', cost: 35, desc: '+2 Happiness from Arenas', unlocks: [], requires: ['state_workforce', 'military_tradition'], category: 'culture' },
-  { id: 'political_philosophy', name: 'Political Philosophy', cost: 45, desc: '+1 Social policy slot', unlocks: [], requires: ['drama_poetry', 'state_workforce'], category: 'governance' },
+  { id: 'code_of_laws', name: 'Code of Laws', cost: 20, desc: 'Unlock Despotism government', unlocks: ['despotism_gov'], category: 'governance', inspiration: { condition: 'discover_village', description: 'Discover a Tribal Village' } },
+  { id: 'craftsmanship', name: 'Craftsmanship', cost: 20, desc: '+1 Production on improved tiles', unlocks: [], category: 'economy', inspiration: { condition: 'build_3_improvements', description: 'Build 3 tile improvements' } },
+  { id: 'foreign_trade', name: 'Foreign Trade', cost: 25, desc: '+1 Gold on trade routes', unlocks: [], requires: ['code_of_laws'], category: 'economy', inspiration: { condition: 'discover_faction', description: 'Discover another civilization' } },
+  { id: 'military_tradition', name: 'Military Tradition', cost: 25, desc: 'Units gain XP 25% faster', unlocks: [], requires: ['craftsmanship'], category: 'military', inspiration: { condition: 'win_combat', description: 'Win a combat' } },
+  { id: 'state_workforce', name: 'State Workforce', cost: 30, desc: 'Unlock Oligarchy government', unlocks: ['oligarchy_gov'], requires: ['code_of_laws'], category: 'governance', inspiration: { condition: 'building_in_2_cities', description: 'Build a building in 2 cities' } },
+  { id: 'early_empire', name: 'Early Empire', cost: 35, desc: '+1 Population growth, +1 settler', unlocks: [], requires: ['foreign_trade'], category: 'expansion', inspiration: { condition: 'found_second_city', description: 'Found a second city' } },
+  { id: 'mysticism_civic', name: 'Mysticism', cost: 30, desc: 'Unlock Pantheon selection', unlocks: ['pantheon'], requires: ['code_of_laws'], category: 'religion', inspiration: { condition: 'found_pantheon', description: 'Found a Pantheon' } },
+  { id: 'drama_poetry', name: 'Drama & Poetry', cost: 40, desc: 'Unlock Classical Republic, +2 Culture', unlocks: ['republic_gov'], requires: ['early_empire'], category: 'governance', inspiration: { condition: 'monument_in_2_cities', description: 'Build a Monument in 2 cities' } },
+  { id: 'games_recreation', name: 'Games & Recreation', cost: 35, desc: '+1 Amenity from Arenas', unlocks: [], requires: ['state_workforce', 'military_tradition'], category: 'culture', inspiration: { condition: 'build_arena', description: 'Build an Arena' } },
+  { id: 'political_philosophy', name: 'Political Philosophy', cost: 45, desc: '+1 Social policy slot', unlocks: [], requires: ['drama_poetry', 'state_workforce'], category: 'governance', inspiration: { condition: 'meet_3_factions', description: 'Meet 3 civilizations' } },
   { id: 'theology_civic', name: 'Theology', cost: 45, desc: 'Unlock full Religion founding', unlocks: ['religion'], requires: ['mysticism_civic'], category: 'religion' },
-  { id: 'recorded_history', name: 'Recorded History', cost: 50, desc: '+2 Science from Libraries', unlocks: [], requires: ['drama_poetry', 'political_philosophy'], category: 'culture' },
+  { id: 'recorded_history', name: 'Recorded History', cost: 50, desc: '+2 Science from Libraries', unlocks: [], requires: ['drama_poetry', 'political_philosophy'], category: 'culture', inspiration: { condition: 'library_in_2_cities', description: 'Build a Library in 2 cities' } },
 ];
 
 export const GREAT_PEOPLE_TYPES = [
@@ -369,15 +380,35 @@ export const GOVERNMENTS = {
 // WONDERS SYSTEM
 // ============================================
 export const WONDERS = [
-  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}' },
-  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}' },
-  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}' },
-  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}' },
-  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}' },
-  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}' },
-  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}' },
-  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}' },
+  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}', category: 'economic' },
+  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}', category: 'economic' },
+  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}', category: 'cultural' },
+  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}', category: 'cultural' },
+  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}', category: 'economic' },
+  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}', category: 'economic' },
 ];
+
+// Wonder priorities per faction archetype — higher = more desired
+export const WONDER_PRIORITIES = {
+  cultural: {
+    oracle: 1.0, great_library: 0.9, hanging_gardens: 0.7,
+    colossus: 0.3, terracotta_army: 0.2, pyramids: 0.4, petra: 0.3, great_lighthouse: 0.4,
+  },
+  militaristic: {
+    terracotta_army: 1.0, colossus: 0.9, pyramids: 0.5,
+    oracle: 0.2, great_library: 0.3, hanging_gardens: 0.3, petra: 0.4, great_lighthouse: 0.5,
+  },
+  expansionist: {
+    pyramids: 1.0, petra: 0.9, hanging_gardens: 0.7,
+    great_lighthouse: 0.6, colossus: 0.5, oracle: 0.3, great_library: 0.3, terracotta_army: 0.5,
+  },
+  diplomatic: {
+    hanging_gardens: 1.0, oracle: 0.9, great_library: 0.7,
+    pyramids: 0.5, petra: 0.4, colossus: 0.3, terracotta_army: 0.2, great_lighthouse: 0.5,
+  },
+};
 
 export const BARBARIAN_UNITS = {
   barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee', desc: 'Basic barbarian raider' },
@@ -392,6 +423,19 @@ export const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];
 export const ZOOM_MIN = 0.5, ZOOM_MAX = 1.8, ZOOM_STEP = 0.1;
 
 export const DRAG_THRESHOLD = 8; // pixels before mouse-down becomes a drag
+
+// ============================================
+// TRIBAL VILLAGE (GOODY HUT) REWARDS
+// ============================================
+export const TRIBAL_VILLAGE_REWARDS = [
+  { type: 'gold', weight: 25, min: 50, max: 100 },
+  { type: 'tech_boost', weight: 15, amount: 0.5 },
+  { type: 'civic_boost', weight: 10, amount: 0.5 },
+  { type: 'population', weight: 15, amount: 200 },
+  { type: 'map_reveal', weight: 15, radius: 5 },
+  { type: 'free_unit', weight: 10, units: ['scout', 'warrior'] },
+  { type: 'faith', weight: 10, amount: 30 },
+];
 
 // Civ-style gold purchasing: 1 production = 4 gold
 export const GOLD_PER_PRODUCTION = 4;

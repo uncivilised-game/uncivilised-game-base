@@ -1,10 +1,10 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
-import { getTileYields, getTileName, getTileMoveCost } from './map.js';
-import { computeMoveRange, computeAttackRange } from './units.js';
+import { getTileYields, getTileName, getTileMoveCost, isResourceRevealed, crossesRiver, roadBridgesRiver } from './map.js';
+import { computeMoveRange, computeRiverCrossings, computeAttackRange, getEnemyZOCHexes } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
 import { getRelationLabel } from './diplomacy-api.js';
@@ -148,7 +148,10 @@ function render() {
   const endRow = Math.min(MAP_ROWS, Math.ceil((camY + viewH + HEX_SIZE * 2) / (HEX_SIZE * 1.5)));
 
   const moveRange = computeMoveRange();
+  const riverCrossings = computeRiverCrossings();
   const attackRange = computeAttackRange();
+  // ZOC overlay: show enemy ZOC hexes when a player unit is selected
+  const zocHexes = game.selectedUnitId ? getEnemyZOCHexes('player') : null;
 
   // Draw hex tiles
   for (let r = startRow; r < endRow; r++) {
@@ -185,8 +188,23 @@ function render() {
 
       // Grid lines removed for seamless terrain
 
-      // Resource indicator with detailed canvas-drawn icon
-      if (tile.resource && RESOURCES[tile.resource]) {
+      // Resource indicator with detailed canvas-drawn icon (hidden if unrevealed strategic)
+      if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
+        // Reveal animation glow (fades over 2 seconds)
+        if (tile._revealedAt) {
+          const elapsed = Date.now() - tile._revealedAt;
+          if (elapsed < 2000) {
+            const alpha = 0.6 * (1 - elapsed / 2000);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(sx, sy, HEX_SIZE * 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+            ctx.fill();
+            ctx.restore();
+          } else {
+            tile._revealedAt = null; // animation done
+          }
+        }
         drawResourceIcon(ctx, sx, sy + 1, tile.resource, 10);
       }
 
@@ -208,6 +226,20 @@ function render() {
           ctx.textBaseline = 'middle';
           ctx.fillText(nwDef.icon, sx, sy - 8);
           ctx.textBaseline = 'alphabetic';
+        }
+      }
+
+      // Tribal village sprite
+      if (game.tribalVillages) {
+        const village = game.tribalVillages.find(v => v.col === c && v.row === r && !v.discovered);
+        if (village) {
+          const villageImg = IMPROVEMENT_IMAGES['tribal_village'];
+          if (villageImg && villageImg.complete && villageImg.naturalWidth > 0) {
+            ctx.save();
+            const imgS = HEX_SIZE * 2.0;
+            ctx.drawImage(villageImg, sx - imgS / 2, sy - imgS / 2, imgS, imgS);
+            ctx.restore();
+          }
         }
       }
 
@@ -307,20 +339,31 @@ function render() {
         }
       }
 
-      // Move range highlight
+      // Move range highlight (yellow for river crossings, green for normal)
       if (moveRange) {
         const key = `${c},${r}`;
         if (moveRange.has(key)) {
+          const isRiverCross = riverCrossings && riverCrossings.has(key);
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          ctx.fillStyle = 'rgba(80,220,120,0.22)';
+          ctx.fillStyle = isRiverCross ? 'rgba(220,200,60,0.25)' : 'rgba(80,220,120,0.22)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(80,220,120,0.65)';
+          ctx.strokeStyle = isRiverCross ? 'rgba(220,200,60,0.75)' : 'rgba(80,220,120,0.65)';
           ctx.lineWidth = 2;
           ctx.stroke();
-          drawHex(ctx, sx, sy, HEX_SIZE - 4);
-          ctx.strokeStyle = 'rgba(80,220,120,0.25)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
+          if (isRiverCross) {
+            // Dashed inner stroke for river crossing tiles
+            ctx.setLineDash([4, 3]);
+            drawHex(ctx, sx, sy, HEX_SIZE - 4);
+            ctx.strokeStyle = 'rgba(220,180,40,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            drawHex(ctx, sx, sy, HEX_SIZE - 4);
+            ctx.strokeStyle = 'rgba(80,220,120,0.25)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
         }
       }
 
@@ -333,6 +376,19 @@ function render() {
           ctx.fill();
           ctx.strokeStyle = 'rgba(220,60,60,0.6)';
           ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      // Zone of Control overlay (red tint on hexes adjacent to enemy military units)
+      if (zocHexes) {
+        const key = `${c},${r}`;
+        if (zocHexes.has(key) && !(moveRange && moveRange.has(key)) && !(attackRange && attackRange.has(key))) {
+          drawHex(ctx, sx, sy, HEX_SIZE - 1);
+          ctx.fillStyle = 'rgba(180,40,40,0.12)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(180,40,40,0.35)';
+          ctx.lineWidth = 1;
           ctx.stroke();
         }
       }
@@ -395,13 +451,22 @@ function render() {
       ctx.textBaseline = 'middle';
       ctx.fillText('\u2605', sx, sy + 1);
       ctx.textBaseline = 'alphabetic';
+      // Show wall HP bar (grey/blue, above city HP bar)
+      if (fc.wallHP !== undefined && fc.wallMaxHP > 0) {
+        const hpW = 22;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(sx - hpW/2, sy + 11, hpW, 3);
+        ctx.fillStyle = fc.wallHP > fc.wallMaxHP * 0.5 ? '#7090b0' : fc.wallHP > fc.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
+        ctx.fillRect(sx - hpW/2, sy + 11, hpW * (fc.wallHP / fc.wallMaxHP), 3);
+      }
       // Show city HP bar if damaged
       if (fc.hp !== undefined && fc.hp < CITY_DEFENSE.BASE_HP) {
         const hpW = 22;
+        const hpY = (fc.wallHP !== undefined && fc.wallMaxHP > 0) ? sy + 15 : sy + 14;
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(sx - hpW/2, sy + 14, hpW, 3);
+        ctx.fillRect(sx - hpW/2, hpY, hpW, 3);
         ctx.fillStyle = fc.hp > 50 ? '#6aab5c' : fc.hp > 25 ? '#ddc060' : '#d9534f';
-        ctx.fillRect(sx - hpW/2, sy + 14, hpW * (fc.hp / CITY_DEFENSE.BASE_HP), 3);
+        ctx.fillRect(sx - hpW/2, hpY, hpW * (fc.hp / CITY_DEFENSE.BASE_HP), 3);
       }
       ctx.restore();
     }
@@ -431,13 +496,22 @@ function render() {
         ctx.fillStyle = '#fff'; ctx.font = '600 8px sans-serif'; ctx.textAlign = 'center';
         ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 2;
         ctx.fillText(aic.name, ax, ay - 13); ctx.shadowBlur = 0;
+        // Show wall HP bar for expansion city
+        if (aic.wallHP !== undefined && aic.wallMaxHP > 0) {
+          const hpW = 22;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillRect(ax - hpW/2, ay + 11, hpW, 3);
+          ctx.fillStyle = aic.wallHP > aic.wallMaxHP * 0.5 ? '#7090b0' : aic.wallHP > aic.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
+          ctx.fillRect(ax - hpW/2, ay + 11, hpW * (aic.wallHP / aic.wallMaxHP), 3);
+        }
         // Show expansion city HP bar if damaged
         if (aic.hp !== undefined && aic.hp < CITY_DEFENSE.BASE_HP) {
           const hpW = 22;
+          const hpY = (aic.wallHP !== undefined && aic.wallMaxHP > 0) ? ay + 15 : ay + 14;
           ctx.fillStyle = 'rgba(0,0,0,0.5)';
-          ctx.fillRect(ax - hpW/2, ay + 14, hpW, 3);
+          ctx.fillRect(ax - hpW/2, hpY, hpW, 3);
           ctx.fillStyle = aic.hp > 50 ? '#6aab5c' : aic.hp > 25 ? '#ddc060' : '#d9534f';
-          ctx.fillRect(ax - hpW/2, ay + 14, hpW * (aic.hp / CITY_DEFENSE.BASE_HP), 3);
+          ctx.fillRect(ax - hpW/2, hpY, hpW * (aic.hp / CITY_DEFENSE.BASE_HP), 3);
         }
       }
     }
@@ -726,6 +800,30 @@ function render() {
     ctx.shadowBlur = 3;
     ctx.fillText(city.name, sx, sy - 18);
     ctx.shadowBlur = 0;
+
+    // Dual HP bars for player cities with walls
+    if (city.wallHP !== undefined && city.wallMaxHP > 0) {
+      const hpW = 22;
+      // Wall HP bar (grey/blue)
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(sx - hpW/2, sy + 17, hpW, 3);
+      ctx.fillStyle = city.wallHP > city.wallMaxHP * 0.5 ? '#7090b0' : city.wallHP > city.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
+      ctx.fillRect(sx - hpW/2, sy + 17, hpW * (city.wallHP / city.wallMaxHP), 3);
+      // City HP bar (green) below wall bar
+      if (city.hp !== undefined && city.hp < CITY_DEFENSE.BASE_HP) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(sx - hpW/2, sy + 21, hpW, 3);
+        ctx.fillStyle = city.hp > 50 ? '#6aab5c' : city.hp > 25 ? '#ddc060' : '#d9534f';
+        ctx.fillRect(sx - hpW/2, sy + 21, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
+      }
+    } else if (city.hp !== undefined && city.hp < CITY_DEFENSE.BASE_HP) {
+      // No walls — just city HP bar
+      const hpW = 22;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(sx - hpW/2, sy + 17, hpW, 3);
+      ctx.fillStyle = city.hp > 50 ? '#6aab5c' : city.hp > 25 ? '#ddc060' : '#d9534f';
+      ctx.fillRect(sx - hpW/2, sy + 17, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
+    }
   }
 
   // Draw units
@@ -1030,8 +1128,8 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
     lines.push({ text: 'Impassable', color: '#d9534f' });
   }
 
-  // Resource
-  if (tile.resource && RESOURCES[tile.resource]) {
+  // Resource (hidden if unrevealed strategic)
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const res = RESOURCES[tile.resource];
     const cat = res.category || 'bonus';
     const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);

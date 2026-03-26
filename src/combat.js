@@ -1,12 +1,12 @@
-import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS } from './constants.js';
-import { game } from './state.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
-import { addEvent, logAction } from './events.js';
+import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
 import { render } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
-import { deselectUnit, autoSelectNext } from './units.js';
+import { deselectUnit, autoSelectNext, isInEnemyZOC } from './units.js';
 import { updateUI } from './leaderboard.js';
 import { showToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
@@ -32,10 +32,12 @@ function resolveCombat(attacker, defender) {
   if (defTile.feature === 'hills') defPower += 3;
   if (defTile.feature === 'woods' || defTile.feature === 'rainforest') defPower += 3;
 
-  // River crossing penalty: attacker loses -5 combat when attacking across a river edge
+  // River crossing penalty: attacker loses -3 combat when attacking across a river edge
   // (Classic Civ rule — rivers are natural defensive barriers)
-  if (crossesRiver(attacker.col, attacker.row, defender.col, defender.row)) {
-    atkPower -= 5;
+  const isRiverCrossingAttack = crossesRiver(attacker.col, attacker.row, defender.col, defender.row);
+  if (isRiverCrossingAttack) {
+    atkPower -= 3;
+    addEvent('River crossing penalty: -3 combat strength', 'combat');
   }
 
   // Flanking bonus: +2 per friendly unit adjacent to defender (Civ 6 style)
@@ -96,6 +98,21 @@ function resolveCombat(attacker, defender) {
     result.defenderDied = true;
     // Gold reward for kill
     game.gold += Math.floor(dType.cost / 3);
+
+    // --- Eureka/Inspiration triggers on kill ---
+    if (attacker.owner === 'player') {
+      // Any kill triggers military_tradition inspiration
+      triggerInspiration('military_tradition');
+      // Slinger kill triggers archery eureka
+      if (attacker.type === 'slinger') triggerEureka('archery');
+      // Spearman kill triggers military_tactics eureka
+      if (attacker.type === 'spearman') triggerEureka('military_tactics');
+      // Barbarian kill tracking
+      if (defender.owner === 'barbarian' || (defender.owner && defender.owner.startsWith && defender.owner.startsWith('barbarian'))) {
+        game.barbarianKills = (game.barbarianKills || 0) + 1;
+        if (game.barbarianKills >= 3) triggerEureka('bronze_working');
+      }
+    }
   }
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);
@@ -137,37 +154,57 @@ function resolveCombat(attacker, defender) {
   return result;
 }
 
+function isAtWarWith(factionId) {
+  return (game.aiWars || []).some(w =>
+    (w.attacker === 'player' && w.defender === factionId) ||
+    (w.attacker === factionId && w.defender === 'player')
+  );
+}
+
+function declareSurpriseWar(factionId, factionName) {
+  if (!game.aiWars) game.aiWars = [];
+  game.aiWars.push({ attacker: 'player', defender: factionId, startTurn: game.turn, turnsActive: 0 });
+  const msg = `War declared on ${factionName}! (Surprise attack)`;
+  addEvent(msg, 'diplomacy');
+  showToast('War Declared', msg, 5000);
+  logAction('diplomacy', msg, { type: 'player_surprise_attack', defender: factionId });
+}
+
 function attackFactionCity(attacker, factionId) {
   const fc = game.factionCities[factionId];
   if (!fc) return;
   const faction = FACTIONS[factionId];
   const factionName = faction ? faction.name : 'Unknown';
-  const aType = UNIT_TYPES[attacker.type];
 
-  // Check for peace agreements — offer to break them
-  const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                   game.activeAlliances[factionId] || game.defensePacts[factionId];
-
-  if (hasPeace) {
-    // Show confirmation to break peace
-    showBattlePanel(attacker, {
-      type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
-      _isCityAttack: true, _factionId: factionId, _factionName: factionName
-    }, (tactic) => {
-      if (tactic === 'retreat') return;
-      // Break all peace agreements
+  // If not already at war, require confirmation and declare war first
+  if (!isAtWarWith(factionId)) {
+    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
+                     game.activeAlliances[factionId] || game.defensePacts[factionId];
+    if (hasPeace) {
+      const agreements = [];
+      if (game.activeAlliances[factionId]) agreements.push('Alliance');
+      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
+      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
+      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
+      const agreed = confirm(
+        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
+        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
+        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
+      );
+      if (!agreed) return;
       delete game.ceasefires[factionId];
       delete game.nonAggressionPacts[factionId];
       delete game.activeAlliances[factionId];
       delete game.defensePacts[factionId];
       game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
       addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-      executeCityAttack(attacker, factionId, tactic);
-    });
-    return;
+    } else {
+      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
+      if (!agreed) return;
+    }
+    declareSurpriseWar(factionId, factionName);
   }
 
-  // No peace — show battle panel directly
   showBattlePanel(attacker, {
     type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
@@ -188,9 +225,15 @@ function attackFactionCity(attacker, factionId) {
 function computeCityDefense(city, factionId) {
   let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
 
-  // Walls bonus — check if faction has walls (simulated via military stat)
+  // Walls bonus — check wall HP or military stat fallback
+  const hasActiveWalls = city.wallHP !== undefined && city.wallHP > 0;
   const fStats = game.factionStats[factionId];
-  if (fStats && fStats.military > 20) strength += CITY_DEFENSE.WALLS_BONUS;
+  if (hasActiveWalls) {
+    strength += CITY_DEFENSE.WALLS_BONUS;
+    strength += 5; // City ranged strike enhanced by walls
+  } else if (fStats && fStats.military > 20) {
+    strength += CITY_DEFENSE.WALLS_BONUS;
+  }
 
   // Fortress bonus
   if (fStats && fStats.military > 40) strength += CITY_DEFENSE.FORTRESS_BONUS;
@@ -219,27 +262,34 @@ function attackExpansionCity(attacker, factionId, cityIdx) {
   const ec = cities[cityIdx];
   const faction = FACTIONS[factionId];
   const factionName = faction ? faction.name : 'Unknown';
-  const aType = UNIT_TYPES[attacker.type];
 
-  // Check for peace agreements
-  const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                   game.activeAlliances[factionId] || game.defensePacts[factionId];
-
-  if (hasPeace) {
-    showBattlePanel(attacker, {
-      type: 'city_garrison', hp: ec.hp || CITY_DEFENSE.BASE_HP, col: ec.col, row: ec.row, owner: factionId,
-      _isCityAttack: true, _factionId: factionId, _factionName: factionName
-    }, (tactic) => {
-      if (tactic === 'retreat') return;
+  // If not already at war, require confirmation and declare war first
+  if (!isAtWarWith(factionId)) {
+    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
+                     game.activeAlliances[factionId] || game.defensePacts[factionId];
+    if (hasPeace) {
+      const agreements = [];
+      if (game.activeAlliances[factionId]) agreements.push('Alliance');
+      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
+      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
+      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
+      const agreed = confirm(
+        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
+        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
+        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
+      );
+      if (!agreed) return;
       delete game.ceasefires[factionId];
       delete game.nonAggressionPacts[factionId];
       delete game.activeAlliances[factionId];
       delete game.defensePacts[factionId];
       game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
       addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-      executeExpansionCityAttack(attacker, factionId, cityIdx, tactic);
-    });
-    return;
+    } else {
+      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
+      if (!agreed) return;
+    }
+    declareSurpriseWar(factionId, factionName);
   }
 
   showBattlePanel(attacker, {
@@ -278,11 +328,28 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
-  ec.hp -= atkDamage;
+  // Initialize wall fields if missing
+  if (ec.wallHP === undefined) ec.wallHP = 0;
+  if (ec.wallMaxHP === undefined) ec.wallMaxHP = 0;
+  if (ec.wallLastAttackedTurn === undefined) ec.wallLastAttackedTurn = -99;
+
+  // Route damage through walls
+  const wallResult = applyWallDamage(ec, atkDamage, attacker.type);
   attacker.hp -= defDamage;
   ec._lastAttackedTurn = game.turn;
+  if (wallResult.wallDmg > 0) ec.wallLastAttackedTurn = game.turn;
 
-  addEvent(aType.name + ' attacks ' + ec.name + '! (-' + atkDamage + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  // Build descriptive event message
+  if (wallResult.wallDmg > 0 && wallResult.cityDmg > 0) {
+    addEvent(aType.name + ' attacks ' + ec.name + '! (-' + wallResult.wallDmg + ' wall HP, -' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  } else if (wallResult.wallDmg > 0) {
+    addEvent(aType.name + ' attacks ' + ec.name + ' walls! (-' + wallResult.wallDmg + ' wall HP, -' + defDamage + ' unit HP). City HP unchanged.', 'combat');
+  } else {
+    addEvent(aType.name + ' attacks ' + ec.name + '! (-' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  }
+  if (wallResult.wallDestroyed) {
+    addEvent(ec.name + ' walls have been destroyed!', 'combat');
+  }
 
   // Damage garrison units
   for (const g of garrison) {
@@ -315,8 +382,9 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
       captureExpansionCity(factionId, cityIdx);
     }
   } else {
-    addEvent(ec.name + ' holds! (' + ec.hp + ' HP remaining)', 'combat');
-    showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP remaining', factionName);
+    const wallInfo = ec.wallHP > 0 ? ' [Walls: ' + ec.wallHP + '/' + ec.wallMaxHP + ']' : '';
+    addEvent(ec.name + ' holds! (' + ec.hp + ' HP remaining' + wallInfo + ')', 'combat');
+    showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
   attacker.moveLeft = 0;
@@ -341,6 +409,7 @@ function captureExpansionCity(factionId, cityIdx) {
     borderRadius: ec.borderRadius || 1,
     cultureAccum: 0,
     owner: 'player',
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove garrison units
@@ -369,6 +438,44 @@ function captureExpansionCity(factionId, cityIdx) {
   updateUI();
 }
 
+// Route damage through wall HP before city HP
+// Returns { wallDmg, cityDmg, wallDestroyed } and mutates the city object
+function applyWallDamage(city, atkDamage, attackerType) {
+  const aType = UNIT_TYPES[attackerType];
+  if (!city.wallHP || city.wallHP <= 0) {
+    // No walls — all damage goes to city HP
+    city.hp -= atkDamage;
+    return { wallDmg: 0, cityDmg: atkDamage, wallDestroyed: false };
+  }
+
+  let wallDmg = 0, cityDmg = 0;
+
+  if (aType.class === 'siege') {
+    // Siege: 2x damage to walls only
+    wallDmg = Math.floor(atkDamage * SIEGE_WALL_MULTIPLIER);
+    cityDmg = 0;
+  } else if (aType.rangedCombat > 0 && aType.class !== 'melee') {
+    // Ranged: all damage to walls, cannot touch city HP
+    wallDmg = atkDamage;
+    cityDmg = 0;
+  } else {
+    // Melee: 70% to walls, 30% bleeds through to city HP
+    wallDmg = Math.floor(atkDamage * 0.7);
+    cityDmg = Math.floor(atkDamage * 0.3);
+  }
+
+  // Apply wall damage (cap at remaining wall HP, overflow doesn't transfer)
+  const actualWallDmg = Math.min(wallDmg, city.wallHP);
+  city.wallHP -= actualWallDmg;
+  const wallDestroyed = city.wallHP <= 0;
+  if (city.wallHP < 0) city.wallHP = 0;
+
+  // Apply city damage
+  city.hp -= cityDmg;
+
+  return { wallDmg: actualWallDmg, cityDmg, wallDestroyed };
+}
+
 function executeCityAttack(attacker, factionId, tactic) {
   const fc = game.factionCities[factionId];
   if (!fc) return;
@@ -392,11 +499,28 @@ function executeCityAttack(attacker, factionId, tactic) {
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
-  fc.hp -= atkDamage;
+  // Initialize wall fields if missing
+  if (fc.wallHP === undefined) fc.wallHP = 0;
+  if (fc.wallMaxHP === undefined) fc.wallMaxHP = 0;
+  if (fc.wallLastAttackedTurn === undefined) fc.wallLastAttackedTurn = -99;
+
+  // Route damage through walls
+  const wallResult = applyWallDamage(fc, atkDamage, attacker.type);
   attacker.hp -= defDamage;
   fc._lastAttackedTurn = game.turn;
+  if (wallResult.wallDmg > 0) fc.wallLastAttackedTurn = game.turn;
 
-  addEvent(aType.name + ' attacks ' + fc.name + '! (-' + atkDamage + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  // Build descriptive event message
+  if (wallResult.wallDmg > 0 && wallResult.cityDmg > 0) {
+    addEvent(aType.name + ' attacks ' + fc.name + '! (-' + wallResult.wallDmg + ' wall HP, -' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  } else if (wallResult.wallDmg > 0) {
+    addEvent(aType.name + ' attacks ' + fc.name + ' walls! (-' + wallResult.wallDmg + ' wall HP, -' + defDamage + ' unit HP). City HP unchanged.', 'combat');
+  } else {
+    addEvent(aType.name + ' attacks ' + fc.name + '! (-' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  }
+  if (wallResult.wallDestroyed) {
+    addEvent(fc.name + ' walls have been destroyed!', 'combat');
+  }
 
   // Damage garrison units
   for (const g of garrison) {
@@ -431,8 +555,9 @@ function executeCityAttack(attacker, factionId, tactic) {
       captureFactionCity(factionId);
     }
   } else {
-    addEvent(fc.name + ' holds! (' + fc.hp + ' HP remaining)', 'combat');
-    showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP remaining', factionName);
+    const wallInfo = fc.wallHP > 0 ? ' [Walls: ' + fc.wallHP + '/' + fc.wallMaxHP + ']' : '';
+    addEvent(fc.name + ' holds! (' + fc.hp + ' HP remaining' + wallInfo + ')', 'combat');
+    showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
   attacker.moveLeft = 0;
@@ -465,6 +590,7 @@ function captureFactionCity(factionId) {
     population: 500,
     borderRadius: 2,
     cultureAccum: 0,
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove from faction cities
@@ -662,8 +788,53 @@ function applyTacticModifier(tactic, atkPower, defPower, attacker, defender) {
   return { atkMod, defMod, narrative, retreat: false };
 }
 
+// ============================================
+// ZONE OF CONTROL — Civilian Capture
+// ============================================
+// Called at the start of each turn. Civilians (worker/settler) in enemy ZOC
+// without an adjacent friendly military unit are captured (removed).
+function processZOCCaptures() {
+  const captured = [];
+  for (let i = game.units.length - 1; i >= 0; i--) {
+    const unit = game.units[i];
+    const ut = UNIT_TYPES[unit.type];
+    if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only civilians
+
+    if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;
+
+    // Check if there's a friendly military unit on same tile or adjacent
+    const hasEscort = game.units.some(u => {
+      if (u.owner !== unit.owner) return false;
+      if (u.id === unit.id) return false;
+      const uType = UNIT_TYPES[u.type];
+      if (!uType || ZOC_EXEMPT_CLASSES.includes(uType.class)) return false;
+      return hexDistance(u.col, u.row, unit.col, unit.row) <= 1;
+    });
+
+    if (!hasEscort) {
+      captured.push({ type: unit.type, owner: unit.owner, col: unit.col, row: unit.row });
+      game.units.splice(i, 1);
+    }
+  }
+
+  for (const c of captured) {
+    const name = UNIT_TYPES[c.type]?.name || c.type;
+    if (c.owner === 'player') {
+      addEvent(`${name} captured in enemy Zone of Control at (${c.col},${c.row})!`, 'combat');
+      showToast('Unit Captured!', `Your ${name} was captured — no military escort nearby.`);
+    } else {
+      addEvent(`Enemy ${name} captured in your Zone of Control!`, 'combat');
+    }
+    logAction('combat', `${name} captured in ZOC`, { owner: c.owner, col: c.col, row: c.row });
+  }
+
+  return captured;
+}
+
 export {
   resolveCombat,
+  isAtWarWith,
+  declareSurpriseWar,
   attackFactionCity,
   computeCityDefense,
   attackExpansionCity,
@@ -679,4 +850,6 @@ export {
   getCityAt,
   showBattlePanel,
   applyTacticModifier,
+  processZOCCaptures,
+  applyWallDamage,
 };

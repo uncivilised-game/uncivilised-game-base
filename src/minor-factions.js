@@ -1,5 +1,5 @@
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, RESOURCES, TECHNOLOGIES, BUILDINGS } from './constants.js';
-import { game } from './state.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { isTilePassable } from './map.js';
 import { createUnit } from './units.js';
@@ -320,6 +320,7 @@ window.barbCampAction = function(campId, action) {
       game.cities.push({
         col: bc.col, row: bc.row, name: cityName, owner: 'player',
         population: 500, buildings: [], isCapital: false, founded: game.turn,
+        ...CITY_WALL_DEFAULTS,
       });
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
@@ -472,6 +473,7 @@ window.minorAction = function(mfId, action) {
       game.cities.push({
         col: mf.col, row: mf.row, name: cityName, owner: 'player',
         population: 500, buildings: [], isCapital: false, founded: game.turn,
+        ...CITY_WALL_DEFAULTS,
       });
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;

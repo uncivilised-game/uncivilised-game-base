@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resource Visibility — Tech-Gated Reveal Tests</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; background: #1a1a2e; color: #e0dcd0; padding: 20px; }
+  h1 { color: #c9a84c; margin-bottom: 12px; font-size: 22px; }
+  h2 { color: #c9a84c; margin: 16px 0 8px; font-size: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  button { background: #2a2a4e; color: #c9a84c; border: 1px solid #c9a84c; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  button:hover { background: #3a3a5e; }
+  button.active { background: #c9a84c; color: #1a1a2e; }
+  #log { background: #0d0d1a; border: 1px solid #333; padding: 12px; margin: 12px 0; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+  .log-pass { color: #4caf50; }
+  .log-fail { color: #f44336; }
+  .log-info { color: #90caf9; }
+  .log-toast { color: #c9a84c; }
+  #mini-map { border: 1px solid #333; margin: 12px 0; }
+  #test-results { background: #0d0d1a; border: 1px solid #333; padding: 12px; margin: 12px 0; font-size: 13px; }
+  .result-pass { color: #4caf50; }
+  .result-fail { color: #f44336; font-weight: bold; }
+  .summary { margin-top: 12px; padding: 8px; background: #1a1a3e; border-radius: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Resource Visibility — Tech-Gated Reveal Tests</h1>
+
+<h2>Controls</h2>
+<div class="controls">
+  <button id="btn-bronze">Research Bronze Working (reveals Iron)</button>
+  <button id="btn-animal">Research Animal Husbandry (reveals Horses)</button>
+  <button id="btn-mining">Research Mining (reveals Copper, Obsidian)</button>
+  <button id="btn-toggle">Toggle All Visibility</button>
+  <button id="btn-improve">Try to Improve Hidden Resource</button>
+  <button id="btn-run-tests">Run Automated Tests</button>
+</div>
+
+<h2>Mini Map (Strategic Resources)</h2>
+<canvas id="mini-map" width="720" height="480"></canvas>
+
+<h2>Event Log</h2>
+<div id="log"></div>
+
+<h2>Automated Test Results</h2>
+<div id="test-results">Click "Run Automated Tests" to execute.</div>
+
+<script>
+// ========================================================
+// Standalone test harness — does NOT load game.js
+// Instead, imports the constants and simulates game state
+// ========================================================
+
+// --- Inline resource + tech definitions (mirroring src/constants.js) ---
+const RESOURCES = {
+  iron:     { name: 'Iron',     icon: '\u26CF',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
+  gold_ore: { name: 'Gold Ore', icon: '\u25C8',  color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
+  horses:   { name: 'Horses',   icon: '\u265E',  color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
+  gems:     { name: 'Gems',     icon: '\u25C6',  color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  wheat:    { name: 'Wheat',    icon: '\u2307',  color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
+  stone:    { name: 'Stone',    icon: '\u25A2',  color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
+  copper:   { name: 'Copper',   icon: '\u2295',  color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
+  obsidian: { name: 'Obsidian', icon: '\u25C6',  color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
+  fish:     { name: 'Fish',     icon: '\u22C8',  color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
+  spices:   { name: 'Spices',   icon: '\u274B',  color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
+  silk:     { name: 'Silk',     icon: '\u2248',  color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+};
+
+const TECHNOLOGIES = [
+  { id: 'agriculture', name: 'Agriculture', cost: 20 },
+  { id: 'mining', name: 'Mining', cost: 20 },
+  { id: 'bronze_working', name: 'Bronze Working', cost: 30 },
+  { id: 'animal_husbandry', name: 'Animal Husbandry', cost: 25 },
+];
+
+// --- Simulated game state ---
+const MAP_COLS = 30;
+const MAP_ROWS = 20;
+
+let game = {
+  techs: ['agriculture', 'mining'],
+  revealedResources: ['copper', 'obsidian'], // mining is a starting tech
+  factionRevealedResources: {},
+  map: [],
+};
+
+// --- Helper: isResourceRevealed (mirrors map.js) ---
+function isResourceRevealed(resourceId, revealedList) {
+  const res = RESOURCES[resourceId];
+  if (!res || res.category !== 'strategic') return true;
+  if (!res.revealedBy) return true;
+  const revealed = revealedList || game.revealedResources || [];
+  return revealed.includes(resourceId);
+}
+
+// --- Generate simple test map ---
+function generateTestMap() {
+  const resourcePool = Object.keys(RESOURCES);
+  game.map = [];
+  for (let r = 0; r < MAP_ROWS; r++) {
+    game.map[r] = [];
+    for (let c = 0; c < MAP_COLS; c++) {
+      const tile = { base: 'grassland', feature: null, resource: null, improvement: null, col: c, row: r };
+      // Place resources in a pattern for visibility
+      if ((r * MAP_COLS + c) % 7 === 0) {
+        tile.resource = resourcePool[(r * MAP_COLS + c) % resourcePool.length];
+      }
+      game.map[r][c] = tile;
+    }
+  }
+}
+generateTestMap();
+
+// --- Logging ---
+const logEl = document.getElementById('log');
+function log(msg, cls = 'log-info') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// --- Count deposits of a resource type ---
+function countDeposits(resId) {
+  let n = 0;
+  for (let r = 0; r < MAP_ROWS; r++)
+    for (let c = 0; c < MAP_COLS; c++)
+      if (game.map[r][c].resource === resId) n++;
+  return n;
+}
+
+// --- Research a tech and reveal resources ---
+function researchTech(techId) {
+  const tech = TECHNOLOGIES.find(t => t.id === techId);
+  if (!tech) { log('Unknown tech: ' + techId, 'log-fail'); return; }
+  if (game.techs.includes(techId)) { log(tech.name + ' already researched.', 'log-info'); return; }
+  game.techs.push(techId);
+
+  // Reveal resources gated by this tech
+  const newlyRevealed = Object.entries(RESOURCES)
+    .filter(([, res]) => res.revealedBy === techId)
+    .map(([resId]) => resId);
+
+  for (const resId of newlyRevealed) {
+    if (!game.revealedResources.includes(resId)) {
+      game.revealedResources.push(resId);
+      const count = countDeposits(resId);
+      const resName = RESOURCES[resId].name;
+      const msg = `Research complete: ${tech.name} \u2014 ${resName} deposits revealed! (${count} deposits found)`;
+      log(msg, 'log-toast');
+      // Mark tiles for animation
+      const now = Date.now();
+      for (let r = 0; r < MAP_ROWS; r++)
+        for (let c = 0; c < MAP_COLS; c++)
+          if (game.map[r][c].resource === resId) game.map[r][c]._revealedAt = now;
+    }
+  }
+  if (newlyRevealed.length === 0) {
+    log(`${tech.name} researched (no new resources revealed).`, 'log-info');
+  }
+  drawMiniMap();
+}
+
+// --- Mini map drawing ---
+const miniCanvas = document.getElementById('mini-map');
+const mctx = miniCanvas.getContext('2d');
+const CELL_W = miniCanvas.width / MAP_COLS;
+const CELL_H = miniCanvas.height / MAP_ROWS;
+
+function drawMiniMap() {
+  mctx.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      const tile = game.map[r][c];
+      const x = c * CELL_W, y = r * CELL_H;
+
+      // Base terrain
+      mctx.fillStyle = '#3a6a2a';
+      mctx.fillRect(x, y, CELL_W, CELL_H);
+      mctx.strokeStyle = '#2a4a1a';
+      mctx.lineWidth = 0.5;
+      mctx.strokeRect(x, y, CELL_W, CELL_H);
+
+      if (!tile.resource) continue;
+      const res = RESOURCES[tile.resource];
+      if (!res) continue;
+      const revealed = isResourceRevealed(tile.resource);
+
+      if (revealed) {
+        // Reveal animation glow
+        if (tile._revealedAt) {
+          const elapsed = Date.now() - tile._revealedAt;
+          if (elapsed < 2000) {
+            const alpha = 0.7 * (1 - elapsed / 2000);
+            mctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+            mctx.fillRect(x, y, CELL_W, CELL_H);
+          } else {
+            tile._revealedAt = null;
+          }
+        }
+        // Draw resource icon
+        mctx.fillStyle = res.color;
+        mctx.font = 'bold 14px sans-serif';
+        mctx.textAlign = 'center';
+        mctx.textBaseline = 'middle';
+        mctx.fillText(res.icon, x + CELL_W / 2, y + CELL_H / 2);
+      } else {
+        // Hidden strategic resource — show placeholder
+        mctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
+        mctx.fillRect(x + 2, y + 2, CELL_W - 4, CELL_H - 4);
+        mctx.fillStyle = '#555';
+        mctx.font = '10px sans-serif';
+        mctx.textAlign = 'center';
+        mctx.textBaseline = 'middle';
+        mctx.fillText('?', x + CELL_W / 2, y + CELL_H / 2);
+      }
+    }
+  }
+}
+
+// --- Animate reveal glow ---
+let animFrame;
+function animateMap() {
+  let needsRedraw = false;
+  for (let r = 0; r < MAP_ROWS; r++)
+    for (let c = 0; c < MAP_COLS; c++)
+      if (game.map[r][c]._revealedAt) needsRedraw = true;
+  if (needsRedraw) drawMiniMap();
+  animFrame = requestAnimationFrame(animateMap);
+}
+animateMap();
+
+// --- Button handlers ---
+document.getElementById('btn-bronze').addEventListener('click', () => researchTech('bronze_working'));
+document.getElementById('btn-animal').addEventListener('click', () => researchTech('animal_husbandry'));
+document.getElementById('btn-mining').addEventListener('click', () => {
+  // Mining is already a starting tech; this demonstrates that copper/obsidian are already visible
+  log('Mining is a starting tech \u2014 Copper and Obsidian are already revealed.', 'log-info');
+  drawMiniMap();
+});
+
+let allVisible = false;
+document.getElementById('btn-toggle').addEventListener('click', () => {
+  allVisible = !allVisible;
+  if (allVisible) {
+    // Reveal all strategic resources
+    for (const [resId, res] of Object.entries(RESOURCES)) {
+      if (res.revealedBy && !game.revealedResources.includes(resId)) {
+        game.revealedResources.push(resId);
+      }
+    }
+    log('All resources revealed.', 'log-info');
+  } else {
+    // Reset to only starting-tech reveals
+    game.techs = ['agriculture', 'mining'];
+    game.revealedResources = ['copper', 'obsidian'];
+    log('Reset: only Mining-revealed resources visible.', 'log-info');
+  }
+  drawMiniMap();
+});
+
+document.getElementById('btn-improve').addEventListener('click', () => {
+  // Find a tile with an unrevealed strategic resource
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      const tile = game.map[r][c];
+      if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) {
+        const resName = RESOURCES[tile.resource].name;
+        log(`Cannot build improvement at (${c},${r}): Unknown resource \u2014 research needed [hidden: ${resName}]`, 'log-fail');
+        return;
+      }
+    }
+  }
+  log('No unrevealed strategic resources found (all are visible).', 'log-info');
+});
+
+// --- Automated tests ---
+document.getElementById('btn-run-tests').addEventListener('click', runTests);
+
+function runTests() {
+  const resultsEl = document.getElementById('test-results');
+  resultsEl.innerHTML = '';
+  let passed = 0, failed = 0;
+
+  function assert(name, condition) {
+    const el = document.createElement('div');
+    if (condition) {
+      el.className = 'result-pass';
+      el.textContent = '\u2713 PASS: ' + name;
+      passed++;
+    } else {
+      el.className = 'result-fail';
+      el.textContent = '\u2717 FAIL: ' + name;
+      failed++;
+    }
+    resultsEl.appendChild(el);
+  }
+
+  // --- Reset state for clean testing ---
+  game.techs = ['agriculture', 'mining'];
+  game.revealedResources = ['copper', 'obsidian'];
+  generateTestMap();
+  drawMiniMap();
+
+  // TEST 1: Strategic resources hidden before tech
+  assert('Iron hidden before Bronze Working', !isResourceRevealed('iron'));
+  assert('Horses hidden before Animal Husbandry', !isResourceRevealed('horses'));
+
+  // TEST 2: Copper/Obsidian visible (mining is starting tech)
+  assert('Copper visible (Mining is starting tech)', isResourceRevealed('copper'));
+  assert('Obsidian visible (Mining is starting tech)', isResourceRevealed('obsidian'));
+
+  // TEST 3: Bonus resources always visible
+  assert('Wheat (bonus) always visible', isResourceRevealed('wheat'));
+  assert('Stone (bonus) always visible', isResourceRevealed('stone'));
+  assert('Fish (bonus) always visible', isResourceRevealed('fish'));
+
+  // TEST 4: Luxury resources always visible
+  assert('Gold Ore (luxury) always visible', isResourceRevealed('gold_ore'));
+  assert('Gems (luxury) always visible', isResourceRevealed('gems'));
+  assert('Spices (luxury) always visible', isResourceRevealed('spices'));
+  assert('Silk (luxury) always visible', isResourceRevealed('silk'));
+
+  // TEST 5: Cannot improve hidden resource
+  let foundHidden = false;
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      const tile = game.map[r][c];
+      if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) {
+        foundHidden = true;
+        break;
+      }
+    }
+    if (foundHidden) break;
+  }
+  assert('Found hidden strategic resource tile (improvement blocked)', foundHidden);
+
+  // TEST 6: Research Bronze Working reveals Iron
+  researchTech('bronze_working');
+  assert('Iron visible after Bronze Working', isResourceRevealed('iron'));
+  assert('iron in revealedResources array', game.revealedResources.includes('iron'));
+
+  // TEST 7: Research Animal Husbandry reveals Horses
+  researchTech('animal_husbandry');
+  assert('Horses visible after Animal Husbandry', isResourceRevealed('horses'));
+  assert('horses in revealedResources array', game.revealedResources.includes('horses'));
+
+  // TEST 8: After all researched, no hidden strategic resources
+  let anyHidden = false;
+  for (const [resId, res] of Object.entries(RESOURCES)) {
+    if (res.revealedBy && !isResourceRevealed(resId)) {
+      anyHidden = true;
+      break;
+    }
+  }
+  assert('All strategic resources revealed after all techs', !anyHidden);
+
+  // TEST 9: State persists in save/load (simulate JSON round-trip)
+  const saved = JSON.stringify({ revealedResources: game.revealedResources, techs: game.techs });
+  const loaded = JSON.parse(saved);
+  assert('revealedResources survives JSON round-trip', Array.isArray(loaded.revealedResources) && loaded.revealedResources.length === 4);
+  assert('All 4 strategic resources in restored state', ['iron', 'horses', 'copper', 'obsidian'].every(r => loaded.revealedResources.includes(r)));
+
+  // TEST 10: AI faction tracking
+  game.factionRevealedResources = {};
+  game.factionRevealedResources['emperor_valerian'] = ['copper', 'obsidian'];
+  assert('AI faction has own revealedResources', isResourceRevealed('copper', game.factionRevealedResources['emperor_valerian']));
+  assert('AI faction lacks iron before reveal', !isResourceRevealed('iron', game.factionRevealedResources['emperor_valerian']));
+  game.factionRevealedResources['emperor_valerian'].push('iron');
+  assert('AI faction sees iron after adding', isResourceRevealed('iron', game.factionRevealedResources['emperor_valerian']));
+
+  // Summary
+  const summary = document.createElement('div');
+  summary.className = 'summary';
+  summary.style.color = failed === 0 ? '#4caf50' : '#f44336';
+  summary.textContent = `${passed} passed, ${failed} failed out of ${passed + failed} tests`;
+  resultsEl.appendChild(summary);
+
+  log(`\nAutomated tests: ${passed} passed, ${failed} failed`, failed === 0 ? 'log-pass' : 'log-fail');
+  drawMiniMap();
+}
+
+// Initial draw
+drawMiniMap();
+log('Test page loaded. Starting techs: Agriculture, Mining (Copper & Obsidian visible).', 'log-info');
+log('Iron and Horses are hidden until their techs are researched.', 'log-info');
+</script>
+</body>
+</html>

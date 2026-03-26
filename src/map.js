@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -622,8 +622,61 @@ function generateMap() {
 }
 
 // ============================================
+// TRIBAL VILLAGE PLACEMENT
+// ============================================
+function placeTribalVillages(map, startPositions) {
+  const villages = [];
+  const count = 8 + Math.floor(Math.random() * 5); // 8-12 villages
+
+  for (let attempt = 0; attempt < 500 && villages.length < count; attempt++) {
+    const r = Math.floor(Math.random() * MAP_ROWS);
+    const c = Math.floor(Math.random() * MAP_COLS);
+    const tile = map[r][c];
+
+    // Must be passable land
+    const bInfo = BASE_TERRAIN[tile.base];
+    if (!bInfo || !bInfo.movable) continue;
+    if (tile.feature === 'mountain') continue;
+
+    // No resource or natural wonder on this tile
+    if (tile.resource || tile.naturalWonder) continue;
+
+    // Minimum 6 hexes from any start position
+    let tooCloseToStart = false;
+    for (const sp of startPositions) {
+      if (hexDistance(c, r, sp.col, sp.row) < 6) { tooCloseToStart = true; break; }
+    }
+    if (tooCloseToStart) continue;
+
+    // Minimum 4 hexes from other villages
+    let tooCloseToVillage = false;
+    for (const v of villages) {
+      if (hexDistance(c, r, v.col, v.row) < 4) { tooCloseToVillage = true; break; }
+    }
+    if (tooCloseToVillage) continue;
+
+    villages.push({ col: c, row: r, discovered: false });
+  }
+
+  return villages;
+}
+
+// ============================================
 // TERRAIN HELPERS
 // ============================================
+/**
+ * Check whether a resource is revealed for the player (or a given revealed set).
+ * Non-strategic resources (bonus, luxury) are always visible.
+ * Strategic resources must be in game.revealedResources (or the supplied array).
+ */
+function isResourceRevealed(resourceId, revealedList) {
+  const res = RESOURCES[resourceId];
+  if (!res || res.category !== 'strategic') return true;
+  if (!res.revealedBy) return true;
+  const revealed = revealedList || (game && game.revealedResources) || [];
+  return revealed.includes(resourceId);
+}
+
 function getTileYields(tile) {
   const bInfo = BASE_TERRAIN[tile.base];
   if (!bInfo) return { food: 0, prod: 0, gold: 0 };
@@ -637,7 +690,7 @@ function getTileYields(tile) {
   if (tile.hasRiver && tile.base !== 'ocean' && tile.base !== 'coast') {
     gold += 1; // Rivers add +1 gold in Civ 6
   }
-  if (tile.resource && RESOURCES[tile.resource]) {
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const bonus = RESOURCES[tile.resource].bonus;
     if (bonus.food) food += bonus.food;
     if (bonus.prod) prod += bonus.prod;
@@ -702,6 +755,20 @@ const CROSS_EVEN_DIRS = [[-1,-1],[0,-1],[-1,0],[1,0],[-1,1],[0,1]];
 const CROSS_ODD_DIRS  = [[0,-1],[1,-1],[-1,0],[1,0],[0,1],[1,1]];
 
 /**
+ * Returns the hex direction index (0-5) from (c1,r1) to adjacent (c2,r2).
+ * Returns -1 if they are not neighbors.
+ */
+function getHexDirection(c1, r1, c2, r2) {
+  const dirs = (r1 & 1) === 0 ? CROSS_EVEN_DIRS : CROSS_ODD_DIRS;
+  for (let d = 0; d < 6; d++) {
+    const nc = ((c1 + dirs[d][0]) % MAP_COLS + MAP_COLS) % MAP_COLS;
+    const nr = ((r1 + dirs[d][1]) % MAP_ROWS + MAP_ROWS) % MAP_ROWS;
+    if (nc === c2 && nr === r2) return d;
+  }
+  return -1;
+}
+
+/**
  * Returns true if moving from (fromCol,fromRow) to (toCol,toRow) crosses a river edge.
  * Both tiles must be valid and the 'from' tile must have a riverEdge in the direction of 'to'.
  */
@@ -710,17 +777,13 @@ function crossesRiver(fromCol, fromRow, toCol, toRow) {
   const fromTile = game.map[fromRow] && game.map[fromRow][fromCol];
   if (!fromTile || !fromTile.hasRiver) return false;
 
-  // Find which direction 'to' is from 'from'
-  const dirs = (fromRow & 1) === 0 ? CROSS_EVEN_DIRS : CROSS_ODD_DIRS;
-  for (let d = 0; d < 6; d++) {
-    const nc = ((fromCol + dirs[d][0]) % MAP_COLS + MAP_COLS) % MAP_COLS;
-    const nr = ((fromRow + dirs[d][1]) % MAP_ROWS + MAP_ROWS) % MAP_ROWS;
-    if (nc === toCol && nr === toRow) {
-      return fromTile.riverEdges.includes(d);
-    }
-  }
-  return false;
+  const d = getHexDirection(fromCol, fromRow, toCol, toRow);
+  if (d < 0) return false;
+  return fromTile.riverEdges.includes(d);
 }
+
+/** Alias for crossesRiver — checks if a river edge exists between two adjacent hexes. */
+const hasRiverBetween = crossesRiver;
 
 /**
  * Returns true if roads negate the river crossing penalty (road on both sides).
@@ -731,6 +794,9 @@ function roadBridgesRiver(fromCol, fromRow, toCol, toRow) {
   const toTile = game.map[toRow] && game.map[toRow][toCol];
   return fromTile && toTile && fromTile.road && toTile.road;
 }
+
+/** Alias for roadBridgesRiver — checks if roads bridge a river between two hexes. */
+const hasRoadBridge = roadBridgesRiver;
 
 function getTileName(tile) {
   const bt = BASE_TERRAIN[tile.base];
@@ -797,6 +863,20 @@ function updateFactionStats() {
         if (gov.bonuses.foodBonus) stats.population += Math.floor(10 * gov.bonuses.foodBonus);
       }
     }
+    // AI resource visibility — auto-reveal strategic resources as tech count grows
+    if (!game.factionRevealedResources) game.factionRevealedResources = {};
+    if (!game.factionRevealedResources[fid]) game.factionRevealedResources[fid] = [];
+    const fRevealed = game.factionRevealedResources[fid];
+    for (const [resId, res] of Object.entries(RESOURCES)) {
+      if (res.revealedBy && !fRevealed.includes(resId)) {
+        // Reveal when faction has enough techs (roughly matching when a player would get the tech)
+        const techIndex = TECHNOLOGIES.findIndex(t => t.id === res.revealedBy);
+        if (techIndex >= 0 && stats.techs > techIndex) {
+          fRevealed.push(resId);
+        }
+      }
+    }
+
     // AI wonder construction — chance to claim an unclaimed wonder
     if (game.turn >= 15 && Math.random() < 0.02) {
       if (!game.aiWonders) game.aiWonders = {};
@@ -863,5 +943,10 @@ export {
   updateFactionStats,
   getPlayerStats,
   getComparisonData,
-  getUnmetFactions
+  getUnmetFactions,
+  placeTribalVillages,
+  isResourceRevealed,
+  getHexDirection,
+  hasRiverBetween,
+  hasRoadBridge
 };

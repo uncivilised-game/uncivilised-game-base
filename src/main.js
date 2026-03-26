@@ -9,10 +9,10 @@ import './assets.js';      // preloads terrain tiles, portraits, improvement ima
 import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
-import { SAVE_KEY, GAME_VERSION } from './constants.js';
+import { SAVE_KEY, GAME_VERSION, RESOURCES } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
-  currentCompetition, activeGameRecord
+  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS
 } from './state.js';
 import { setRenderCallback } from './assets.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
@@ -21,11 +21,11 @@ import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, h
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
 import { endTurn, showTurnSummary, showGameOver } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
-import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded } from './diplomacy-api.js';
+import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded, registerTradeRouteCallback } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
 import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
 import { getAvailableImprovements, startImprovement, cancelImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary, discoverVillage, rollTribalVillageReward, triggerEureka, triggerInspiration } from './events.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { updateUI, updateEnvoyUI, showLeaderboard, showUsernamePrompt, initUsernameUI, submitToLeaderboard, fetchCurrentCompetition, checkSessionLimit, registerActiveGame, incrementSession, sbFetch } from './leaderboard.js';
 import { migrateTiles, restoreMods, autoSave, loadGame } from './save-load.js';
@@ -33,15 +33,19 @@ import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction } 
 import { updateRankingsHUD, toggleRankingsDropdown, renderRankingsDropdown } from './rankings.js';
 import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
-import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions } from './map.js';
+import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages, getHexDirection, hasRiverBetween, hasRoadBridge } from './map.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
+import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
   console.log('%c[Uncivilized] Running without diplomacy module — AI leaders will not respond', 'color: #888');
 }
+
+// --- Register eureka callback for trade route establishment ---
+registerTradeRouteCallback(() => triggerEureka('currency'));
 
 // --- Wire up lazy render callback for asset preloader ---
 setRenderCallback(render);
@@ -77,6 +81,8 @@ window.clearTechGoal = clearTechGoal;
 window.showWorkerActions = showWorkerActions;
 
 // --- Expose testing/debug functions ---
+window.triggerEureka = triggerEureka;
+window.triggerInspiration = triggerInspiration;
 window.resolveCombat = resolveCombat;
 window.attackFactionCity = attackFactionCity;
 window.attackExpansionCity = attackExpansionCity;
@@ -84,10 +90,32 @@ window.showBattlePanel = showBattlePanel;
 window.createUnit = createUnit;
 window.endTurn = endTurn;
 window.processAITurns = processAITurns;
+window.processAIDiplomacy = processAIDiplomacy;
+window.getAIRelation = getAIRelation;
+window.getAIWars = getAIWars;
+window.getAIAlliances = getAIAlliances;
+window.getAISecretPacts = getAISecretPacts;
+window.getAITradeDeals = getAITradeDeals;
 window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
+window.discoverVillage = discoverVillage;
+window.rollTribalVillageReward = rollTribalVillageReward;
+window.hasRiverBetween = hasRiverBetween;
+window.hasRoadBridge = hasRoadBridge;
+window.getHexDirection = getHexDirection;
 
 // --- createInitialState (here to avoid circular deps between map.js and units.js) ---
+/** Build Set of resource IDs revealed by a given list of techs */
+function buildRevealedResources(techs) {
+  const revealed = [];
+  for (const [resId, res] of Object.entries(RESOURCES)) {
+    if (res.revealedBy && techs.includes(res.revealedBy)) {
+      revealed.push(resId);
+    }
+  }
+  return revealed;
+}
+
 function createInitialState() {
   const { map, riverPaths } = generateMap();
   const continentId = Array.from({ length: MAP_ROWS }, () => new Int16Array(MAP_COLS).fill(-1));
@@ -147,6 +175,13 @@ function createInitialState() {
 
   const factionCities = placeFactionCities(map, startCol, startRow, continentId, mainContinent);
 
+  // Place tribal villages — away from all start positions
+  const startPositions = [{ col: startCol, row: startRow }];
+  for (const fc of Object.values(factionCities)) {
+    startPositions.push({ col: fc.col, row: fc.row });
+  }
+  const tribalVillages = placeTribalVillages(map, startPositions);
+
   const startingUnits = [];
   const startNeighbors = getHexNeighbors(startCol, startRow);
   const landNeighbors = startNeighbors.filter(nb => {
@@ -182,11 +217,13 @@ function createInitialState() {
     food: 0, foodPerTurn: 4,
     production: 0, productionPerTurn: 3,
     culture: 0, military: 10, defense: 5, population: 1000,
-    cities: [{ name: 'Capital', col: startCol, row: startRow, buildings: [], population: 1000, borderRadius: 2, cultureAccum: 0 }],
+    cities: [{ name: 'Capital', col: startCol, row: startRow, buildings: [], population: 1000, borderRadius: 2, cultureAccum: 0, ...CITY_WALL_DEFAULTS }],
     factionCities: factionCities,
     map: map,
     riverPaths: riverPaths,
     techs: ['agriculture', 'mining'],
+    revealedResources: buildRevealedResources(['agriculture', 'mining']),
+    factionRevealedResources: {},
     currentResearch: null, researchProgress: 0,
     buildings: [], currentBuild: null, buildProgress: 0,
     currentUnitBuild: null, unitBuildProgress: 0,
@@ -205,9 +242,12 @@ function createInitialState() {
     openBorders: {}, embargoes: {}, ceasefires: {}, vassals: {}, nonAggressionPacts: {},
     metFactions: {}, factionStats: {},
     appliedMods: [], combatBonuses: [], yieldBonuses: [],
-    activeEvents: [], minorFactions: [],
+    activeEvents: [], minorFactions: [], tribalVillages: tribalVillages,
     recentEvents: [], gameLog: [],
     aiCommitments: [], aiWonders: {},
+    builtWonders: {}, aiWonderProgress: {},
+    aiRelations: {}, aiWars: [], aiSecretPacts: [], aiAlliances: [], aiTradeDeals: [], aiDenouncements: [],
+    rumourQueue: [],
     fogOfWar: createFogOfWar(startCol, startRow),
     cameraX: 0, cameraY: 0, selectedHex: null,
     score: 0, gameId: Date.now(), factionsEliminated: 0,
@@ -215,6 +255,8 @@ function createInitialState() {
     wonders: [], currentWonderBuild: null, wonderBuildProgress: 0,
     tradeRoutes: [], maxTradeRoutes: 1, happiness: 5,
     civics: [], currentCivic: null, civicProgress: 0, culturePerTurn: 1,
+    eurekas: [], inspirations: [], barbarianKills: 0, mineCount: 0, improvementCount: 0,
+    techProgress: {}, civicProgressMap: {},
     greatPeopleProgress: { science: 0, production: 0, gold: 0, military: 0, culture: 0 },
     greatPeopleEarned: [], pantheon: null, religion: null,
   };

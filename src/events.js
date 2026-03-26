@@ -1,6 +1,6 @@
-import { BUILDINGS, TECHNOLOGIES, FACTIONS, MAP_COLS, MAP_ROWS } from './constants.js';
-import { game } from './state.js';
-import { hexDistance } from './hex.js';
+import { BUILDINGS, TECHNOLOGIES, FACTIONS, MAP_COLS, MAP_ROWS, TRIBAL_VILLAGE_REWARDS, UNIT_TYPES, CIVICS, BASE_TERRAIN } from './constants.js';
+import { game, getNextUnitId } from './state.js';
+import { hexDistance, getHexNeighbors } from './hex.js';
 import { initFactionStats } from './map.js';
 import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
@@ -30,6 +30,22 @@ export function countPlayerTerritory() {
 }
 
 // ============================================
+// WONDER RACE NOTIFICATIONS
+// ============================================
+
+/** Show global notification when any faction completes a wonder. */
+export function showWonderCompletionEvent(wonderName, wonderIcon, ownerName) {
+  addEvent(wonderIcon + ' ' + ownerName + ' has completed ' + wonderName + '!', 'gold');
+  showToast('Wonder Built!', ownerName + ' has completed ' + wonderName + '!', 5000);
+}
+
+/** Show refund toast when the player's in-progress wonder is scooped by another faction. */
+export function showWonderScoopedNotification(wonderName, ownerName, refundGold) {
+  addEvent('The ' + ownerName + ' completed ' + wonderName + '! Production refunded: ' + refundGold + ' gold', 'gold');
+  showToast('Wonder Scooped!', 'The ' + ownerName + ' has completed ' + wonderName + '! Your production refunded: ' + refundGold + ' gold', 6000);
+}
+
+// ============================================
 // TOAST NOTIFICATION SYSTEM
 // ============================================
 export function showToast(title, message, duration) {
@@ -51,6 +67,52 @@ export function showToast(title, message, duration) {
     toast.style.transform = 'translateX(40px)';
     setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350);
   }, duration);
+}
+
+// ============================================
+// EUREKA & INSPIRATION SYSTEM
+// ============================================
+export function triggerEureka(techId) {
+  if (!game.eurekas) game.eurekas = [];
+  if (game.eurekas.includes(techId)) return; // already triggered
+  const tech = TECHNOLOGIES.find(t => t.id === techId);
+  if (!tech || !tech.eureka) return;
+  if (game.techs && game.techs.includes(techId)) return; // already researched
+  game.eurekas.push(techId);
+  const boost = Math.floor(tech.cost * 0.4);
+  if (!game.techProgress) game.techProgress = {};
+  game.techProgress[techId] = (game.techProgress[techId] || 0) + boost;
+  // Cap at tech cost
+  if (game.techProgress[techId] > tech.cost) game.techProgress[techId] = tech.cost;
+  // If this is the currently researched tech, also boost researchProgress
+  if (game.currentResearch === techId) {
+    game.researchProgress = (game.researchProgress || 0) + boost;
+    if (game.researchProgress > tech.cost) game.researchProgress = tech.cost;
+  }
+  showToast('Eureka!', tech.eureka.description + ' — 40% boost to ' + tech.name);
+  addEvent('Eureka! ' + tech.eureka.description + ' — 40% boost to ' + tech.name, 'discovery');
+  logAction('research', 'Eureka triggered for ' + tech.name, { techId, boost });
+}
+
+export function triggerInspiration(civicId) {
+  if (!game.inspirations) game.inspirations = [];
+  if (game.inspirations.includes(civicId)) return; // already triggered
+  const civic = CIVICS.find(c => c.id === civicId);
+  if (!civic || !civic.inspiration) return;
+  if (game.civics && game.civics.includes(civicId)) return; // already adopted
+  game.inspirations.push(civicId);
+  const boost = Math.floor(civic.cost * 0.4);
+  if (!game.civicProgressMap) game.civicProgressMap = {};
+  game.civicProgressMap[civicId] = (game.civicProgressMap[civicId] || 0) + boost;
+  if (game.civicProgressMap[civicId] > civic.cost) game.civicProgressMap[civicId] = civic.cost;
+  // If this is the currently researched civic, also boost civicProgress
+  if (game.currentCivic === civicId) {
+    game.civicProgress = (game.civicProgress || 0) + boost;
+    if (game.civicProgress > civic.cost) game.civicProgress = civic.cost;
+  }
+  showToast('Inspiration!', civic.inspiration.description + ' — 40% boost to ' + civic.name);
+  addEvent('Inspiration! ' + civic.inspiration.description + ' — 40% boost to ' + civic.name, 'discovery');
+  logAction('research', 'Inspiration triggered for ' + civic.name, { civicId, boost });
 }
 
 // ============================================
@@ -485,3 +547,160 @@ window.corroborateRumour = function(factionId, rumourIdx) {
   if (banner) banner.style.display = 'none';
   showModBanner('\u{1F91D}', confirmMsg, 'Corroborated by ' + ally.name);
 };
+
+// ============================================
+// TRIBAL VILLAGE DISCOVERY
+// ============================================
+export function rollTribalVillageReward() {
+  const totalWeight = TRIBAL_VILLAGE_REWARDS.reduce((s, r) => s + r.weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const reward of TRIBAL_VILLAGE_REWARDS) {
+    roll -= reward.weight;
+    if (roll <= 0) return reward;
+  }
+  return TRIBAL_VILLAGE_REWARDS[0];
+}
+
+export function discoverVillage(col, row, unit) {
+  if (!game || !game.tribalVillages) return null;
+
+  const villageIdx = game.tribalVillages.findIndex(v => v.col === col && v.row === row && !v.discovered);
+  if (villageIdx === -1) return null;
+
+  const village = game.tribalVillages[villageIdx];
+  village.discovered = true;
+
+  const reward = rollTribalVillageReward();
+  let message = '';
+
+  switch (reward.type) {
+    case 'gold': {
+      const amount = reward.min + Math.floor(Math.random() * (reward.max - reward.min + 1));
+      game.gold += amount;
+      message = `Found ${amount} gold!`;
+      break;
+    }
+    case 'tech_boost': {
+      const unresearched = TECHNOLOGIES.filter(t => !game.techs.includes(t.id));
+      if (unresearched.length > 0) {
+        const tech = unresearched[Math.floor(Math.random() * unresearched.length)];
+        const boost = Math.floor(tech.cost * reward.amount);
+        if (game.currentResearch === tech.id) {
+          game.researchProgress += boost;
+          message = `Research boost! +${boost} progress on ${tech.name}`;
+        } else {
+          // Start researching it with progress
+          game.currentResearch = tech.id;
+          game.researchProgress = boost;
+          message = `Research boost! Started ${tech.name} with ${boost} progress`;
+        }
+      } else {
+        game.gold += 75;
+        message = 'All techs researched! Found 75 gold instead.';
+      }
+      break;
+    }
+    case 'civic_boost': {
+      const unresearchedCivics = CIVICS.filter(c => !game.civics.includes(c.id));
+      if (unresearchedCivics.length > 0) {
+        const civic = unresearchedCivics[Math.floor(Math.random() * unresearchedCivics.length)];
+        const boost = Math.floor(civic.cost * reward.amount);
+        if (game.currentCivic === civic.id) {
+          game.civicProgress += boost;
+          message = `Civic boost! +${boost} progress on ${civic.name}`;
+        } else {
+          game.currentCivic = civic.id;
+          game.civicProgress = boost;
+          message = `Civic boost! Started ${civic.name} with ${boost} progress`;
+        }
+      } else {
+        game.culture += 50;
+        message = 'All civics researched! +50 culture instead.';
+      }
+      break;
+    }
+    case 'population': {
+      // Find nearest player city
+      let nearest = null;
+      let bestDist = Infinity;
+      for (const city of game.cities) {
+        const d = hexDistance(col, row, city.col, city.row);
+        if (d < bestDist) { bestDist = d; nearest = city; }
+      }
+      if (nearest) {
+        nearest.population += reward.amount;
+        game.population += reward.amount;
+        message = `+${reward.amount} population to ${nearest.name}!`;
+      } else {
+        game.gold += 75;
+        message = 'No cities! Found 75 gold instead.';
+      }
+      break;
+    }
+    case 'map_reveal': {
+      // Reveal tiles in radius around village
+      for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+          if (hexDistance(c, r, col, row) <= reward.radius) {
+            game.fogOfWar[r][c] = true;
+          }
+        }
+      }
+      message = `Map revealed in ${reward.radius}-hex radius!`;
+      break;
+    }
+    case 'free_unit': {
+      const unitType = reward.units[Math.floor(Math.random() * reward.units.length)];
+      // Find an adjacent passable empty tile
+      const neighbors = getHexNeighbors(col, row);
+      let spawnTile = null;
+      for (const nb of neighbors) {
+        const tile = game.map[nb.row]?.[nb.col];
+        if (!tile) continue;
+        const bInfo = BASE_TERRAIN[tile.base];
+        if (!bInfo || !bInfo.movable) continue;
+        if (tile.feature === 'mountain') continue;
+        // Check no unit already there
+        const occupied = game.units.some(u => u.col === nb.col && u.row === nb.row);
+        if (!occupied) { spawnTile = nb; break; }
+      }
+      if (spawnTile) {
+        const ut = UNIT_TYPES[unitType];
+        const newUnit = {
+          id: getNextUnitId(),
+          type: unitType,
+          col: spawnTile.col,
+          row: spawnTile.row,
+          owner: unit.owner,
+          hp: 100,
+          moveLeft: ut.movePoints,
+          combat: ut.combat,
+          fortified: false,
+          sleeping: false,
+          alert: false,
+          xp: 0,
+          promotions: [],
+          pendingPromotion: false,
+        };
+        game.units.push(newUnit);
+        message = `Free ${ut.name} joins your expedition!`;
+      } else {
+        game.gold += 50;
+        message = `No room for a unit! Found 50 gold instead.`;
+      }
+      break;
+    }
+    case 'faith': {
+      // Faith maps to culture in this game (no standalone faith resource yet)
+      game.culture += reward.amount;
+      message = `+${reward.amount} faith (culture)!`;
+      break;
+    }
+  }
+
+  addEvent('\u{1F3D8} Tribal Village: ' + message, 'event');
+  showToast('Tribal Village', message);
+  logAction('event', 'Discovered tribal village at (' + col + ',' + row + ')', { reward: reward.type, message });
+
+  return { reward, message };
+}

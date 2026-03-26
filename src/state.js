@@ -48,9 +48,16 @@ realisticTerrainTileset.src = 'assets/terrain-tiles/hex_terrain_flat.png';
 // ============================================
 // GAME STATE
 // ============================================
+// Wonder race state fields (initialized in main.js createGameState):
+//   game.builtWonders = {}      — maps wonder_id to owner faction (e.g. { pyramids: 'player', oracle: 'pirate_queen_elara' })
+//   game.aiWonderProgress = {}  — maps faction_id to { wonderId, progress } for AI wonder building
 
 export let game = null;
 export function setGame(g) { game = g; }
+
+// Default wall fields for new city objects
+// Cities with the 'walls' building gain wallHP/wallMaxHP from WALL_HP.ancient_walls
+export const CITY_WALL_DEFAULTS = { wallHP: 0, wallMaxHP: 0, wallLastAttackedTurn: -99 };
 
 export let nextUnitId = 1;
 export function getNextUnitId() { return nextUnitId++; }

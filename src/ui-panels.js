@@ -1,13 +1,14 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE } from './constants.js';
 import { getNextUnitId } from './state.js';
 import { game } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
-import { getTileYields, getTileName } from './map.js';
+import { getTileYields, getTileName, isResourceRevealed } from './map.js';
 import { render } from './render.js';
 import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { getModCombatBonus } from './diplomacy-api.js';
+import { isAtWarWith, declareSurpriseWar } from './combat.js';
 import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
@@ -17,6 +18,7 @@ import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
+import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
 
 function showSelectionPanel(unit) {
   // Special panel for workers
@@ -274,7 +276,7 @@ function showTileInfo(col, row) {
 
   if (tile.hasRiver) body += `<p style="color:#4a9adc">\u{1F30A} River (+1 Gold · crossing costs all MP · -5 combat across)</p>`;
 
-  if (tile.resource && RESOURCES[tile.resource]) {
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const res = RESOURCES[tile.resource];
     const bonusStr = Object.entries(res.bonus).map(([k, v]) => `+${v} ${k}`).join(', ');
     body += `<p style="color:${res.color}; margin-top:4px">${res.icon} ${res.name} (${bonusStr})</p>`;
@@ -300,6 +302,22 @@ function showCityPanel(cityData) {
       <span class="yield gold">${yields.gold} Gold</span>
     </div>`;
     body += `<p>Population: ${(cityData.population || game.population).toLocaleString()}</p>`;
+    if (cityData.wallMaxHP > 0) {
+      const wallPct = Math.round((cityData.wallHP / cityData.wallMaxHP) * 100);
+      body += `<p style="color:#7090b0">Wall HP: ${cityData.wallHP}/${cityData.wallMaxHP} (${wallPct}%)</p>`;
+    }
+    if (cityData.hp !== undefined) {
+      body += `<p style="color:#6aab5c">City HP: ${cityData.hp}/${CITY_DEFENSE.BASE_HP}</p>`;
+    }
+
+    // Housing display
+    const { housing, sources } = calculateCityHousing(cityData);
+    const effectivePop = Math.floor((cityData.population || 1000) / 500);
+    const housingMod = getHousingGrowthModifier(housing, cityData.population || 1000);
+    const housingColor = housingMod >= 1 ? '#6b8' : housingMod >= 0.5 ? '#db3' : housingMod > 0 ? '#d93' : '#d55';
+    const housingLabel = housingMod >= 1 ? '' : housingMod >= 0.5 ? ' (Slow)' : housingMod > 0 ? ' (Very Slow)' : ' (Stagnant)';
+    const sourceTip = sources.map(s => `${s.label}: +${s.value}`).join('\n');
+    body += `<p style="color:${housingColor}" title="${sourceTip}">\u{1F3E0} Housing: ${housing}/${effectivePop}${housingLabel}</p>`;
     body += `<p>Buildings: ${game.buildings.length}</p>`;
     if (game.currentBuild) {
       const bdata = BUILDINGS.find(b => b.id === game.currentBuild);
@@ -555,13 +573,28 @@ function renderVictoryPanel() {
       c.innerHTML += '<div style="padding:3px 0;font-size:12px"><button class="sel-btn" style="font-size:10px;width:100%;text-align:left" onclick="establishTradeRoute(\'' + fid + '\');renderVictoryPanel()">\u{1F6A2} Trade with ' + fname + '</button></div>';
     }
   }
-  // Happiness section
-  const hap = game.happiness || 0;
-  const hapEmoji = hap > 5 ? '\u{1F600}' : hap > 0 ? '\u{1F610}' : hap > -5 ? '\u{1F61F}' : '\u{1F621}';
-  const hapLabel = hap > 10 ? 'Ecstatic' : hap > 5 ? 'Happy' : hap > 0 ? 'Content' : hap > -5 ? 'Unhappy' : 'Very Unhappy';
-  c.innerHTML += '<p style="color:#60c060;margin-top:12px;margin-bottom:4px;font-size:13px;font-weight:600;border-bottom:1px solid rgba(96,192,96,0.3);padding-bottom:3px">' + hapEmoji + ' Happiness: ' + hap + ' (' + hapLabel + ')</p>';
-  const hapEffects = hap > 10 ? '+10% growth, +10% prod' : hap > 5 ? '+10% growth' : hap > 0 ? 'Normal' : hap > -5 ? '-25% growth' : '-50% growth, -25% prod';
-  c.innerHTML += '<p style="color:#888;font-size:11px">' + hapEffects + '</p>';
+  // Amenity section (per-city)
+  c.innerHTML += '<p style="color:#60c060;margin-top:12px;margin-bottom:4px;font-size:13px;font-weight:600;border-bottom:1px solid rgba(96,192,96,0.3);padding-bottom:3px">City Amenities</p>';
+  for (const city of game.cities) {
+    const bal = city.amenityBalance || 0;
+    const status = city.amenityStatus || 'CONTENT';
+    const statusColors = { ECSTATIC: '#40e040', HAPPY: '#60c060', CONTENT: '#c0c060', DISPLEASED: '#c0a040', UNHAPPY: '#c06040', REVOLT_RISK: '#e02020' };
+    const statusEmojis = { ECSTATIC: '\u{1F929}', HAPPY: '\u{1F600}', CONTENT: '\u{1F610}', DISPLEASED: '\u{1F61F}', UNHAPPY: '\u{1F621}', REVOLT_RISK: '\u{1F525}' };
+    const modPct = Math.round((city.amenityMod || 0) * 100);
+    const modStr = modPct > 0 ? '+' + modPct + '%' : modPct < 0 ? modPct + '%' : '';
+    const emoji = statusEmojis[status] || '\u{1F610}';
+    const color = statusColors[status] || '#c0c060';
+    c.innerHTML += '<div style="padding:2px 0;font-size:11px">' + emoji + ' <b>' + city.name + '</b>: <span style="color:' + color + '">' + status + '</span> (bal ' + (bal >= 0 ? '+' : '') + bal + ')' + (modStr ? ' <span style="color:#888">' + modStr + ' growth/prod</span>' : '') + '</div>';
+  }
+  // Summary of amenity sources
+  const luxCount = new Set();
+  for (const city of game.cities) { if (city.amenityFromLuxuries > 0) luxCount.add(city); }
+  const buildingAmenities = ['arena', 'garden', 'temple'].filter(b => game.buildings.includes(b));
+  const hasAlliance = Object.keys(game.activeAlliances || {}).length > 0;
+  let sources = [];
+  if (buildingAmenities.length > 0) sources.push('Buildings: ' + buildingAmenities.join(', '));
+  if (hasAlliance) sources.push('Alliance: +1 capital');
+  if (sources.length > 0) c.innerHTML += '<p style="color:#888;font-size:10px;margin-top:4px">' + sources.join(' | ') + '</p>';
 }
 
 function toggleVictoryPanel() {
@@ -763,14 +796,26 @@ function renderBuildPanel() {
 
   for (const w of WONDERS) {
     const techOk = !w.requires || game.techs.includes(w.requires);
-    const alreadyBuilt = game.wonders.includes(w.id);
-    const canBuild = techOk && !alreadyBuilt && !prodBusy && !game.currentWonderBuild;
+    const alreadyBuiltByPlayer = game.wonders.includes(w.id);
+    const globallyBuilt = game.builtWonders && game.builtWonders[w.id];
+    const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt && !prodBusy && !game.currentWonderBuild;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
     div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
-    div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuilt ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + w.desc + (!techOk ? ' (needs tech)' : '') + '</div></div>'
+    let statusLabel = '';
+    if (globallyBuilt) {
+      const ownerFid = game.builtWonders[w.id];
+      const ownerName = ownerFid === 'player' ? 'You' : (FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid);
+      statusLabel = ' <span style="color:#e05050;font-size:10px">(Built by ' + ownerName + ')</span>';
+    } else if (!techOk) {
+      statusLabel = ' <span style="color:#888;font-size:10px">(needs tech)</span>';
+    }
+    div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuiltByPlayer ? ' \u2713' : '') + statusLabel + '</div>'
+      + '<div class="item-desc">' + w.desc + '</div></div>'
       + '<div class="item-cost" style="color:#ffd700">' + turns + 'T</div>';
+    if (globallyBuilt && !alreadyBuiltByPlayer) {
+      div.style.opacity = '0.4';
+    }
     if (canBuild) {
       div.addEventListener('click', ((wid) => () => {
         startWonderBuild(wid);
@@ -859,6 +904,13 @@ function cancelProduction() {
 
 function startWonderBuild(wonderId) {
   if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) return;
+  // Wonder exclusivity check
+  if (game.builtWonders && game.builtWonders[wonderId]) {
+    const ownerFid = game.builtWonders[wonderId];
+    const ownerName = ownerFid === 'player' ? 'You' : (FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid);
+    showToast('Cannot Build', 'This wonder has already been built by ' + ownerName);
+    return;
+  }
   game.currentWonderBuild = wonderId;
   game.wonderBuildProgress = 0;
   const wd = WONDERS.find(w => w.id === wonderId);
@@ -943,8 +995,13 @@ function renderCivicsPanel() {
       const reqNames = (c.requires || []).map(r => { const rc = CIVICS.find(x => x.id === r); return rc ? rc.name : r; });
       const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (needs: ' + reqNames.join(', ') + ')' : '';
 
+      const hasInspiration = c.inspiration;
+      const inspirationTriggered = hasInspiration && game.inspirations && game.inspirations.includes(c.id);
+      const inspirationHtml = hasInspiration
+        ? '<div style="font-size:10px;font-style:italic;color:' + (inspirationTriggered ? '#4caf50' : '#e8a0ff') + ';margin-top:2px">' + (inspirationTriggered ? '\u2713 ' : '\u{1F4A1} ') + 'Inspiration: ' + c.inspiration.description + (inspirationTriggered ? '' : ' (40%)') + '</div>'
+        : '';
       div.innerHTML = '<div class="item-info"><div class="item-name" style="color:' + catColor + '">' + (adopted ? '\u2713 ' : '') + c.name + ' <span style="font-size:10px;opacity:0.6">[' + c.category + ']</span></div>'
-        + '<div class="item-desc">' + c.desc + reqStr + '</div></div>'
+        + '<div class="item-desc">' + c.desc + reqStr + '</div>' + inspirationHtml + '</div>'
         + '<div class="item-cost" style="color:#e8a0ff">' + turns + 'T</div>';
       if (canStart) {
         div.addEventListener('click', ((cid) => () => {
@@ -1090,13 +1147,19 @@ function renderResearchPanel() {
 
       const node = document.createElement('div');
       node.className = cls;
+      const hasEureka = t.eureka;
+      const eurekaTriggered = hasEureka && game.eurekas && game.eurekas.includes(t.id);
+      const eurekaHtml = hasEureka
+        ? `<div class="tech-node-eureka" style="font-size:10px;font-style:italic;color:${eurekaTriggered ? '#4caf50' : '#c9a84c'};margin-top:2px">${eurekaTriggered ? '\u2713 ' : '\u{1F4A1} '}Eureka: ${t.eureka.description}${eurekaTriggered ? '' : ' (40%)'}</div>`
+        : '';
       node.innerHTML = `
         <div class="tech-node-name">${t.name}</div>
         <div class="tech-node-cost">${t.cost} \u{1F52C}</div>
         <div class="tech-node-desc">${t.desc}</div>
         ${reqNames.length ? `<div class="tech-node-req">\u2190 ${reqNames.join(', ')}</div>` : ''}
+        ${eurekaHtml}
       `;
-      node.title = `${t.name}: ${t.desc}${reqNames.length ? '\nRequires: ' + reqNames.join(', ') : ''}`;
+      node.title = `${t.name}: ${t.desc}${reqNames.length ? '\nRequires: ' + reqNames.join(', ') : ''}${hasEureka ? '\nEureka: ' + t.eureka.description + (eurekaTriggered ? ' (triggered!)' : ' (40% boost)') : ''}`;
 
       if (canStart) {
         node.addEventListener('click', (e) => {
@@ -1260,33 +1323,38 @@ window.unitAction = function(action) {
         }
       }
       if (tileOwner) {
-        const hasPeace = game.ceasefires[tileOwner] || game.nonAggressionPacts[tileOwner] ||
-                         game.activeAlliances[tileOwner] || game.defensePacts[tileOwner];
-        if (hasPeace) {
-          const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
-          const agreements = [];
-          if (game.activeAlliances[tileOwner]) agreements.push('Alliance');
-          if (game.defensePacts[tileOwner]) agreements.push('Defense Pact');
-          if (game.nonAggressionPacts[tileOwner]) agreements.push('Non-Aggression Pact');
-          if (game.ceasefires[tileOwner]) agreements.push('Ceasefire');
-          const agreed = confirm(
-            'Pillaging here will BREAK your agreements with ' + ownerName + ':\n\n' +
-            '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
-            'Reputation cost: -50 relations with ' + ownerName + '\n' +
-            '-10 relations with ALL other factions (seen as untrustworthy)\n\nProceed?'
-          );
-          if (!agreed) break;
-          delete game.ceasefires[tileOwner];
-          delete game.nonAggressionPacts[tileOwner];
-          delete game.activeAlliances[tileOwner];
-          delete game.defensePacts[tileOwner];
-          delete game.openBorders[tileOwner];
-          game.relationships[tileOwner] = Math.min(-50, (game.relationships[tileOwner] || 0) - 50);
-          for (const fid of Object.keys(game.relationships)) {
-            if (fid !== tileOwner) game.relationships[fid] = (game.relationships[fid] || 0) - 10;
+        const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
+        if (!isAtWarWith(tileOwner)) {
+          const hasPeace = game.ceasefires[tileOwner] || game.nonAggressionPacts[tileOwner] ||
+                           game.activeAlliances[tileOwner] || game.defensePacts[tileOwner];
+          if (hasPeace) {
+            const agreements = [];
+            if (game.activeAlliances[tileOwner]) agreements.push('Alliance');
+            if (game.defensePacts[tileOwner]) agreements.push('Defense Pact');
+            if (game.nonAggressionPacts[tileOwner]) agreements.push('Non-Aggression Pact');
+            if (game.ceasefires[tileOwner]) agreements.push('Ceasefire');
+            const agreed = confirm(
+              'Pillaging here will BREAK your agreements with ' + ownerName + ':\n\n' +
+              '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
+              'This constitutes a surprise attack and declares war on ' + ownerName + '.\n\nProceed?'
+            );
+            if (!agreed) break;
+            delete game.ceasefires[tileOwner];
+            delete game.nonAggressionPacts[tileOwner];
+            delete game.activeAlliances[tileOwner];
+            delete game.defensePacts[tileOwner];
+            delete game.openBorders[tileOwner];
+            game.relationships[tileOwner] = Math.min(-50, (game.relationships[tileOwner] || 0) - 50);
+            for (const fid of Object.keys(game.relationships)) {
+              if (fid !== tileOwner) game.relationships[fid] = (game.relationships[fid] || 0) - 10;
+            }
+            addEvent('\u{26A0} Peace broken with ' + ownerName + '! (-50 relations, -10 with all others)', 'diplomacy');
+            logAction('diplomacy', 'Broke peace with ' + ownerName + ' by pillaging', { factionId: tileOwner });
+          } else {
+            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + ownerName + '.');
+            if (!agreed) break;
           }
-          addEvent('\u{26A0} Peace broken with ' + ownerName + '! (-50 relations, -10 with all others)', 'diplomacy');
-          logAction('diplomacy', 'Broke peace with ' + ownerName + ' by pillaging', { factionId: tileOwner });
+          declareSurpriseWar(tileOwner, ownerName);
         }
       }
       let reward = '';
