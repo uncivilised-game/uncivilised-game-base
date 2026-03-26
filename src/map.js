@@ -622,6 +622,46 @@ function generateMap() {
 }
 
 // ============================================
+// TRIBAL VILLAGE PLACEMENT
+// ============================================
+function placeTribalVillages(map, startPositions) {
+  const villages = [];
+  const count = 8 + Math.floor(Math.random() * 5); // 8-12 villages
+
+  for (let attempt = 0; attempt < 500 && villages.length < count; attempt++) {
+    const r = Math.floor(Math.random() * MAP_ROWS);
+    const c = Math.floor(Math.random() * MAP_COLS);
+    const tile = map[r][c];
+
+    // Must be passable land
+    const bInfo = BASE_TERRAIN[tile.base];
+    if (!bInfo || !bInfo.movable) continue;
+    if (tile.feature === 'mountain') continue;
+
+    // No resource or natural wonder on this tile
+    if (tile.resource || tile.naturalWonder) continue;
+
+    // Minimum 6 hexes from any start position
+    let tooCloseToStart = false;
+    for (const sp of startPositions) {
+      if (hexDistance(c, r, sp.col, sp.row) < 6) { tooCloseToStart = true; break; }
+    }
+    if (tooCloseToStart) continue;
+
+    // Minimum 4 hexes from other villages
+    let tooCloseToVillage = false;
+    for (const v of villages) {
+      if (hexDistance(c, r, v.col, v.row) < 4) { tooCloseToVillage = true; break; }
+    }
+    if (tooCloseToVillage) continue;
+
+    villages.push({ col: c, row: r, discovered: false });
+  }
+
+  return villages;
+}
+
+// ============================================
 // TERRAIN HELPERS
 // ============================================
 function getTileYields(tile) {
@@ -858,5 +898,6 @@ export {
   updateFactionStats,
   getPlayerStats,
   getComparisonData,
-  getUnmetFactions
+  getUnmetFactions,
+  placeTribalVillages
 };

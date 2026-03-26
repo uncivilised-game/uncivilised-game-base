@@ -393,6 +393,19 @@ export const ZOOM_MIN = 0.5, ZOOM_MAX = 1.8, ZOOM_STEP = 0.1;
 
 export const DRAG_THRESHOLD = 8; // pixels before mouse-down becomes a drag
 
+// ============================================
+// TRIBAL VILLAGE (GOODY HUT) REWARDS
+// ============================================
+export const TRIBAL_VILLAGE_REWARDS = [
+  { type: 'gold', weight: 25, min: 50, max: 100 },
+  { type: 'tech_boost', weight: 15, amount: 0.5 },
+  { type: 'civic_boost', weight: 10, amount: 0.5 },
+  { type: 'population', weight: 15, amount: 200 },
+  { type: 'map_reveal', weight: 15, radius: 5 },
+  { type: 'free_unit', weight: 10, units: ['scout', 'warrior'] },
+  { type: 'faith', weight: 10, amount: 30 },
+];
+
 // Civ-style gold purchasing: 1 production = 4 gold
 export const GOLD_PER_PRODUCTION = 4;
 export function goldCost(prodCost) { return prodCost * GOLD_PER_PRODUCTION; }

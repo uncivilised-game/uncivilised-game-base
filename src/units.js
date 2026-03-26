@@ -6,7 +6,7 @@ import { resolveCombat, attackFactionCity, attackExpansionCity, getUnitAt, getPl
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
-import { addEvent, logAction, showToast } from './events.js';
+import { addEvent, logAction, showToast, discoverVillage } from './events.js';
 import { revealAround } from './discovery.js';
 import { panCameraTo } from './input.js';
 import { updateUI } from './leaderboard.js';
@@ -268,6 +268,11 @@ function moveUnitTo(unit, targetCol, targetRow) {
 
   // Auto-clear barbarian camps when stepping on them
   checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+
+  // Check for tribal village discovery
+  if (unit.owner === 'player') {
+    discoverVillage(targetCol, targetRow, unit);
+  }
 
   return true;
 }
