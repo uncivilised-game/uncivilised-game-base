@@ -26,6 +26,17 @@ jobs:
           fetch-depth: 0
           ref: devel
 
+      - name: Check auth method
+        id: auth
+        run: |
+          if [ -n "$OAUTH_TOKEN" ]; then
+            echo "method=oauth" >> "$GITHUB_OUTPUT"
+          else
+            echo "method=apikey" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
       - name: Pick issue
         id: pick
         env:
@@ -73,7 +84,43 @@ jobs:
             echo "TITLE_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Implement with Claude Code
+      - name: Implement with Claude Code (OAuth)
+        if: steps.auth.outputs.method == 'oauth'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
+
+            ISSUE TITLE: ${{ steps.issue.outputs.title }}
+
+            Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            INSTRUCTIONS:
+            1. Read the issue carefully — it contains player reports describing the problem/request
+            2. Read CLAUDE.md for codebase context and conventions
+            3. Find the relevant code and understand it before making changes
+            4. Implement the fix or feature
+            5. Keep changes minimal and focused — fix exactly what the issue describes
+            6. Test your changes if possible (npm run build at minimum)
+            7. Create a branch named "fix/${{ steps.issue.outputs.number }}" and commit your changes
+            8. Push the branch and create a PR targeting the "devel" branch with:
+               - Title referencing the issue
+               - Description explaining what you changed and why
+               - "Fixes #${{ steps.issue.outputs.number }}" in the body to auto-close the issue
+            9. Do NOT push to main directly
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - Read the relevant source files before making any changes
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+
+      - name: Implement with Claude Code (API key)
+        if: steps.auth.outputs.method == 'apikey'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
