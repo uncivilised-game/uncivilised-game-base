@@ -2,7 +2,7 @@ import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS,
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileMoveCost, isTilePassable } from './map.js';
-import { addEvent, logAction } from './events.js';
+import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
 import { render } from './render.js';
 import { createUnit } from './units.js';
 import { revealAround } from './discovery.js';
@@ -113,6 +113,31 @@ export function processImprovements() {
           tile.improvement = builder.improvementId;
           addEvent(`${imp.name} completed!`, 'gold');
         logAction('build', 'Improvement completed: ' + imp.name + ' at (' + c + ',' + r + ')', { improvement: builder.improvementId, col: c, row: r });
+
+          // --- Eureka/Inspiration triggers for improvements ---
+          // Track total improvements for craftsmanship inspiration
+          game.improvementCount = (game.improvementCount || 0) + 1;
+          if (game.improvementCount >= 3) triggerInspiration('craftsmanship');
+
+          if (builder.improvementId === 'quarry') {
+            triggerEureka('mining');
+            triggerEureka('masonry');
+          }
+          if (builder.improvementId === 'pasture') {
+            triggerEureka('animal_husbandry');
+            triggerEureka('wheel');
+          }
+          if (builder.improvementId === 'mine') {
+            game.mineCount = (game.mineCount || 0) + 1;
+            if (game.mineCount >= 3) triggerEureka('construction');
+          }
+          if (builder.improvementId === 'farm') {
+            // Check if adjacent to river
+            const farmTile = game.map[r][c];
+            if (farmTile && farmTile.hasRiver) {
+              triggerEureka('irrigation_tech');
+            }
+          }
         }
 
         // Wake the worker
@@ -280,6 +305,11 @@ window.foundCity = function(unitId) {
 
   addEvent('🏛 City of ' + cityName + ' founded!', 'gold');
   logAction('build', 'Founded city: ' + cityName + ' at (' + unit.col + ',' + unit.row + ')', { cityName, col: unit.col, row: unit.row });
+  // --- Eureka/Inspiration: founding second city ---
+  if (game.cities.length > 1) {
+    triggerEureka('pottery');
+    triggerInspiration('early_empire');
+  }
   showCompletionNotification('building', cityName + ' Founded', 'New city established! Population: 500');
 
   hideSelectionPanel();

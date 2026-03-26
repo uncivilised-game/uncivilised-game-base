@@ -4,7 +4,7 @@ import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, triggerEureka, triggerInspiration } from './events.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -223,10 +223,21 @@ function endTurn() {
       if (eff.culture) game.culture += eff.culture;
       events.push(`${bdata.name} completed!`);
       addEvent(`${bdata.name} completed!`, 'gold');
+      const completedBuildId = game.currentBuild;
       game.currentBuild = null;
       game.buildProgress = 0;
       showCompletionNotification('building', bdata.name, bdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F3D7} Building Complete', bdata.name + ' constructed!');
+
+      // --- Eureka/Inspiration triggers for buildings ---
+      if (completedBuildId === 'barracks') triggerEureka('iron_working');
+      if (completedBuildId === 'arena') triggerInspiration('games_recreation');
+      // state_workforce: building in 2 cities (approximated: have 2+ cities and 2+ buildings)
+      if (game.cities.length >= 2 && game.buildings.length >= 2) triggerInspiration('state_workforce');
+      // drama_poetry: monument in 2 cities (approximated: have monument and 2+ cities)
+      if (completedBuildId === 'monument' && game.cities.length >= 2) triggerInspiration('drama_poetry');
+      // recorded_history: library in 2 cities (approximated: have library and 2+ cities)
+      if (completedBuildId === 'library' && game.cities.length >= 2) triggerInspiration('recorded_history');
     }
   } else if (game.currentUnitBuild) {
     game.unitBuildProgress += prodThisTurn;
@@ -280,6 +291,8 @@ function endTurn() {
       game.wonderBuildProgress = 0;
       showCompletionNotification('wonder', wdata.name, wdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F3DB} Wonder Complete', wdata.name + ' has been built!');
+      // --- Eureka: complete a wonder triggers engineering ---
+      triggerEureka('engineering');
     }
   }
 

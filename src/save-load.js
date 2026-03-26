@@ -102,6 +102,15 @@ function migrateTiles(state) {
     }
   }
 
+  // --- Eureka/Inspiration system migration ---
+  if (!state.eurekas) state.eurekas = [];
+  if (!state.inspirations) state.inspirations = [];
+  if (state.barbarianKills === undefined) state.barbarianKills = 0;
+  if (state.mineCount === undefined) state.mineCount = 0;
+  if (state.improvementCount === undefined) state.improvementCount = 0;
+  if (!state.techProgress) state.techProgress = {};
+  if (!state.civicProgressMap) state.civicProgressMap = {};
+
   // Re-inject any dynamically created content from mods
   restoreMods(state);
   return state;

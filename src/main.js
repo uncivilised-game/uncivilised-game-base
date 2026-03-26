@@ -21,11 +21,11 @@ import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, h
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
 import { endTurn, showTurnSummary, showGameOver } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
-import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded } from './diplomacy-api.js';
+import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded, registerTradeRouteCallback } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
 import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
 import { getAvailableImprovements, startImprovement, cancelImprovement, processImprovements, getImprovementYields, showWorkerActions, showSettlerActions, canFoundCityAt, processUnitWaypoint, moveTowardWaypoint, getWaypointPath } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, getGameLogSummary, triggerEureka, triggerInspiration } from './events.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { updateUI, updateEnvoyUI, showLeaderboard, showUsernamePrompt, initUsernameUI, submitToLeaderboard, fetchCurrentCompetition, checkSessionLimit, registerActiveGame, incrementSession, sbFetch } from './leaderboard.js';
 import { migrateTiles, restoreMods, autoSave, loadGame } from './save-load.js';
@@ -42,6 +42,9 @@ import { drawDetailedHex } from './terrain-render.js';
 if (!isDiplomacyLoaded()) {
   console.log('%c[Uncivilized] Running without diplomacy module — AI leaders will not respond', 'color: #888');
 }
+
+// --- Register eureka callback for trade route establishment ---
+registerTradeRouteCallback(() => triggerEureka('currency'));
 
 // --- Wire up lazy render callback for asset preloader ---
 setRenderCallback(render);
@@ -77,6 +80,8 @@ window.clearTechGoal = clearTechGoal;
 window.showWorkerActions = showWorkerActions;
 
 // --- Expose testing/debug functions ---
+window.triggerEureka = triggerEureka;
+window.triggerInspiration = triggerInspiration;
 window.resolveCombat = resolveCombat;
 window.attackFactionCity = attackFactionCity;
 window.attackExpansionCity = attackExpansionCity;
@@ -215,6 +220,8 @@ function createInitialState() {
     wonders: [], currentWonderBuild: null, wonderBuildProgress: 0,
     tradeRoutes: [], maxTradeRoutes: 1, happiness: 5,
     civics: [], currentCivic: null, civicProgress: 0, culturePerTurn: 1,
+    eurekas: [], inspirations: [], barbarianKills: 0, mineCount: 0, improvementCount: 0,
+    techProgress: {}, civicProgressMap: {},
     greatPeopleProgress: { science: 0, production: 0, gold: 0, military: 0, culture: 0 },
     greatPeopleEarned: [], pantheon: null, religion: null,
   };
