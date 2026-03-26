@@ -488,9 +488,12 @@
 
     <!-- Counter -->
     <div class="counter-section fade-in-up delay-5">
-      <p class="counter">
+      <p class="counter" id="counter-line">
         <span id="counter-display"><span class="counter-loading"></span></span>
         players waiting
+      </p>
+      <p class="counter" id="total-players-line" style="display:none; margin-top:8px;">
+        <span id="total-players-display"></span> players joined
       </p>
     </div>
 
@@ -586,6 +589,15 @@
       const data = await res.json();
       const count = data.count || data.total || 0;
       counterDisplay.innerHTML = '<span class="count-number">' + formatNumber(count) + '</span> ';
+      const totalPlayers = data.total_players || 0;
+      if (totalPlayers > 0) {
+        var tpLine = document.getElementById('total-players-line');
+        var tpDisplay = document.getElementById('total-players-display');
+        if (tpLine && tpDisplay) {
+          tpDisplay.innerHTML = '<span class="count-number">' + formatNumber(totalPlayers) + '</span>';
+          tpLine.style.display = 'block';
+        }
+      }
     } catch (e) {
       counterDisplay.innerHTML = '';
     }

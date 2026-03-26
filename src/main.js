@@ -455,8 +455,11 @@ async function updateSpotsCounter() {
       if (wlRes.ok) {
         const wlData = await wlRes.json();
         const wlCount = wlData.count || 0;
-        if (textEl && wlCount > 0) textEl.innerHTML = '<strong>' + wlCount.toLocaleString() + '</strong> on the waiting list';
-        else if (textEl) textEl.innerHTML = '<strong>Join the waiting list</strong>';
+        const totalPlayers = wlData.total_players || 0;
+        let html = '';
+        if (totalPlayers > 0) html += '<strong>' + totalPlayers.toLocaleString() + '</strong> players joined';
+        if (wlCount > 0) html += (html ? ' · ' : '') + '<strong>' + wlCount.toLocaleString() + '</strong> on the waiting list';
+        if (textEl) textEl.innerHTML = html || '<strong>Join the waiting list</strong>';
       } else if (textEl) {
         textEl.innerHTML = '<strong>Join the waiting list</strong>';
       }
