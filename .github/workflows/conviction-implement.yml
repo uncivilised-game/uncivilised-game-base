@@ -42,12 +42,10 @@ jobs:
           ref: devel
 
       - name: Checkout diplomacy repo
-        uses: actions/checkout@v4
-        with:
-          repository: uncivilised-game/uncivilised-diplomacy
-          token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
-          path: ../uncivilised-diplomacy
-          fetch-depth: 0
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:${DIPLOMACY_REPO_TOKEN}@github.com/uncivilised-game/uncivilised-diplomacy.git" \
+            ../uncivilised-diplomacy
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
