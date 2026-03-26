@@ -140,8 +140,3 @@ export function setActiveGameRecord(v) { activeGameRecord = v; }
 
 export let animRunning = false;
 export function setAnimRunning(v) { animRunning = v; }
-
-// Unit move animation — when non-null an animation is in progress
-// { unitId, path: [{col,row}...], step, onComplete }
-export let unitMoveAnim = null;
-export function setUnitMoveAnim(v) { unitMoveAnim = v; }

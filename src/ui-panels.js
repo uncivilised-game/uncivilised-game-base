@@ -476,8 +476,9 @@ function renderUnitsPanel() {
     const requiredTech = UNIT_UNLOCKS[typeId];
     const techUnlocked = !requiredTech || game.techs.includes(requiredTech);
     const needsBarracks = !['scout', 'warrior', 'slinger', 'worker', 'settler'].includes(typeId);
+    const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
-    const reason = !techUnlocked ? `Needs ${requiredTech}` : (needsBarracks && !hasBarracks) ? 'Needs Barracks' : needsPop ? 'Need pop 2,000+' : '';
+    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
