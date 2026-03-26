@@ -475,10 +475,11 @@ function renderUnitsPanel() {
     const prodBusy = game.currentBuild || game.currentUnitBuild;
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !prodBusy && !needsPop;
-    const reason = !techUnlocked ? `Needs ${requiredTech}` : (needsBarracks && !hasBarracks) ? 'Needs Barracks' : needsPop ? 'Need pop 2,000+' : prodBusy ? 'Production busy' : '';
+    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : prodBusy ? 'Production busy' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    if (!canRecruit && reason) div.title = reason;
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
@@ -608,6 +609,21 @@ function toggleVictoryPanel() {
   }
 }
 
+// Look up the display name for a tech ID
+function getTechNameById(techId) {
+  if (!techId) return 'tech';
+  const td = TECHNOLOGIES.find(t => t.id === techId);
+  return td ? td.name : techId;
+}
+
+// Build reverse map: building id -> tech name that unlocks it
+function getBuildingUnlockTech(buildingId) {
+  for (const tech of TECHNOLOGIES) {
+    if (tech.unlocks && tech.unlocks.includes(buildingId)) return tech.name;
+  }
+  return null;
+}
+
 function renderBuildPanel() {
   const container = document.getElementById('build-options');
   container.innerHTML = '';
@@ -682,9 +698,14 @@ function renderBuildPanel() {
     const turns = Math.ceil(b.cost / prodRate);
     const div = document.createElement('div');
     const disabled = !can && !canBuy;
+    let bReason = '';
+    if (built) bReason = 'Already built';
+    else if (!unlocked) { const tn = getBuildingUnlockTech(b.id); bReason = 'Requires ' + (tn || 'tech'); }
+    else if (!can && !canBuy) bReason = 'Production busy';
     div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    if (disabled && bReason) div.title = bReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + b.name + (built ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + b.desc + (!unlocked ? ' (needs tech)' : '') + '</div></div>'
+      + '<div class="item-desc">' + b.desc + (!unlocked ? ' (Requires ' + (getBuildingUnlockTech(b.id) || 'tech') + ')' : '') + '</div></div>'
       + '<div class="item-cost-group">'
       + (can ? '<span class="cost-prod" title="Build with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
       + (unlocked && !built ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
@@ -718,14 +739,15 @@ function renderBuildPanel() {
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
     let reason = '';
-    if (!techOk) reason = 'Needs ' + (reqTech || 'tech');
-    else if (needsBarr && !hasBarracks) reason = 'Needs Barracks';
-    else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
+    if (!techOk) reason = 'Requires ' + getTechNameById(reqTech);
+    else if (needsBarr && !hasBarracks) reason = 'Requires Barracks';
+    else if (needsPop) reason = 'Requires population 2,000+ (have ' + game.population.toLocaleString() + ')';
     else if (prodBusy && !canBuy) reason = 'Production busy';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
     const unitDisabled = !can && !canBuy;
     div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    if (unitDisabled && reason) div.title = reason;
     const popNote = tid === 'settler' ? ' (-500 pop)' : '';
     const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
     div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
@@ -757,8 +779,9 @@ function renderBuildPanel() {
     const techOk = !gov.unlockTech || game.techs.includes(gov.unlockTech);
     const div = document.createElement('div');
     div.className = 'build-item ' + (!techOk ? 'item-disabled' : '');
+    if (!techOk) div.title = 'Requires ' + getTechNameById(gov.unlockTech);
     div.innerHTML = '<div class="item-info"><div class="item-name">' + (gov.icon || '') + ' ' + gov.name + '</div>'
-      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (needs ' + gov.unlockTech + ')' : '') + '</div></div>'
+      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (Requires ' + getTechNameById(gov.unlockTech) + ')' : '') + '</div></div>'
       + '<div class="item-cost" style="color:#d4a0ff;font-size:11px">Switch</div>';
     if (techOk) {
       div.addEventListener('click', ((gidCopy) => () => {
@@ -801,14 +824,19 @@ function renderBuildPanel() {
     const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt && !prodBusy && !game.currentWonderBuild;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
+    let wonderReason = '';
+    if (globallyBuilt) { const oFid = game.builtWonders[w.id]; const oName = oFid === 'player' ? 'You' : (FACTIONS[oFid] ? FACTIONS[oFid].name : oFid); wonderReason = 'Built by ' + oName; }
+    else if (!techOk) wonderReason = 'Requires ' + getTechNameById(w.requires);
+    else if (alreadyBuiltByPlayer) wonderReason = 'Already built';
     div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
+    if (!canBuild && wonderReason) div.title = wonderReason;
     let statusLabel = '';
     if (globallyBuilt) {
       const ownerFid = game.builtWonders[w.id];
       const ownerName = ownerFid === 'player' ? 'You' : (FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid);
       statusLabel = ' <span style="color:#e05050;font-size:10px">(Built by ' + ownerName + ')</span>';
     } else if (!techOk) {
-      statusLabel = ' <span style="color:#888;font-size:10px">(needs tech)</span>';
+      statusLabel = ' <span style="color:#888;font-size:10px">(Requires ' + getTechNameById(w.requires) + ')</span>';
     }
     div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuiltByPlayer ? ' \u2713' : '') + statusLabel + '</div>'
       + '<div class="item-desc">' + w.desc + '</div></div>'
@@ -993,7 +1021,7 @@ function renderCivicsPanel() {
       if (isCurrent) div.style.borderLeft = '3px solid #e8a0ff';
 
       const reqNames = (c.requires || []).map(r => { const rc = CIVICS.find(x => x.id === r); return rc ? rc.name : r; });
-      const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (needs: ' + reqNames.join(', ') + ')' : '';
+      const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (Requires: ' + reqNames.join(', ') + ')' : '';
 
       const hasInspiration = c.inspiration;
       const inspirationTriggered = hasInspiration && game.inspirations && game.inspirations.includes(c.id);
