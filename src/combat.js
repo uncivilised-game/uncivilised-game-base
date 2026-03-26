@@ -2,7 +2,7 @@ import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FAC
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
-import { addEvent, logAction } from './events.js';
+import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
 import { render } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
@@ -98,6 +98,21 @@ function resolveCombat(attacker, defender) {
     result.defenderDied = true;
     // Gold reward for kill
     game.gold += Math.floor(dType.cost / 3);
+
+    // --- Eureka/Inspiration triggers on kill ---
+    if (attacker.owner === 'player') {
+      // Any kill triggers military_tradition inspiration
+      triggerInspiration('military_tradition');
+      // Slinger kill triggers archery eureka
+      if (attacker.type === 'slinger') triggerEureka('archery');
+      // Spearman kill triggers military_tactics eureka
+      if (attacker.type === 'spearman') triggerEureka('military_tactics');
+      // Barbarian kill tracking
+      if (defender.owner === 'barbarian' || (defender.owner && defender.owner.startsWith && defender.owner.startsWith('barbarian'))) {
+        game.barbarianKills = (game.barbarianKills || 0) + 1;
+        if (game.barbarianKills >= 3) triggerEureka('bronze_working');
+      }
+    }
   }
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);

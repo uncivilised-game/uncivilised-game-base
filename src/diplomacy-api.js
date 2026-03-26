@@ -7,6 +7,8 @@
 
 let _pluginLoaded = false;
 const noop = () => {};
+let _onTradeRouteEstablished = noop;
+export function registerTradeRouteCallback(fn) { _onTradeRouteEstablished = fn; }
 
 const _plugin = {
   // --- diplomacy.js ---
@@ -63,7 +65,12 @@ export function isDiplomacyLoaded() { return _pluginLoaded; }
 
 // Wrapper exports — these delegate to _plugin so that late registration works
 export function getRelationLabel(...args) { return _plugin.getRelationLabel(...args); }
-export function establishTradeRoute(...args) { return _plugin.establishTradeRoute(...args); }
+export function establishTradeRoute(...args) {
+  const result = _plugin.establishTradeRoute(...args);
+  // Trigger currency eureka when a trade route is established
+  _onTradeRouteEstablished();
+  return result;
+}
 export function cancelTradeRoute(...args) { return _plugin.cancelTradeRoute(...args); }
 export function renderDiplomacyPanel(...args) { return _plugin.renderDiplomacyPanel(...args); }
 export function renderDiplomacyList(...args) { return _plugin.renderDiplomacyList(...args); }

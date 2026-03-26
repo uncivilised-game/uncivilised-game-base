@@ -70,6 +70,52 @@ export function showToast(title, message, duration) {
 }
 
 // ============================================
+// EUREKA & INSPIRATION SYSTEM
+// ============================================
+export function triggerEureka(techId) {
+  if (!game.eurekas) game.eurekas = [];
+  if (game.eurekas.includes(techId)) return; // already triggered
+  const tech = TECHNOLOGIES.find(t => t.id === techId);
+  if (!tech || !tech.eureka) return;
+  if (game.techs && game.techs.includes(techId)) return; // already researched
+  game.eurekas.push(techId);
+  const boost = Math.floor(tech.cost * 0.4);
+  if (!game.techProgress) game.techProgress = {};
+  game.techProgress[techId] = (game.techProgress[techId] || 0) + boost;
+  // Cap at tech cost
+  if (game.techProgress[techId] > tech.cost) game.techProgress[techId] = tech.cost;
+  // If this is the currently researched tech, also boost researchProgress
+  if (game.currentResearch === techId) {
+    game.researchProgress = (game.researchProgress || 0) + boost;
+    if (game.researchProgress > tech.cost) game.researchProgress = tech.cost;
+  }
+  showToast('Eureka!', tech.eureka.description + ' — 40% boost to ' + tech.name);
+  addEvent('Eureka! ' + tech.eureka.description + ' — 40% boost to ' + tech.name, 'discovery');
+  logAction('research', 'Eureka triggered for ' + tech.name, { techId, boost });
+}
+
+export function triggerInspiration(civicId) {
+  if (!game.inspirations) game.inspirations = [];
+  if (game.inspirations.includes(civicId)) return; // already triggered
+  const civic = CIVICS.find(c => c.id === civicId);
+  if (!civic || !civic.inspiration) return;
+  if (game.civics && game.civics.includes(civicId)) return; // already adopted
+  game.inspirations.push(civicId);
+  const boost = Math.floor(civic.cost * 0.4);
+  if (!game.civicProgressMap) game.civicProgressMap = {};
+  game.civicProgressMap[civicId] = (game.civicProgressMap[civicId] || 0) + boost;
+  if (game.civicProgressMap[civicId] > civic.cost) game.civicProgressMap[civicId] = civic.cost;
+  // If this is the currently researched civic, also boost civicProgress
+  if (game.currentCivic === civicId) {
+    game.civicProgress = (game.civicProgress || 0) + boost;
+    if (game.civicProgress > civic.cost) game.civicProgress = civic.cost;
+  }
+  showToast('Inspiration!', civic.inspiration.description + ' — 40% boost to ' + civic.name);
+  addEvent('Inspiration! ' + civic.inspiration.description + ' — 40% boost to ' + civic.name, 'discovery');
+  logAction('research', 'Inspiration triggered for ' + civic.name, { civicId, boost });
+}
+
+// ============================================
 // COMPLETION NOTIFICATIONS & PROMPTS
 // ============================================
 export function showCompletionNotification(type, name, desc) {

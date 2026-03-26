@@ -994,8 +994,13 @@ function renderCivicsPanel() {
       const reqNames = (c.requires || []).map(r => { const rc = CIVICS.find(x => x.id === r); return rc ? rc.name : r; });
       const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (needs: ' + reqNames.join(', ') + ')' : '';
 
+      const hasInspiration = c.inspiration;
+      const inspirationTriggered = hasInspiration && game.inspirations && game.inspirations.includes(c.id);
+      const inspirationHtml = hasInspiration
+        ? '<div style="font-size:10px;font-style:italic;color:' + (inspirationTriggered ? '#4caf50' : '#e8a0ff') + ';margin-top:2px">' + (inspirationTriggered ? '\u2713 ' : '\u{1F4A1} ') + 'Inspiration: ' + c.inspiration.description + (inspirationTriggered ? '' : ' (40%)') + '</div>'
+        : '';
       div.innerHTML = '<div class="item-info"><div class="item-name" style="color:' + catColor + '">' + (adopted ? '\u2713 ' : '') + c.name + ' <span style="font-size:10px;opacity:0.6">[' + c.category + ']</span></div>'
-        + '<div class="item-desc">' + c.desc + reqStr + '</div></div>'
+        + '<div class="item-desc">' + c.desc + reqStr + '</div>' + inspirationHtml + '</div>'
         + '<div class="item-cost" style="color:#e8a0ff">' + turns + 'T</div>';
       if (canStart) {
         div.addEventListener('click', ((cid) => () => {
@@ -1141,13 +1146,19 @@ function renderResearchPanel() {
 
       const node = document.createElement('div');
       node.className = cls;
+      const hasEureka = t.eureka;
+      const eurekaTriggered = hasEureka && game.eurekas && game.eurekas.includes(t.id);
+      const eurekaHtml = hasEureka
+        ? `<div class="tech-node-eureka" style="font-size:10px;font-style:italic;color:${eurekaTriggered ? '#4caf50' : '#c9a84c'};margin-top:2px">${eurekaTriggered ? '\u2713 ' : '\u{1F4A1} '}Eureka: ${t.eureka.description}${eurekaTriggered ? '' : ' (40%)'}</div>`
+        : '';
       node.innerHTML = `
         <div class="tech-node-name">${t.name}</div>
         <div class="tech-node-cost">${t.cost} \u{1F52C}</div>
         <div class="tech-node-desc">${t.desc}</div>
         ${reqNames.length ? `<div class="tech-node-req">\u2190 ${reqNames.join(', ')}</div>` : ''}
+        ${eurekaHtml}
       `;
-      node.title = `${t.name}: ${t.desc}${reqNames.length ? '\nRequires: ' + reqNames.join(', ') : ''}`;
+      node.title = `${t.name}: ${t.desc}${reqNames.length ? '\nRequires: ' + reqNames.join(', ') : ''}${hasEureka ? '\nEureka: ' + t.eureka.description + (eurekaTriggered ? ' (triggered!)' : ' (40% boost)') : ''}`;
 
       if (canStart) {
         node.addEventListener('click', (e) => {

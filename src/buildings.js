@@ -1,6 +1,6 @@
 import { GREAT_PEOPLE_TYPES, PANTHEONS, WONDERS, BUILDINGS, TECHNOLOGIES, UNIT_TYPES } from './constants.js';
 import { game } from './state.js';
-import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, triggerInspiration } from './events.js';
 import { render } from './render.js';
 import { getHexNeighbors } from './hex.js';
 import { isTilePassable } from './map.js';
@@ -161,6 +161,8 @@ export function showPantheonPicker() {
       addEvent('\u{1F54C} Pantheon chosen: ' + pd.icon + ' ' + pd.name, 'gold');
       // Apply immediate effects
       if (pid === 'goddess_of_wisdom') game.sciencePerTurn += 2;
+      // --- Inspiration: founding a pantheon ---
+      triggerInspiration('mysticism_civic');
       overlay.remove();
       updateUI();
     })(p.id));

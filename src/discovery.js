@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, FACTIONS } from './constants.js';
 import { game, API, safeStorage } from './state.js';
 import { hexDistance } from './hex.js';
 import { initFactionStats } from './map.js';
-import { addEvent, logAction, countPlayerTerritory } from './events.js';
+import { addEvent, logAction, countPlayerTerritory, triggerEureka, triggerInspiration } from './events.js';
 import { openChat, appendChatMessage, processCharacterAction, updateDiploActions } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { render } from './render.js';
@@ -16,6 +16,11 @@ function revealAround(col, row, radius) {
         game.fogOfWar[r][c] = true;
         // Check for first contact with faction cities
         if (wasHidden) {
+          // --- Eureka triggers on tile reveal ---
+          const revealedTile = game.map[r][c];
+          if (revealedTile.base === 'coast') triggerEureka('sailing');
+          if (revealedTile.naturalWonder) triggerEureka('mysticism');
+
           for (const [fid, fc] of Object.entries(game.factionCities)) {
             if (fc.col === c && fc.row === r && !game.metFactions[fid]) {
               discoverFaction(fid, 'exploration');
@@ -81,6 +86,12 @@ function discoverFaction(factionId, method) {
     : `discovered through exploration`;
   logAction('diplomacy', 'First contact with ' + faction.name + ' via ' + method, { factionId, method });
   addEvent(`First Contact: ${faction.name} — ${methodText}!`, 'diplomacy');
+  // --- Eureka/Inspiration on first contact ---
+  triggerEureka('writing');
+  triggerInspiration('foreign_trade');
+  // Check if met 3+ factions
+  const metCount = Object.keys(game.metFactions).length;
+  if (metCount >= 3) triggerInspiration('political_philosophy');
   // Initialize faction stats on discovery
   if (!game.factionStats[factionId]) {
     initFactionStats(factionId);
