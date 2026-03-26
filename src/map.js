@@ -812,20 +812,25 @@ function getTileName(tile) {
 // FACTION STATS
 // ============================================
 
+// Personality-driven starting stats per faction — single source of truth
+const FACTION_DEFAULT_STATS = {
+  emperor_valerian:          { gold: 60,  military: 18, science: 4, population: 1200, territory: 12, techs: 2, score: 40 },
+  shadow_kael:               { gold: 45,  military: 12, science: 5, population: 900,  territory: 8,  techs: 3, score: 35 },
+  merchant_prince_castellan: { gold: 80,  military: 8,  science: 3, population: 1100, territory: 10, techs: 2, score: 38 },
+  pirate_queen_elara:        { gold: 55,  military: 15, science: 2, population: 800,  territory: 6,  techs: 1, score: 30 },
+  commander_thane:           { gold: 40,  military: 22, science: 3, population: 1000, territory: 14, techs: 2, score: 42 },
+  rebel_leader_sera:         { gold: 35,  military: 10, science: 4, population: 700,  territory: 5,  techs: 2, score: 28 },
+};
+const FACTION_DEFAULT_STATS_FALLBACK = { gold: 50, military: 10, science: 3, population: 1000, territory: 8, techs: 2, score: 30 };
+
+function getDefaultFactionStats(factionId, turn = 1) {
+  const p = FACTION_DEFAULT_STATS[factionId] || FACTION_DEFAULT_STATS_FALLBACK;
+  return { ...p, lastUpdated: turn };
+}
+
 function initFactionStats(factionId) {
   if (!game.factionStats) game.factionStats = {};
-  const faction = FACTIONS[factionId];
-  // Give each faction a personality-driven starting economy
-  const personalities = {
-    emperor_valerian:          { gold: 60,  military: 18, science: 4, population: 1200, territory: 12, techs: 2, score: 40 },
-    shadow_kael:               { gold: 45,  military: 12, science: 5, population: 900,  territory: 8,  techs: 3, score: 35 },
-    merchant_prince_castellan: { gold: 80,  military: 8,  science: 3, population: 1100, territory: 10, techs: 2, score: 38 },
-    pirate_queen_elara:        { gold: 55,  military: 15, science: 2, population: 800,  territory: 6,  techs: 1, score: 30 },
-    commander_thane:           { gold: 40,  military: 22, science: 3, population: 1000, territory: 14, techs: 2, score: 42 },
-    rebel_leader_sera:         { gold: 35,  military: 10, science: 4, population: 700,  territory: 5,  techs: 2, score: 28 },
-  };
-  const p = personalities[factionId] || { gold: 50, military: 10, science: 3, population: 1000, territory: 8, techs: 2, score: 30 };
-  game.factionStats[factionId] = { ...p, lastUpdated: game.turn };
+  game.factionStats[factionId] = getDefaultFactionStats(factionId, game.turn);
 }
 
 function updateFactionStats() {
@@ -904,12 +909,11 @@ function getPlayerStats() {
 
 function getComparisonData() {
   const playerStats = getPlayerStats();
-  const entries = [{ id: 'player', name: 'Your Civilization', stats: playerStats, isPlayer: true }];
+  const entries = [{ factionId: 'player', id: 'player', name: 'Your Civilization', stats: playerStats, isPlayer: true }];
   for (const [fid, met] of Object.entries(game.metFactions || {})) {
-    const stats = game.factionStats[fid];
-    if (stats) {
-      entries.push({ id: fid, name: FACTIONS[fid].name, stats: stats, isPlayer: false, color: FACTIONS[fid].color });
-    }
+    if (!FACTIONS[fid]) continue;
+    const stats = game.factionStats[fid] || {};
+    entries.push({ factionId: fid, id: fid, name: FACTIONS[fid].name, stats: stats, isPlayer: false, color: FACTIONS[fid].color });
   }
   return entries;
 }
@@ -934,6 +938,7 @@ export {
   crossesRiver,
   roadBridgesRiver,
   getTileName,
+  getDefaultFactionStats,
   initFactionStats,
   updateFactionStats,
   getPlayerStats,
