@@ -9,13 +9,14 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Specific issue number to process (leave empty to scan all closed conviction issues)'
+        description: 'Specific issue number to process (leave empty to scan all fixed conviction issues)'
         required: false
 
 jobs:
   thank:
     runs-on: ubuntu-latest
-    # Only run for conviction-labeled issues (or manual dispatch)
+    # Only run for conviction-labeled issues (or manual dispatch).
+    # The script itself filters out "closed as not planned" via state_reason.
     if: >
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.issue.labels.*.name, 'conviction')
