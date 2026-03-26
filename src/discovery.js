@@ -65,6 +65,10 @@ function discoverVisibleFactions() {
   }
 }
 
+// Queue of pending first-contact greetings — processed one at a time
+const _greetingQueue = [];
+let _greetingInProgress = false;
+
 function discoverFaction(factionId, method) {
   if (!game.metFactions) game.metFactions = {};
   if (game.metFactions[factionId]) return;
@@ -83,8 +87,27 @@ function discoverFaction(factionId, method) {
   }
   // Queue auto-greeting (runs after current turn processing completes)
   if (method !== 'introduction') {
+    _greetingQueue.push({ factionId, method });
     // Small delay so the turn processing finishes before opening the chat
-    setTimeout(() => triggerFirstContactGreeting(factionId, method), 600);
+    if (!_greetingInProgress) {
+      setTimeout(processGreetingQueue, 600);
+    }
+  }
+}
+
+async function processGreetingQueue() {
+  if (_greetingInProgress || _greetingQueue.length === 0) return;
+  _greetingInProgress = true;
+  const { factionId, method } = _greetingQueue.shift();
+  try {
+    await triggerFirstContactGreeting(factionId, method);
+  } catch (err) {
+    console.error('First contact greeting error:', err);
+  }
+  _greetingInProgress = false;
+  // Process next queued greeting after a short delay
+  if (_greetingQueue.length > 0) {
+    setTimeout(processGreetingQueue, 800);
   }
 }
 

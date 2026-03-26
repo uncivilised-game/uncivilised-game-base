@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -112,6 +112,9 @@ function computeVisibility() {
 
 function render() {
   if (!game) return;
+  // Reset transform unconditionally — prevents accumulated scale from corrupted
+  // frames where ctx.restore() was skipped due to an exception.
+  ctx.setTransform(LOCKED_DPR, 0, 0, LOCKED_DPR, 0, 0);
   // Sanitize camera state — prevent NaN/Infinity from corrupting the frame
   if (!isFinite(game.cameraX)) game.cameraX = 0;
   if (!isFinite(game.cameraY)) game.cameraY = 0;
@@ -122,8 +125,14 @@ function render() {
   ctx.fillStyle = '#0a0c0b';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // Apply zoom
+  // Sanitize zoom — clamp to valid range to prevent runaway scaling
+  if (!isFinite(gameZoom) || gameZoom < ZOOM_MIN || gameZoom > ZOOM_MAX) {
+    setGameZoom(1.0);
+  }
+
+  // Apply zoom — wrapped in try/finally to guarantee restore() runs
   ctx.save();
+  try {
   ctx.scale(gameZoom, gameZoom);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -283,6 +292,7 @@ function render() {
 
       // Faction territory with borders
       for (const [fid, fc] of Object.entries(game.factionCities)) {
+        if (!fc.color) continue;
         const dist = hexDistance(c, r, fc.col, fc.row);
         if (dist <= 2) {
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
@@ -889,7 +899,9 @@ function render() {
     ctx.stroke();
   }
 
-  ctx.restore(); // End zoom transform
+  } finally {
+    ctx.restore(); // End zoom transform
+  }
   renderMiniMap();
 }
 
