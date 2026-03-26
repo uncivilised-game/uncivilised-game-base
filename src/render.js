@@ -4,7 +4,7 @@ import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from '.
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { getTileYields, getTileName, getTileMoveCost } from './map.js';
-import { computeMoveRange, computeAttackRange } from './units.js';
+import { computeMoveRange, computeAttackRange, getEnemyZOCHexes } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
 import { getRelationLabel } from './diplomacy-api.js';
@@ -149,6 +149,8 @@ function render() {
 
   const moveRange = computeMoveRange();
   const attackRange = computeAttackRange();
+  // ZOC overlay: show enemy ZOC hexes when a player unit is selected
+  const zocHexes = game.selectedUnitId ? getEnemyZOCHexes('player') : null;
 
   // Draw hex tiles
   for (let r = startRow; r < endRow; r++) {
@@ -361,6 +363,19 @@ function render() {
           ctx.fill();
           ctx.strokeStyle = 'rgba(220,60,60,0.6)';
           ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+
+      // Zone of Control overlay (red tint on hexes adjacent to enemy military units)
+      if (zocHexes) {
+        const key = `${c},${r}`;
+        if (zocHexes.has(key) && !(moveRange && moveRange.has(key)) && !(attackRange && attackRange.has(key))) {
+          drawHex(ctx, sx, sy, HEX_SIZE - 1);
+          ctx.fillStyle = 'rgba(180,40,40,0.12)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(180,40,40,0.35)';
+          ctx.lineWidth = 1;
           ctx.stroke();
         }
       }

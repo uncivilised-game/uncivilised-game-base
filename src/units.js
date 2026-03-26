@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES } from './constants.js';
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
@@ -12,6 +12,40 @@ import { panCameraTo } from './input.js';
 import { updateUI } from './leaderboard.js';
 import { startAnimLoop } from './feedback.js';
 import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
+
+// ---- Zone of Control helpers ----
+
+/** Check if a hex is in an enemy's Zone of Control relative to a given faction */
+function isInEnemyZOC(col, row, movingUnitOwner) {
+  const neighbors = getHexNeighbors(col, row);
+  for (const nb of neighbors) {
+    const unitsOnTile = game.units.filter(u => u.col === nb.col && u.row === nb.row);
+    for (const u of unitsOnTile) {
+      if (u.owner !== movingUnitOwner) {
+        const ut = UNIT_TYPES[u.type];
+        if (ut && !ZOC_EXEMPT_CLASSES.includes(ut.class)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** Get all hexes currently in enemy ZOC for a given faction (for rendering) */
+function getEnemyZOCHexes(factionId) {
+  const zocSet = new Set();
+  for (const u of game.units) {
+    if (u.owner === factionId) continue;
+    const ut = UNIT_TYPES[u.type];
+    if (!ut || ZOC_EXEMPT_CLASSES.includes(ut.class)) continue;
+    const neighbors = getHexNeighbors(u.col, u.row);
+    for (const nb of neighbors) {
+      zocSet.add(`${nb.col},${nb.row}`);
+    }
+  }
+  return zocSet;
+}
 
 function createUnit(type, col, row, owner) {
   const ut = UNIT_TYPES[type];
@@ -130,6 +164,9 @@ function computeMoveRange() {
   const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft }];
   visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
 
+  // ZOC: check if unit starts in enemy ZOC
+  const unitStartsInZOC = isInEnemyZOC(unit.col, unit.row, unit.owner);
+
   while (queue.length > 0) {
     const cur = queue.shift();
     if (cur.move <= 0) continue; // No movement left to expand from
@@ -147,7 +184,14 @@ function computeMoveRange() {
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRoughTerrain = cost >= 2;
-      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+
+      // Zone of Control: entering an enemy ZOC hex ends movement
+      const nbInZOC = isInEnemyZOC(nb.col, nb.row, unit.owner);
+      if (nbInZOC) {
+        remaining = 0; // Movement ends in ZOC hex
+      }
+
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       // Can't move through hexes with units (enemy or own)
@@ -298,7 +342,13 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRough = cost >= 2;
-      const remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+
+      // ZOC: entering enemy ZOC ends movement
+      if (isInEnemyZOC(nb.col, nb.row, unit.owner)) {
+        remaining = 0;
+      }
+
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
@@ -661,4 +711,6 @@ export {
   applyPromotion,
   upgradeUnit,
   selectNextUnit,
+  isInEnemyZOC,
+  getEnemyZOCHexes,
 };
