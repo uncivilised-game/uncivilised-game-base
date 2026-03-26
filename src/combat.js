@@ -95,6 +95,7 @@ function resolveCombat(attacker, defender) {
   // Remove dead units
   if (defender.hp <= 0) {
     game.units = game.units.filter(u => u.id !== defender.id);
+    markVisibilityDirty();
     result.defenderDied = true;
     // Gold reward for kill
     game.gold += Math.floor(dType.cost / 3);
@@ -116,6 +117,7 @@ function resolveCombat(attacker, defender) {
   }
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);
+    markVisibilityDirty();
     result.attackerDied = true;
   }
 
@@ -357,12 +359,14 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
     g.hp -= Math.floor(atkDamage * 0.4);
     if (g.hp <= 0) {
       game.units = game.units.filter(u => u.id !== g.id);
+      markVisibilityDirty();
       addEvent('Garrison ' + (UNIT_TYPES[g.type]?.name || 'unit') + ' destroyed!', 'combat');
     }
   }
 
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);
+    markVisibilityDirty();
     addEvent(aType.name + ' lost in the assault on ' + ec.name, 'combat');
     deselectUnit();
     autoSelectNext();
@@ -416,6 +420,7 @@ function captureExpansionCity(factionId, cityIdx) {
 
   // Remove garrison units
   game.units = game.units.filter(u => !(u.col === ec.col && u.row === ec.row && u.owner === factionId));
+  markVisibilityDirty();
 
   // Remove from AI faction cities
   cities.splice(cityIdx, 1);
@@ -529,6 +534,7 @@ function executeCityAttack(attacker, factionId, tactic) {
     g.hp -= Math.floor(atkDamage * 0.4);
     if (g.hp <= 0) {
       game.units = game.units.filter(u => u.id !== g.id);
+      markVisibilityDirty();
       addEvent('Garrison ' + (UNIT_TYPES[g.type]?.name || 'unit') + ' destroyed!', 'combat');
     }
   }
@@ -536,6 +542,7 @@ function executeCityAttack(attacker, factionId, tactic) {
   // Check if attacker died
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);
+    markVisibilityDirty();
     addEvent(aType.name + ' lost in the assault on ' + fc.name, 'combat');
     deselectUnit();
     autoSelectNext();
@@ -633,6 +640,7 @@ function eliminateFaction(factionId, factionName) {
   // Remove all their units
   const removedUnits = game.units.filter(u => u.owner === factionId).length;
   game.units = game.units.filter(u => u.owner !== factionId);
+  markVisibilityDirty();
 
   // Remove from met factions tracking
   // (keep metFactions entry so they still show in history)
