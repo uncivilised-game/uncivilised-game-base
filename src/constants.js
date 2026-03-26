@@ -71,6 +71,15 @@ export const UNIT_UPGRADES = {
   chariot:  { to: 'horseman', cost: 25, requires: 'horseback_riding' },
 };
 
+// Strategic resources require researching a specific tech before they become visible on the map.
+// Bonus and luxury resources are always visible (they represent surface features).
+export const RESOURCE_REVEAL_TECHS = {
+  horses:   'animal_husbandry',
+  iron:     'bronze_working',
+  copper:   'mining',
+  obsidian: 'mining',
+};
+
 export const RESOURCES = {
   iron:     { name: 'Iron',     icon: '⛏',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic' },
   gold_ore: { name: 'Gold Ore', icon: '◈',  color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },

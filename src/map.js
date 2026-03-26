@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, RESOURCE_REVEAL_TECHS, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -624,6 +624,21 @@ function generateMap() {
 // ============================================
 // TERRAIN HELPERS
 // ============================================
+/**
+ * Check whether a resource is revealed for a given tech list.
+ * Non-strategic resources (bonus, luxury) are always visible.
+ * Strategic resources require the revealing tech to have been researched.
+ * If no techs array is passed, uses the player's tech list.
+ */
+function isResourceRevealed(resourceId, techs) {
+  const res = RESOURCES[resourceId];
+  if (!res || res.category !== 'strategic') return true;
+  const revealTech = RESOURCE_REVEAL_TECHS[resourceId];
+  if (!revealTech) return true;
+  const techList = techs || (game && game.techs) || [];
+  return techList.includes(revealTech);
+}
+
 function getTileYields(tile) {
   const bInfo = BASE_TERRAIN[tile.base];
   if (!bInfo) return { food: 0, prod: 0, gold: 0 };
@@ -637,7 +652,7 @@ function getTileYields(tile) {
   if (tile.hasRiver && tile.base !== 'ocean' && tile.base !== 'coast') {
     gold += 1; // Rivers add +1 gold in Civ 6
   }
-  if (tile.resource && RESOURCES[tile.resource]) {
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const bonus = RESOURCES[tile.resource].bonus;
     if (bonus.food) food += bonus.food;
     if (bonus.prod) prod += bonus.prod;
@@ -858,5 +873,6 @@ export {
   updateFactionStats,
   getPlayerStats,
   getComparisonData,
-  getUnmetFactions
+  getUnmetFactions,
+  isResourceRevealed
 };

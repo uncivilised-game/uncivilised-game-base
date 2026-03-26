@@ -2,7 +2,7 @@ import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PAT
 import { getNextUnitId } from './state.js';
 import { game } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
-import { getTileYields, getTileName } from './map.js';
+import { getTileYields, getTileName, isResourceRevealed } from './map.js';
 import { render } from './render.js';
 import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
@@ -274,7 +274,7 @@ function showTileInfo(col, row) {
 
   if (tile.hasRiver) body += `<p style="color:#4a9adc">\u{1F30A} River (+1 Gold · crossing costs all MP · -5 combat across)</p>`;
 
-  if (tile.resource && RESOURCES[tile.resource]) {
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const res = RESOURCES[tile.resource];
     const bonusStr = Object.entries(res.bonus).map(([k, v]) => `+${v} ${k}`).join(', ');
     body += `<p style="color:${res.color}; margin-top:4px">${res.icon} ${res.name} (${bonusStr})</p>`;

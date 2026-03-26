@@ -1,9 +1,10 @@
-import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
+import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, RESOURCE_REVEAL_TECHS, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileMoveCost, isTilePassable } from './map.js';
 import { addEvent, logAction } from './events.js';
 import { render } from './render.js';
+import { isResourceRevealed } from './map.js';
 import { createUnit } from './units.js';
 import { revealAround } from './discovery.js';
 import { getUnitAt } from './combat.js';
@@ -34,6 +35,8 @@ export function getAvailableImprovements(col, row) {
     if (imp.requiresRiver && !tile.hasRiver) continue;
     // Check resource requirement
     if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
+    // Cannot build on unrevealed strategic resources
+    if (tile.resource && RESOURCE_REVEAL_TECHS[tile.resource] && !isResourceRevealed(tile.resource)) continue;
     // Terraforming checks
     if (imp.terraform) {
       if (imp.terraform.removeFeature && !tile.feature) continue;

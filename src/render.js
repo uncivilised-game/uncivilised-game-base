@@ -3,7 +3,7 @@ import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
-import { getTileYields, getTileName, getTileMoveCost } from './map.js';
+import { getTileYields, getTileName, getTileMoveCost, isResourceRevealed } from './map.js';
 import { computeMoveRange, computeAttackRange } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
@@ -185,8 +185,23 @@ function render() {
 
       // Grid lines removed for seamless terrain
 
-      // Resource indicator with detailed canvas-drawn icon
-      if (tile.resource && RESOURCES[tile.resource]) {
+      // Resource indicator with detailed canvas-drawn icon (hidden if unrevealed strategic)
+      if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
+        // Reveal animation glow (fades over 2 seconds)
+        if (tile._revealedAt) {
+          const elapsed = Date.now() - tile._revealedAt;
+          if (elapsed < 2000) {
+            const alpha = 0.6 * (1 - elapsed / 2000);
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(sx, sy, HEX_SIZE * 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+            ctx.fill();
+            ctx.restore();
+          } else {
+            tile._revealedAt = null; // animation done
+          }
+        }
         drawResourceIcon(ctx, sx, sy + 1, tile.resource, 10);
       }
 
@@ -1030,8 +1045,8 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
     lines.push({ text: 'Impassable', color: '#d9534f' });
   }
 
-  // Resource
-  if (tile.resource && RESOURCES[tile.resource]) {
+  // Resource (hidden if unrevealed strategic)
+  if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
     const res = RESOURCES[tile.resource];
     const cat = res.category || 'bonus';
     const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
