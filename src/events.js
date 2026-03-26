@@ -29,6 +29,22 @@ export function countPlayerTerritory() {
 }
 
 // ============================================
+// WONDER RACE NOTIFICATIONS
+// ============================================
+
+/** Show global notification when any faction completes a wonder. */
+export function showWonderCompletionEvent(wonderName, wonderIcon, ownerName) {
+  addEvent(wonderIcon + ' ' + ownerName + ' has completed ' + wonderName + '!', 'gold');
+  showToast('Wonder Built!', ownerName + ' has completed ' + wonderName + '!', 5000);
+}
+
+/** Show refund toast when the player's in-progress wonder is scooped by another faction. */
+export function showWonderScoopedNotification(wonderName, ownerName, refundGold) {
+  addEvent('The ' + ownerName + ' completed ' + wonderName + '! Production refunded: ' + refundGold + ' gold', 'gold');
+  showToast('Wonder Scooped!', 'The ' + ownerName + ' has completed ' + wonderName + '! Your production refunded: ' + refundGold + ' gold', 6000);
+}
+
+// ============================================
 // TOAST NOTIFICATION SYSTEM
 // ============================================
 export function showToast(title, message, duration) {
