@@ -364,15 +364,20 @@ export function processUnitWaypoint(unit) {
   moveTowardWaypoint(unit);
 }
 
-export function moveTowardWaypoint(unit) {
-  if (!unit.waypoint || unit.moveLeft <= 0) return;
+export function moveTowardWaypoint(unit, onComplete) {
+  if (!unit.waypoint || unit.moveLeft <= 0) { if (onComplete) onComplete(); return; }
   const target = unit.waypoint;
-  // Greedy pathfinding: move toward target one step at a time
+  const sightRange = unit.type === 'scout' ? 4 : 3;
+  const animate = !!onComplete; // Only animate when a callback is provided (player-initiated)
+
+  // Pre-compute all steps
+  const steps = [];
+  let simCol = unit.col, simRow = unit.row, simMove = unit.moveLeft;
   let moved = true;
-  while (unit.moveLeft > 0 && moved && !(unit.col === target.col && unit.row === target.row)) {
+  while (simMove > 0 && moved && !(simCol === target.col && simRow === target.row)) {
     moved = false;
-    const neighbors = getHexNeighbors(unit.col, unit.row);
-    let best = null, bestDist = hexDistance(unit.col, unit.row, target.col, target.row);
+    const neighbors = getHexNeighbors(simCol, simRow);
+    let best = null, bestDist = hexDistance(simCol, simRow, target.col, target.row);
     for (const nb of neighbors) {
       const tile = game.map[nb.row][nb.col];
       if (!isTilePassable(tile)) continue;
@@ -384,19 +389,65 @@ export function moveTowardWaypoint(unit) {
     }
     if (best) {
       const cost = getTileMoveCost(game.map[best.row][best.col]);
-      unit.col = best.col;
-      unit.row = best.row;
-      // Civ-style: entering rough terrain uses all remaining movement
-      unit.moveLeft = cost <= unit.moveLeft ? unit.moveLeft - cost : 0;
-      unit.fortified = false;
-      unit.sleeping = false;
-      revealAround(unit.col, unit.row, unit.type === 'scout' ? 4 : 3);
+      const newMove = cost <= simMove ? simMove - cost : 0;
+      steps.push({ col: best.col, row: best.row, moveLeft: newMove });
+      simCol = best.col;
+      simRow = best.row;
+      simMove = newMove;
       moved = true;
     }
   }
-  if (unit.col === target.col && unit.row === target.row) {
-    unit.waypoint = null;
+
+  if (steps.length === 0) { if (onComplete) onComplete(); return; }
+
+  // Apply all steps immediately when not animating (turn processing)
+  if (!animate) {
+    for (const step of steps) {
+      unit.col = step.col;
+      unit.row = step.row;
+      unit.moveLeft = step.moveLeft;
+      unit.fortified = false;
+      unit.sleeping = false;
+      revealAround(unit.col, unit.row, sightRange);
+    }
+    if (unit.col === target.col && unit.row === target.row) {
+      unit.waypoint = null;
+    }
+    return;
   }
+
+  // Animate tile-by-tile (150ms per step)
+  const STEP_DELAY = 150;
+  let stepIndex = 0;
+  unit.fortified = false;
+  unit.sleeping = false;
+  game._unitMoveAnim = { unitId: unit.id, path: steps, step: 0 };
+
+  function advanceStep() {
+    const step = steps[stepIndex];
+    unit.col = step.col;
+    unit.row = step.row;
+    unit.moveLeft = step.moveLeft;
+    revealAround(unit.col, unit.row, sightRange);
+
+    stepIndex++;
+    game._unitMoveAnim = { unitId: unit.id, path: steps, step: stepIndex };
+    render();
+
+    if (stepIndex < steps.length) {
+      setTimeout(advanceStep, STEP_DELAY);
+    } else {
+      // Animation complete
+      game._unitMoveAnim = null;
+      if (unit.col === target.col && unit.row === target.row) {
+        unit.waypoint = null;
+      }
+      render();
+      onComplete();
+    }
+  }
+
+  advanceStep();
 }
 
 export function getWaypointPath(unit) {

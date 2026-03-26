@@ -571,6 +571,8 @@ function boostFactionReputation(col, row, threatType) {
 function handleHexClick(col, row) {
   if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return;
   if (!game.fogOfWar[row][col]) return;
+  // Block clicks while unit movement animation is in progress
+  if (unitMoveAnim) return;
 
   // If a player unit is selected
   if (game.selectedUnitId) {
@@ -664,10 +666,11 @@ function handleHexClick(col, row) {
     if (!getUnitAt(col, row) && !getCityAt(col, row) && isTilePassable(game.map[row][col])) {
       unit.waypoint = { col, row };
       addEvent(`${(UNIT_TYPES[unit.type]?.name || unit.type)} waypoint set`, 'combat');
-      // Move toward waypoint this turn if possible
-      moveTowardWaypoint(unit);
-      if (unit.moveLeft <= 0) autoSelectNext();
-      else { showSelectionPanel(unit); render(); }
+      // Move toward waypoint this turn if possible (animated)
+      moveTowardWaypoint(unit, () => {
+        if (unit.moveLeft <= 0) autoSelectNext();
+        else { showSelectionPanel(unit); render(); }
+      });
       return;
     }
 
