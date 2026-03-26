@@ -448,9 +448,21 @@ async function updateSpotsCounter() {
   const textEl = numEl?.parentElement;
   if (counter) counter.style.display = 'block';
   if (data.remaining <= 0) {
-    // All spots taken — show waitlist prompt
-    if (textEl) textEl.innerHTML = '<strong>Join the waiting list</strong>';
+    // All spots taken — show waitlist count
     if (barEl) barEl.style.width = '0%';
+    try {
+      const wlRes = await fetch(API + '/api/waitlist/count');
+      if (wlRes.ok) {
+        const wlData = await wlRes.json();
+        const wlCount = wlData.count || 0;
+        if (textEl && wlCount > 0) textEl.innerHTML = '<strong>' + wlCount.toLocaleString() + '</strong> on the waiting list';
+        else if (textEl) textEl.innerHTML = '<strong>Join the waiting list</strong>';
+      } else if (textEl) {
+        textEl.innerHTML = '<strong>Join the waiting list</strong>';
+      }
+    } catch (e) {
+      if (textEl) textEl.innerHTML = '<strong>Join the waiting list</strong>';
+    }
   } else {
     if (numEl) numEl.textContent = data.remaining.toLocaleString();
     if (barEl) barEl.style.width = Math.max(2, (data.remaining / data.total) * 100) + '%';
