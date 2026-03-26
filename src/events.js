@@ -268,7 +268,7 @@ export function generateRumours() {
     const fid = shuffled[i];
     const faction = FACTIONS[fid];
     if (!game.factionStats[fid]) initFactionStats(fid);
-    const fs = game.factionStats[fid] || { military: 10, gold: 50 };
+    const fs = game.factionStats[fid];
 
     const sources = [
       'A wandering trader whispers of',
@@ -446,9 +446,8 @@ window.payForRumourInfo = function(factionId, rumourIdx) {
   game.gold -= 15;
   const faction = FACTIONS[factionId];
   if (!faction) return;
-  const stats = game.factionStats[factionId];
-  if (!stats) { initFactionStats(factionId); }
-  const fs = game.factionStats[factionId] || {};
+  if (!game.factionStats[factionId]) initFactionStats(factionId);
+  const fs = game.factionStats[factionId];
   const details = [
     `The informant reveals: they are called "${faction.name}", ${faction.title}.`,
     `Their city is named ${faction.city}. They have roughly ${fs.military || '??'} military strength.`,
