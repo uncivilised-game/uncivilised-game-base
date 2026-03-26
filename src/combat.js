@@ -133,6 +133,7 @@ function resolveCombat(attacker, defender) {
 
   // Use movement points
   attacker.moveLeft = 0;
+  attacker.hasAttackedThisTurn = true;
 
   // --- XP and Promotion ---
   if (!result.attackerDied && attacker.owner === 'player') {
@@ -388,6 +389,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   }
 
   attacker.moveLeft = 0;
+  attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
 }
@@ -561,6 +563,7 @@ function executeCityAttack(attacker, factionId, tactic) {
   }
 
   attacker.moveLeft = 0;
+  attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
 }

@@ -138,7 +138,7 @@ function showSelectionPanel(unit) {
       for (const nb of adjNeighbors) {
         for (const [fid, fc] of Object.entries(game.factionCities)) {
           if (fc.col === nb.col && fc.row === nb.row) {
-            if (unit.moveLeft > 0) {
+            if (unit.moveLeft > 0 || !unit.hasAttackedThisTurn) {
               html += `<button class="sel-btn" style="border-color:#e03030;color:#ff4444;background:rgba(220,40,40,0.15);font-weight:bold" onclick="handleHexClick(${nb.col},${nb.row})"><span>\u2694 Attack ${fc.name}</span></button>`;
             } else {
               html += `<div style="color:#ff6666;font-size:11px;padding:6px;margin-top:4px;border:1px solid rgba(220,60,60,0.3);border-radius:4px;text-align:center">\u2694 ${fc.name} adjacent \u2014 attack next turn</div>`;
