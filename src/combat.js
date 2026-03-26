@@ -154,37 +154,57 @@ function resolveCombat(attacker, defender) {
   return result;
 }
 
+function isAtWarWith(factionId) {
+  return (game.aiWars || []).some(w =>
+    (w.attacker === 'player' && w.defender === factionId) ||
+    (w.attacker === factionId && w.defender === 'player')
+  );
+}
+
+function declareSurpriseWar(factionId, factionName) {
+  if (!game.aiWars) game.aiWars = [];
+  game.aiWars.push({ attacker: 'player', defender: factionId, startTurn: game.turn, turnsActive: 0 });
+  const msg = `War declared on ${factionName}! (Surprise attack)`;
+  addEvent(msg, 'diplomacy');
+  showToast('War Declared', msg, 5000);
+  logAction('diplomacy', msg, { type: 'player_surprise_attack', defender: factionId });
+}
+
 function attackFactionCity(attacker, factionId) {
   const fc = game.factionCities[factionId];
   if (!fc) return;
   const faction = FACTIONS[factionId];
   const factionName = faction ? faction.name : 'Unknown';
-  const aType = UNIT_TYPES[attacker.type];
 
-  // Check for peace agreements — offer to break them
-  const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                   game.activeAlliances[factionId] || game.defensePacts[factionId];
-
-  if (hasPeace) {
-    // Show confirmation to break peace
-    showBattlePanel(attacker, {
-      type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
-      _isCityAttack: true, _factionId: factionId, _factionName: factionName
-    }, (tactic) => {
-      if (tactic === 'retreat') return;
-      // Break all peace agreements
+  // If not already at war, require confirmation and declare war first
+  if (!isAtWarWith(factionId)) {
+    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
+                     game.activeAlliances[factionId] || game.defensePacts[factionId];
+    if (hasPeace) {
+      const agreements = [];
+      if (game.activeAlliances[factionId]) agreements.push('Alliance');
+      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
+      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
+      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
+      const agreed = confirm(
+        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
+        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
+        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
+      );
+      if (!agreed) return;
       delete game.ceasefires[factionId];
       delete game.nonAggressionPacts[factionId];
       delete game.activeAlliances[factionId];
       delete game.defensePacts[factionId];
       game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
       addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-      executeCityAttack(attacker, factionId, tactic);
-    });
-    return;
+    } else {
+      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
+      if (!agreed) return;
+    }
+    declareSurpriseWar(factionId, factionName);
   }
 
-  // No peace — show battle panel directly
   showBattlePanel(attacker, {
     type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
@@ -242,27 +262,34 @@ function attackExpansionCity(attacker, factionId, cityIdx) {
   const ec = cities[cityIdx];
   const faction = FACTIONS[factionId];
   const factionName = faction ? faction.name : 'Unknown';
-  const aType = UNIT_TYPES[attacker.type];
 
-  // Check for peace agreements
-  const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                   game.activeAlliances[factionId] || game.defensePacts[factionId];
-
-  if (hasPeace) {
-    showBattlePanel(attacker, {
-      type: 'city_garrison', hp: ec.hp || CITY_DEFENSE.BASE_HP, col: ec.col, row: ec.row, owner: factionId,
-      _isCityAttack: true, _factionId: factionId, _factionName: factionName
-    }, (tactic) => {
-      if (tactic === 'retreat') return;
+  // If not already at war, require confirmation and declare war first
+  if (!isAtWarWith(factionId)) {
+    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
+                     game.activeAlliances[factionId] || game.defensePacts[factionId];
+    if (hasPeace) {
+      const agreements = [];
+      if (game.activeAlliances[factionId]) agreements.push('Alliance');
+      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
+      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
+      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
+      const agreed = confirm(
+        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
+        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
+        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
+      );
+      if (!agreed) return;
       delete game.ceasefires[factionId];
       delete game.nonAggressionPacts[factionId];
       delete game.activeAlliances[factionId];
       delete game.defensePacts[factionId];
       game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
       addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-      executeExpansionCityAttack(attacker, factionId, cityIdx, tactic);
-    });
-    return;
+    } else {
+      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
+      if (!agreed) return;
+    }
+    declareSurpriseWar(factionId, factionName);
   }
 
   showBattlePanel(attacker, {
@@ -806,6 +833,8 @@ function processZOCCaptures() {
 
 export {
   resolveCombat,
+  isAtWarWith,
+  declareSurpriseWar,
   attackFactionCity,
   computeCityDefense,
   attackExpansionCity,
