@@ -246,7 +246,7 @@ function render() {
             }
             ctx.closePath();
             ctx.clip();
-            const imgS = HEX_SIZE * 2.0;
+            const imgS = HEX_SIZE * 1.0;
             ctx.drawImage(villageImg, sx - imgS / 2, sy - imgS / 2, imgS, imgS);
             ctx.restore();
           }
