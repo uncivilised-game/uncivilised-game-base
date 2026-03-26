@@ -14,6 +14,7 @@ function migrateTiles(state) {
       if (u.xp === undefined) u.xp = 0;
       if (!u.promotions) u.promotions = [];
       if (u.pendingPromotion === undefined) u.pendingPromotion = false;
+      if (u.hasAttackedThisTurn === undefined) u.hasAttackedThisTurn = false;
     }
   }
 

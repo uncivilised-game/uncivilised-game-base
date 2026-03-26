@@ -266,7 +266,7 @@ function computeAttackRange() {
   const attackable = new Map();
   const ut = UNIT_TYPES[unit.type];
 
-  if (ut.rangedCombat > 0 && ut.range > 0 && unit.moveLeft > 0) {
+  if (ut.rangedCombat > 0 && ut.range > 0 && (unit.moveLeft > 0 || !unit.hasAttackedThisTurn)) {
     for (let r = 0; r < MAP_ROWS; r++) {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, unit.col, unit.row) <= ut.range) {
@@ -292,7 +292,7 @@ function computeAttackRange() {
         }
       }
     }
-  } else if (unit.moveLeft > 0) {
+  } else if (unit.moveLeft > 0 || !unit.hasAttackedThisTurn) {
     const neighbors = getHexNeighbors(unit.col, unit.row);
     for (const nb of neighbors) {
       const enemy = game.units.find(u => u.col === nb.col && u.row === nb.row && u.owner !== 'player');

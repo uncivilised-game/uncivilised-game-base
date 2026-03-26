@@ -173,6 +173,7 @@ function endTurn() {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
     unit.moveLeft = ut.movePoints;
+    unit.hasAttackedThisTurn = false;
 
     // Process multi-turn waypoint movement
     if (unit.waypoint && !unit.sleeping && !unit.fortified) {
