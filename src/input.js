@@ -8,6 +8,7 @@ import { togglePanel, closeAllPanels, renderBuildPanel, renderResearchPanel, ren
 import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
+import { autoSave } from './save-load.js';
 
 // ============================================
 // CAMERA HELPERS
@@ -305,8 +306,10 @@ export function initInputHandlers() {
   document.getElementById('btn-units').addEventListener('click', () => togglePanel('units-panel'));
   document.getElementById('btn-civics').addEventListener('click', () => { if (typeof toggleCivicsPanel === 'function') toggleCivicsPanel(); });
   document.getElementById('btn-victory').addEventListener('click', () => { if (typeof toggleVictoryPanel === 'function') toggleVictoryPanel(); });
-  document.getElementById('btn-menu').addEventListener('click', () => {
+  document.getElementById('btn-menu').addEventListener('click', async () => {
     closeAllPanels();
+    // Save current state so "Continue" returns to this exact turn
+    await autoSave();
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('title-screen').classList.add('active');
     // Show continue button if there's a save
