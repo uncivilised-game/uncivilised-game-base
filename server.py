@@ -41,6 +41,7 @@ _SB_HEADERS = {
 # Resend email config
 # ═══════════════════════════════════════════════════
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
 
@@ -1068,6 +1069,292 @@ async def session_end(data: SessionEnd):
 
 
 # ═══════════════════════════════════════════════════
+# /api/admin/manage-player — lookup, create, or resend email for a player
+# ═══════════════════════════════════════════════════
+@app.get("/api/admin/manage-player")
+async def admin_manage_player(
+    secret: str = "",
+    email: str = "",
+    username: str = "",
+    action: str = "lookup",
+):
+    """Lookup a player by email, optionally create them or resend their email.
+
+    Query params:
+        secret:   must match ADMIN_SECRET environment variable
+        email:    player email to look up or create (required)
+        username: username to assign if creating a new player
+        action:   "lookup" (default), "create", or "resend"
+    """
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        return {"success": False, "error": "Invalid or missing admin secret"}
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    import re as _re
+    _email_re = _re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    email = (email or "").strip().lower()
+    if not email or not _email_re.match(email):
+        return {"success": False, "error": "Valid email required"}
+
+    try:
+        rows = _sb_select(
+            "players",
+            select="id,username,username_lower,email,status,email_verified,access_token,created_at",
+            filters=f"email=eq.{quote(email)}",
+            limit=1,
+        )
+        player = rows[0] if rows else None
+
+        if action == "lookup":
+            if player:
+                return {
+                    "success": True,
+                    "found": True,
+                    "player": {
+                        "username": player.get("username"),
+                        "email": player.get("email"),
+                        "status": player.get("status"),
+                        "email_verified": player.get("email_verified"),
+                        "created_at": player.get("created_at"),
+                    },
+                }
+            return {"success": True, "found": False, "message": "No player with that email"}
+
+        elif action == "resend":
+            if not player:
+                return {"success": False, "error": "No player with that email — use action=create to add them"}
+            return {
+                "success": False,
+                "error": "Email sending not available on local dev server. Use production endpoint.",
+            }
+
+        elif action == "create":
+            if player:
+                return {
+                    "success": False,
+                    "error": f"Player already exists with username '{player.get('username')}' (status: {player.get('status')}). Use action=resend to re-send their email.",
+                }
+            if not username or len(username.strip()) < 3:
+                return {"success": False, "error": "Username required (3+ chars) when creating a player"}
+
+            username = username.strip()
+            existing_name = _sb_select(
+                "players", select="id",
+                filters=f"username_lower=eq.{quote(username.lower())}",
+                limit=1,
+            )
+            if existing_name:
+                return {"success": False, "error": f"Username '{username}' already taken"}
+
+            import uuid
+            token = str(uuid.uuid4())
+            _sb_insert("players", {
+                "username": username,
+                "username_lower": username.lower(),
+                "email": email,
+                "games_played": 0,
+                "best_score": 0,
+                "total_score": 0,
+                "status": "active",
+                "access_token": token,
+                "email_verified": False,
+            })
+            return {
+                "success": True,
+                "action": "created",
+                "username": username,
+                "status": "active",
+                "message": f"Created player '{username}' (email sending not available on local dev)",
+            }
+
+        else:
+            return {"success": False, "error": f"Unknown action '{action}'. Use: lookup, create, or resend"}
+
+    except Exception as e:
+        print(f"[ADMIN] manage-player error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# /api/admin/analytics — game session & diplomacy analytics
+# ═══════════════════════════════════════════════════
+@app.get("/api/admin/analytics")
+async def admin_analytics(secret: str = "", hours: int = 24):
+    """Return analytics summary for the last N hours (default 24).
+
+    Query params:
+        secret: must match ADMIN_SECRET environment variable
+        hours:  lookback window in hours (default 24, max 168 = 7 days)
+    """
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        return {"success": False, "error": "Invalid or missing admin secret"}
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    from datetime import timedelta
+
+    hours = min(max(1, hours), 168)
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since_iso = since.isoformat()
+
+    result: dict = {"success": True, "window_hours": hours, "since": since_iso}
+
+    # ── Game Sessions ──
+    try:
+        sessions = _sb_select(
+            "game_sessions",
+            select="id,visitor_id,game_mode,started_at,ended_at,turns_played,outcome",
+            filters=f"started_at=gte.{since_iso}",
+            order="started_at.desc",
+        )
+        total = len(sessions)
+        completed = [s for s in sessions if s.get("ended_at")]
+        in_progress = total - len(completed)
+
+        durations = []
+        for s in completed:
+            try:
+                start = datetime.fromisoformat(s["started_at"].replace("Z", "+00:00"))
+                end = datetime.fromisoformat(s["ended_at"].replace("Z", "+00:00"))
+                durations.append((end - start).total_seconds())
+            except Exception:
+                pass
+
+        outcomes: Dict[str, int] = {}
+        for s in completed:
+            o = s.get("outcome") or "unknown"
+            outcomes[o] = outcomes.get(o, 0) + 1
+
+        unique_players = len(set(s.get("visitor_id", "") for s in sessions))
+
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        median_duration = sorted(durations)[len(durations) // 2] if durations else 0
+        max_duration = max(durations) if durations else 0
+        min_duration = min(durations) if durations else 0
+
+        avg_turns = 0
+        turns_list = [s.get("turns_played", 0) for s in completed if s.get("turns_played")]
+        if turns_list:
+            avg_turns = sum(turns_list) / len(turns_list)
+
+        result["sessions"] = {
+            "total": total,
+            "completed": len(completed),
+            "in_progress": in_progress,
+            "unique_players": unique_players,
+            "outcomes": outcomes,
+            "avg_turns_played": round(avg_turns, 1),
+            "duration_seconds": {
+                "avg": round(avg_duration),
+                "median": round(median_duration),
+                "min": round(min_duration),
+                "max": round(max_duration),
+            },
+            "duration_human": {
+                "avg": f"{int(avg_duration // 60)}m {int(avg_duration % 60)}s",
+                "median": f"{int(median_duration // 60)}m {int(median_duration % 60)}s",
+                "min": f"{int(min_duration // 60)}m {int(min_duration % 60)}s",
+                "max": f"{int(max_duration // 60)}m {int(max_duration % 60)}s",
+            },
+        }
+    except Exception as e:
+        result["sessions"] = {"error": str(e)}
+
+    # ── Feedback ──
+    try:
+        feedback = _sb_select(
+            "feedback",
+            select="id,visitor_id,category,priority,message,ai_summary,created_at",
+            filters=f"created_at=gte.{since_iso}",
+            order="created_at.desc",
+        )
+        categories: Dict[str, int] = {}
+        priorities: Dict[str, int] = {}
+        for f in feedback:
+            cat = f.get("category") or "uncategorized"
+            pri = f.get("priority") or "unknown"
+            categories[cat] = categories.get(cat, 0) + 1
+            priorities[pri] = priorities.get(pri, 0) + 1
+
+        feedback_items = [
+            {
+                "category": f.get("category"),
+                "priority": f.get("priority"),
+                "summary": f.get("ai_summary") or (f.get("message") or "")[:120],
+                "created_at": f.get("created_at"),
+            }
+            for f in feedback
+        ]
+
+        result["feedback"] = {
+            "total": len(feedback),
+            "by_category": categories,
+            "by_priority": priorities,
+            "items": feedback_items,
+        }
+    except Exception as e:
+        result["feedback"] = {"error": str(e)}
+
+    # ── Diplomacy Interactions ──
+    try:
+        diplo = _sb_select(
+            "diplomacy_interactions",
+            select="id,visitor_id,character_id,player_message,ai_reply,action_type,action_data,turn,created_at",
+            filters=f"created_at=gte.{since_iso}",
+            order="created_at.desc",
+        )
+        by_character: Dict[str, dict] = {}
+        by_action: Dict[str, int] = {}
+        unique_diplo_players: set = set()
+        total_player_chars = 0
+        total_ai_chars = 0
+
+        for d in diplo:
+            cid = d.get("character_id") or "unknown"
+            char_name = CHARACTER_PROFILES.get(cid, {}).get("name", cid)
+
+            if cid not in by_character:
+                by_character[cid] = {
+                    "name": char_name,
+                    "interactions": 0,
+                    "unique_players": set(),
+                    "actions": {},
+                }
+            by_character[cid]["interactions"] += 1
+            by_character[cid]["unique_players"].add(d.get("visitor_id", ""))
+
+            action = d.get("action_type") or "none"
+            by_action[action] = by_action.get(action, 0) + 1
+            by_character[cid]["actions"][action] = by_character[cid]["actions"].get(action, 0) + 1
+
+            unique_diplo_players.add(d.get("visitor_id", ""))
+            total_player_chars += len(d.get("player_message") or "")
+            total_ai_chars += len(d.get("ai_reply") or "")
+
+        # Convert sets to counts for JSON serialization
+        character_summary = {}
+        for cid, info in sorted(by_character.items(), key=lambda x: x[1]["interactions"], reverse=True):
+            character_summary[cid] = {
+                "name": info["name"],
+                "interactions": info["interactions"],
+                "unique_players": len(info["unique_players"]),
+                "actions": info["actions"],
+            }
+
+        result["diplomacy"] = {
+            "total_interactions": len(diplo),
+            "unique_players": len(unique_diplo_players),
+            "avg_player_message_length": round(total_player_chars / len(diplo)) if diplo else 0,
+            "avg_ai_reply_length": round(total_ai_chars / len(diplo)) if diplo else 0,
+            "by_character": character_summary,
+            "by_action_type": dict(sorted(by_action.items(), key=lambda x: x[1], reverse=True)),
+        }
+    except Exception as e:
+        result["diplomacy"] = {"error": str(e)}
+
+    return result
+
+
 # /api/health — health check
 # ═══════════════════════════════════════════════════
 @app.get("/api/health")
