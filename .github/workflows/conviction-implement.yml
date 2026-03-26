@@ -7,19 +7,33 @@ on:
         description: 'GitHub issue number to implement (leave empty for highest conviction)'
         required: false
         type: string
+  issue_comment:
+    types: [created]
 
 jobs:
   implement:
+    # Run on manual trigger OR /fix comment on a conviction-labeled issue
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '/fix') &&
+       contains(toJSON(github.event.issue.labels.*.name), 'conviction'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-      issues: read
+      issues: write
       id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=rocket
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -41,8 +55,12 @@ jobs:
         id: pick
         env:
           INPUT_ISSUE: ${{ inputs.issue_number }}
+          COMMENT_ISSUE: ${{ github.event.issue.number }}
         run: |
-          if [ -n "$INPUT_ISSUE" ]; then
+          # From /fix comment — use the issue the comment was on
+          if [ -n "$COMMENT_ISSUE" ] && [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "issue_number=$COMMENT_ISSUE" >> "$GITHUB_OUTPUT"
+          elif [ -n "$INPUT_ISSUE" ]; then
             echo "issue_number=$INPUT_ISSUE" >> "$GITHUB_OUTPUT"
           else
             ISSUE=$(gh issue list \
