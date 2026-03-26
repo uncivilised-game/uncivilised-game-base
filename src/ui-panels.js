@@ -17,6 +17,7 @@ import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
+import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
 
 function showSelectionPanel(unit) {
   // Special panel for workers
@@ -300,6 +301,16 @@ function showCityPanel(cityData) {
       <span class="yield gold">${yields.gold} Gold</span>
     </div>`;
     body += `<p>Population: ${(cityData.population || game.population).toLocaleString()}</p>`;
+
+    // Housing display
+    const { housing, sources } = calculateCityHousing(cityData);
+    const effectivePop = Math.floor((cityData.population || 1000) / 500);
+    const housingMod = getHousingGrowthModifier(housing, cityData.population || 1000);
+    const housingColor = housingMod >= 1 ? '#6b8' : housingMod >= 0.5 ? '#db3' : housingMod > 0 ? '#d93' : '#d55';
+    const housingLabel = housingMod >= 1 ? '' : housingMod >= 0.5 ? ' (Slow)' : housingMod > 0 ? ' (Very Slow)' : ' (Stagnant)';
+    const sourceTip = sources.map(s => `${s.label}: +${s.value}`).join('\n');
+    body += `<p style="color:${housingColor}" title="${sourceTip}">\u{1F3E0} Housing: ${housing}/${effectivePop}${housingLabel}</p>`;
+
     body += `<p>Buildings: ${game.buildings.length}</p>`;
     if (game.currentBuild) {
       const bdata = BUILDINGS.find(b => b.id === game.currentBuild);

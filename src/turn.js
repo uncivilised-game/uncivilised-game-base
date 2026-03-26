@@ -17,6 +17,7 @@ import { decayReputation, detectContradictions, updateReputation, ensureReputati
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
+import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
 
 let _processingTurn = false;
 
@@ -186,11 +187,19 @@ function endTurn() {
     else if (game.happiness < 0) growthMod = 0.75;
     else if (game.happiness < -5) growthMod = 0.5;
 
-    if (city.food * growthMod >= growthThreshold) {
+    // Apply housing growth modifier
+    const { housing } = calculateCityHousing(city);
+    const housingMod = getHousingGrowthModifier(housing, city.population || 1000);
+    growthMod *= housingMod;
+
+    if (growthMod > 0 && city.food * growthMod >= growthThreshold) {
       city.food = 0;
       city.population = (city.population || 1000) + 100;
       game.population += 100;
       events.push(city.name + ' grew! (pop ' + city.population + ')');
+    } else if (housingMod === 0) {
+      // Stagnant — food doesn't accumulate past threshold
+      city.food = Math.min(city.food, growthThreshold - 1);
     }
   }
 
