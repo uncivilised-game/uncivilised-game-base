@@ -1,0 +1,107 @@
+name: Conviction Implement
+
+on:
+  # Manual trigger — pick an issue to implement
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'GitHub issue number to implement (leave empty for highest conviction)'
+        required: false
+        type: string
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick issue
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.issue_number }}" ]; then
+            echo "issue_number=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          else
+            # Pick the open conviction issue with highest score from the body
+            # Parse "## Conviction Score: N" from issue bodies
+            ISSUE=$(gh issue list \
+              --label conviction \
+              --state open \
+              --json number,body,title \
+              --limit 50 \
+              | python3 -c "
+          import sys, json, re
+          issues = json.load(sys.stdin)
+          scored = []
+          for i in issues:
+              m = re.search(r'Conviction Score:\s*(\d+)', i.get('body',''))
+              if m:
+                  scored.append((int(m.group(1)), i['number'], i['title']))
+          scored.sort(reverse=True)
+          if scored:
+              print(scored[0][1])
+          else:
+              print('')
+          ")
+            if [ -z "$ISSUE" ]; then
+              echo "No conviction issues found"
+              exit 1
+            fi
+            echo "issue_number=$ISSUE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get issue details
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM="${{ steps.pick.outputs.issue_number }}"
+          echo "Implementing issue #${ISSUE_NUM}"
+          gh issue view "$ISSUE_NUM" --json title,body,labels > /tmp/issue.json
+          TITLE=$(cat /tmp/issue.json | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Implement with Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
+
+            ISSUE TITLE: ${{ steps.issue.outputs.title }}
+
+            Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            INSTRUCTIONS:
+            1. Read the issue carefully — it contains player reports describing the problem/request
+            2. Read CLAUDE.md for codebase context and conventions
+            3. Find the relevant code and understand it before making changes
+            4. Implement the fix or feature
+            5. Keep changes minimal and focused — fix exactly what the issue describes
+            6. Test your changes if possible (npm run build at minimum)
+            7. Create a branch named "fix/${{ steps.issue.outputs.number }}" and commit your changes
+            8. Create a PR targeting the "devel" branch with:
+               - Title referencing the issue
+               - Description explaining what you changed and why
+               - "Fixes #${{ steps.issue.outputs.number }}" in the body to auto-close the issue
+            9. Do NOT push to main directly
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy plugin lives in a separate repo — don't touch diplomacy-api.js stubs
+            - Read the relevant source files before making any changes
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
