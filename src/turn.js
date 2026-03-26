@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, AMENITY_PER_POP, POP_PER_CITIZEN } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
@@ -18,45 +18,70 @@ import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 
-// --- Per-City Amenity Helpers ---
+// --- Per-City Amenity System ---
 
-function getAmenityStatus(balance) {
-  if (balance >= 2) return 'ECSTATIC';
-  if (balance === 1) return 'HAPPY';
-  if (balance === 0) return 'CONTENT';
-  if (balance === -1) return 'DISPLEASED';
-  if (balance === -2) return 'UNHAPPY';
-  return 'REVOLT_RISK'; // -3 or worse
+export function getAmenityBalance(city) {
+  return (city.luxuryAmenities || 0) + (city.buildingAmenities || 0) + (city.allianceAmenity || 0) - (city.amenityRequired || 0);
 }
 
-function getAmenityMod(balance) {
-  if (balance >= 2) return 0.10;   // +10% production and growth
-  if (balance === 1) return 0.05;  // +5% production and growth
-  if (balance === 0) return 0;     // no modifier
-  if (balance === -1) return -0.05; // -5% production and growth
-  if (balance === -2) return -0.10; // -10% production and growth
-  return -0.25; // -3 or worse: -25% production and growth
+export function getAmenityStatus(balance) {
+  if (balance >= 2) return 'ecstatic';
+  if (balance === 1) return 'happy';
+  if (balance === 0) return 'content';
+  if (balance === -1) return 'displeased';
+  if (balance === -2) return 'unhappy';
+  return 'revolt'; // -3 or worse
 }
 
-function distributeLuxuries(cities, luxuryTypes) {
-  for (const city of cities) {
-    city.amenityFromLuxuries = 0;
-  }
-  for (const _lux of luxuryTypes) {
-    // Sort cities by current running amenity balance (lowest first = neediest)
-    const sorted = [...cities].sort((a, b) => {
-      const balA = (a.amenityFromLuxuries + a.amenityFromBuildings + a.amenityFromAlliance) - a.amenityRequired;
-      const balB = (b.amenityFromLuxuries + b.amenityFromBuildings + b.amenityFromAlliance) - b.amenityRequired;
-      return balA - balB;
-    });
-    const count = Math.min(4, sorted.length);
-    for (let i = 0; i < count; i++) {
-      sorted[i].amenityFromLuxuries += 1;
+export function getAmenityModifier(balance) {
+  if (balance >= 2) return 1.10;   // +10% production and growth
+  if (balance === 1) return 1.05;  // +5% production and growth
+  if (balance === 0) return 1.0;   // no modifier
+  if (balance === -1) return 0.95; // -5% production and growth
+  if (balance === -2) return 0.90; // -10% production and growth
+  return 0.75; // -3 or worse: -25% production and growth
+}
+
+export function distributeLuxuries(cities, luxuryTypes) {
+  // Reset luxury amenities on all cities
+  for (const city of cities) city.luxuryAmenities = 0;
+  for (const _luxType of luxuryTypes) {
+    // Sort cities by current amenity balance (lowest first = neediest)
+    const sorted = [...cities].sort((a, b) => getAmenityBalance(a) - getAmenityBalance(b));
+    // Give +1 to up to 4 neediest cities
+    const recipients = sorted.slice(0, 4);
+    for (const city of recipients) {
+      city.luxuryAmenities += 1;
     }
   }
 }
 
-function calculateCityAmenities(events) {
+export function calculateCityAmenity(city) {
+  const citizenCount = Math.floor((city.population || 1000) / POP_PER_CITIZEN);
+  const required = Math.max(0, Math.floor((citizenCount - 2) / AMENITY_PER_POP));
+  let provided = 0;
+  provided += city.luxuryAmenities || 0;
+  // Building amenities: check global game.buildings (buildings are empire-wide in this game)
+  for (const bid of game.buildings) {
+    const bdata = BUILDINGS.find(b => b.id === bid);
+    if (bdata && bdata.amenities) provided += bdata.amenities;
+  }
+  // Also check per-city buildings array if populated
+  if (city.buildings && city.buildings.length > 0) {
+    for (const bid of city.buildings) {
+      const bdata = BUILDINGS.find(b => b.id === bid);
+      if (bdata && bdata.amenities) provided += bdata.amenities;
+    }
+  }
+  // Alliance bonus: +1 to capital only
+  if (city.isCapital && Object.keys(game.activeAlliances || {}).length > 0) provided += 1;
+  const balance = provided - required;
+  const status = getAmenityStatus(balance);
+  const modifier = getAmenityModifier(balance);
+  return { required, provided, balance, status, modifier };
+}
+
+function calculateAllCityAmenities(events) {
   // 1. Collect unique luxury resource types in player territory
   const luxuryTypesInTerritory = new Set();
   for (const city of game.cities) {
@@ -73,46 +98,59 @@ function calculateCityAmenities(events) {
     }
   }
 
-  // 2. Calculate amenity requirements per city: 1 amenity per 2 citizens above base 2
-  for (const city of game.cities) {
-    const citizenCount = Math.floor((city.population || 1000) / 200);
-    city.amenityRequired = Math.max(0, Math.floor((citizenCount - 2) / 2));
-    city.amenityFromLuxuries = 0;
-    city.amenityFromBuildings = 0;
-    city.amenityFromAlliance = 0;
+  // 2. Mark capital and reset amenity fields
+  for (let i = 0; i < game.cities.length; i++) {
+    const city = game.cities[i];
+    city.isCapital = (i === 0);
+    city.luxuryAmenities = 0;
+    city.buildingAmenities = 0;
+    city.allianceAmenity = 0;
   }
 
-  // 3. Building amenities: Arena/Garden/Temple each provide +1 to all cities
-  const amenityBuildings = ['arena', 'garden', 'temple'];
+  // 3. Pre-calculate building and alliance amenities for distribution sorting
   for (const city of game.cities) {
-    for (const bid of amenityBuildings) {
-      if (game.buildings.includes(bid)) {
-        city.amenityFromBuildings += 1;
+    for (const bid of game.buildings) {
+      const bdata = BUILDINGS.find(b => b.id === bid);
+      if (bdata && bdata.amenities) city.buildingAmenities += bdata.amenities;
+    }
+    if (city.buildings && city.buildings.length > 0) {
+      for (const bid of city.buildings) {
+        const bdata = BUILDINGS.find(b => b.id === bid);
+        if (bdata && bdata.amenities) city.buildingAmenities += bdata.amenities;
       }
     }
+    if (city.isCapital && Object.keys(game.activeAlliances || {}).length > 0) {
+      city.allianceAmenity = 1;
+    }
+    const citizenCount = Math.floor((city.population || 1000) / POP_PER_CITIZEN);
+    city.amenityRequired = Math.max(0, Math.floor((citizenCount - 2) / AMENITY_PER_POP));
   }
 
-  // 4. Alliance bonus: +1 to capital only
-  if (Object.keys(game.activeAlliances).length > 0 && game.cities.length > 0) {
-    game.cities[0].amenityFromAlliance = 1;
-  }
-
-  // 5. Distribute luxury amenities (each unique type -> +1 to up to 4 neediest cities)
+  // 4. Distribute luxury amenities (each unique type -> +1 to up to 4 neediest cities)
   distributeLuxuries(game.cities, luxuryTypesInTerritory);
 
-  // 6. Calculate final balance, status, and modifier per city
+  // 5. Calculate final balance, status, and modifier per city
   let totalBalance = 0;
   for (const city of game.cities) {
-    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance;
-    city.amenityBalance = totalAmenities - city.amenityRequired;
-    city.amenityStatus = getAmenityStatus(city.amenityBalance);
-    city.amenityMod = getAmenityMod(city.amenityBalance);
-    totalBalance += city.amenityBalance;
+    const result = calculateCityAmenity(city);
+    city.amenityRequired = result.required;
+    city.amenityProvided = result.provided;
+    city.amenityBalance = result.balance;
+    city.amenityStatus = result.status;
+    city.amenityModifier = result.modifier;
+    totalBalance += result.balance;
+  }
+
+  // 6. Amenity warning events
+  for (const city of game.cities) {
+    if (city.amenityStatus === 'displeased' || city.amenityStatus === 'unhappy') {
+      addEvent(`Citizens in ${city.name} are ${city.amenityStatus}! Build entertainment or acquire luxuries.`, 'combat');
+    }
   }
 
   // 7. Revolt risk: cities at -3 or worse have 5% chance of spawning a rebel warrior
   for (const city of game.cities) {
-    if (city.amenityStatus === 'REVOLT_RISK' && Math.random() < 0.05) {
+    if (city.amenityStatus === 'revolt' && Math.random() < 0.05) {
       const neighbors = getHexNeighbors(city.col, city.row);
       for (const nb of neighbors) {
         const tile = game.map[nb.row][nb.col];
@@ -120,14 +158,14 @@ function calculateCityAmenities(events) {
         if (getUnitAt(nb.col, nb.row)) continue;
         const rebel = createUnit('warrior', nb.col, nb.row, 'barbarian');
         game.units.push(rebel);
-        events.push(`Rebels have risen in ${city.name}!`);
-        addEvent(`Rebels have risen in ${city.name}!`, 'combat');
+        events.push(`Unrest in ${city.name}! Rebel forces emerge!`);
+        addEvent(`Unrest in ${city.name}! Rebel forces emerge!`, 'combat');
         break;
       }
     }
   }
 
-  // Keep game.happiness as a summary value for backward compat (UI top bar, save compat)
+  // Keep game.happiness as a backward-compatible summary (average amenity balance)
   game.happiness = game.cities.length > 0 ? Math.round(totalBalance / game.cities.length) : 0;
 }
 
@@ -239,7 +277,7 @@ function endTurn() {
   if (tradeGold > 0) { game.gold += tradeGold; events.push('Trade: +' + tradeGold + ' Gold'); }
 
   // --- Per-City Amenity System ---
-  calculateCityAmenities(events);
+  calculateAllCityAmenities(events);
 
 
   // --- Resource bonuses from territory (respects city border radius) ---
@@ -275,8 +313,9 @@ function endTurn() {
     // Growth threshold scales with city population
     const growthThreshold = 15 + Math.floor((city.population || 1000) / 500);
     // Apply per-city amenity modifier to growth
-    // NOTE: If Housing (Task 09) is implemented, housing modifier should be applied as a separate multiplier here
-    let growthMod = 1.0 + (city.amenityMod || 0);
+    // NOTE: If Housing (Task 09) is implemented, housing modifier should be applied here as a separate multiplier
+    // that stacks with amenity: growthMod = amenityModifier * housingModifier
+    let growthMod = city.amenityModifier || 1.0;
 
     if (city.food * growthMod >= growthThreshold) {
       city.food = 0;
@@ -298,8 +337,8 @@ function endTurn() {
   }
   // Amenity production modifier (average across all cities since production is global)
   if (game.cities.length > 0) {
-    const avgAmenityMod = game.cities.reduce((sum, c) => sum + (c.amenityMod || 0), 0) / game.cities.length;
-    if (avgAmenityMod !== 0) prodThisTurn = Math.floor(prodThisTurn * (1 + avgAmenityMod));
+    const avgModifier = game.cities.reduce((sum, c) => sum + (c.amenityModifier || 1.0), 0) / game.cities.length;
+    prodThisTurn = Math.floor(prodThisTurn * avgModifier);
   }
   if (game.currentBuild) {
     game.buildProgress += prodThisTurn;

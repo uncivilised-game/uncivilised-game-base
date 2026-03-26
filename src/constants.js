@@ -11,6 +11,10 @@ export const MAP_ROWS = 40;
 export const MAX_TURNS = 100;
 export const SQRT3 = Math.sqrt(3);
 
+// Per-city amenity system constants
+export const AMENITY_PER_POP = 2;   // 1 amenity required per 2 citizens
+export const POP_PER_CITIZEN = 200; // population units per citizen
+
 export const CITY_DEFENSE = {
   BASE_HP: 100,
   BASE_COMBAT_STRENGTH: 15,
@@ -102,14 +106,14 @@ export let BUILDINGS = [
   { id: 'library',     name: 'Library',       cost: 55,  desc: '+2 Science per turn', effect: { science: 2 } },
   { id: 'walls',       name: 'City Walls',    cost: 60,  desc: '+5 Defense', effect: { defense: 5 } },
   { id: 'workshop',    name: 'Workshop',      cost: 65,  desc: '+2 Production per turn', effect: { production: 2 } },
-  { id: 'temple',      name: 'Temple',        cost: 50,  desc: '+1 Culture, +1 Gold, +1 Amenity', effect: { culture: 1, gold: 1 } },
+  { id: 'temple',      name: 'Temple',        cost: 50,  desc: '+1 Culture, +1 Gold, +1 Amenity', effect: { culture: 1, gold: 1 }, amenities: 1 },
   { id: 'harbor',      name: 'Harbor',        cost: 70,  desc: '+3 Gold, +1 Food (coastal)', effect: { gold: 3, food: 1 } },
   { id: 'university',  name: 'University',    cost: 100, desc: '+4 Science per turn', effect: { science: 4 } },
   { id: 'bank',        name: 'Bank',          cost: 90,  desc: '+5 Gold per turn', effect: { gold: 5 } },
   { id: 'fortress',    name: 'Fortress',      cost: 110, desc: '+8 Military, +3 Defense', effect: { military: 8, defense: 3 } },
   { id: 'monument', name: 'Monument', cost: 30, desc: '+2 Culture per turn', effect: { culture: 2 } },
-  { id: 'garden', name: 'Garden', cost: 45, desc: '+2 Food, +1 Amenity', effect: { food: 2 } },
-  { id: 'arena', name: 'Arena', cost: 55, desc: '+2 Culture, +1 Military, +1 Amenity', effect: { culture: 2, military: 1 } },
+  { id: 'garden', name: 'Garden', cost: 45, desc: '+2 Food, +1 Amenity', effect: { food: 2 }, amenities: 1 },
+  { id: 'arena', name: 'Arena', cost: 55, desc: '+2 Culture, +1 Military, +1 Amenity', effect: { culture: 2, military: 1 }, amenities: 1 },
   { id: 'lighthouse', name: 'Lighthouse', cost: 60, desc: '+3 Gold, +1 Food (coastal)', effect: { gold: 3, food: 1 } },
   { id: 'amphitheater', name: 'Amphitheater', cost: 70, desc: '+3 Culture per turn', effect: { culture: 3 } },
   { id: 'academy', name: 'Academy', cost: 80, desc: '+3 Science per turn', effect: { science: 3 } },

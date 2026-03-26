@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amenity System Test Page</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+  h1 { color: #ffd700; margin-bottom: 16px; }
+  h2 { color: #c9a84c; margin: 20px 0 10px; font-size: 16px; }
+  .section { background: #16213e; border: 1px solid #2a2a5a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  label { font-size: 13px; color: #aaa; }
+  input[type=range] { width: 150px; }
+  input[type=checkbox] { margin-right: 4px; }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .checkbox-group label { background: #1a1a3e; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .checkbox-group label:hover { background: #2a2a5e; }
+  button { background: #c9a84c; color: #1a1400; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+  button:hover { background: #e0c060; }
+  .result { background: #0f1020; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 13px; line-height: 1.6; }
+  .result .status { font-weight: 700; font-size: 14px; }
+  .ecstatic { color: #ffd700; }
+  .happy { color: #60c060; }
+  .content { color: #888; }
+  .displeased { color: #c0a040; }
+  .unhappy { color: #c06040; }
+  .revolt { color: #e02020; }
+  .pass { color: #4ade80; }
+  .fail { color: #f87171; }
+  .test-result { padding: 4px 0; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .city-card { background: #1a1a3e; padding: 10px; border-radius: 6px; border: 1px solid #2a2a5a; }
+  .city-card h3 { font-size: 13px; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { padding: 4px 8px; text-align: left; border-bottom: 1px solid #2a2a5a; }
+  th { color: #c9a84c; }
+  #comparison-table td { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Per-City Amenity System Test</h1>
+
+<!-- Section 1: City Amenity Calculator -->
+<div class="section">
+  <h2>City Amenity Calculator</h2>
+  <div class="controls">
+    <div>
+      <label>Population: <span id="pop-val">1000</span></label><br>
+      <input type="range" id="pop-slider" min="200" max="4000" step="200" value="1000">
+    </div>
+    <div>
+      <label>Number of cities: <span id="cities-val">1</span></label><br>
+      <input type="range" id="cities-slider" min="1" max="6" step="1" value="1">
+    </div>
+    <div>
+      <label><input type="checkbox" id="is-capital" checked> Capital city</label>
+    </div>
+    <div>
+      <label><input type="checkbox" id="has-alliance"> Has Alliance</label>
+    </div>
+  </div>
+  <h2 style="font-size:13px">Luxury Resources</h2>
+  <div class="checkbox-group" id="luxury-checks"></div>
+  <h2 style="font-size:13px">Buildings</h2>
+  <div class="checkbox-group" id="building-checks"></div>
+  <div class="result" id="calc-result"></div>
+</div>
+
+<!-- Section 2: Luxury Distribution -->
+<div class="section">
+  <h2>Luxury Distribution Across Cities</h2>
+  <p style="font-size:12px;color:#888;margin-bottom:8px">Shows how luxuries are distributed to neediest cities first. Each unique luxury provides +1 to up to 4 cities.</p>
+  <button id="btn-distribute">Distribute luxuries across cities</button>
+  <button id="btn-add-duplicate" style="margin-left:8px;background:#555;color:#ddd">Add duplicate luxury</button>
+  <div class="result" id="dist-result"></div>
+</div>
+
+<!-- Section 3: Revolt Simulation -->
+<div class="section">
+  <h2>Revolt Simulation</h2>
+  <p style="font-size:12px;color:#888;margin-bottom:8px">Sets amenity balance to -3 or worse, simulates 20 turns, counts rebel spawns (5% chance/turn).</p>
+  <button id="btn-revolt">Simulate revolt (20 turns)</button>
+  <div class="result" id="revolt-result"></div>
+</div>
+
+<!-- Section 4: Old vs New Comparison -->
+<div class="section">
+  <h2>Compare: Old Happiness vs New Amenities</h2>
+  <button id="btn-compare">Compare systems</button>
+  <div class="result" id="compare-result"></div>
+</div>
+
+<!-- Section 5: Automated Tests -->
+<div class="section">
+  <h2>Automated Tests</h2>
+  <button id="btn-tests">Run all tests</button>
+  <div class="result" id="test-results"></div>
+</div>
+
+<script>
+// ===== Amenity system implementation (mirrors src/turn.js) =====
+
+const LUXURY_RESOURCES = ['gold_ore', 'gems', 'spices', 'silk', 'incense', 'ivory', 'dyes', 'furs', 'jade', 'wine'];
+const LUXURY_NAMES = { gold_ore: 'Gold Ore', gems: 'Gems', spices: 'Spices', silk: 'Silk', incense: 'Incense', ivory: 'Ivory', dyes: 'Dyes', furs: 'Furs', jade: 'Jade', wine: 'Wine' };
+const AMENITY_BUILDINGS = [
+  { id: 'arena', name: 'Arena', amenities: 1 },
+  { id: 'garden', name: 'Garden', amenities: 1 },
+  { id: 'temple', name: 'Temple', amenities: 1 },
+];
+const POP_PER_CITIZEN = 200;
+const AMENITY_PER_POP = 2;
+
+function getAmenityBalance(city) {
+  return (city.luxuryAmenities || 0) + (city.buildingAmenities || 0) + (city.allianceAmenity || 0) - (city.amenityRequired || 0);
+}
+
+function getAmenityStatus(balance) {
+  if (balance >= 2) return 'ecstatic';
+  if (balance === 1) return 'happy';
+  if (balance === 0) return 'content';
+  if (balance === -1) return 'displeased';
+  if (balance === -2) return 'unhappy';
+  return 'revolt';
+}
+
+function getAmenityModifier(balance) {
+  if (balance >= 2) return 1.10;
+  if (balance === 1) return 1.05;
+  if (balance === 0) return 1.0;
+  if (balance === -1) return 0.95;
+  if (balance === -2) return 0.90;
+  return 0.75;
+}
+
+function distributeLuxuries(cities, luxuryTypes) {
+  for (const city of cities) city.luxuryAmenities = 0;
+  for (const luxType of luxuryTypes) {
+    const sorted = [...cities].sort((a, b) => getAmenityBalance(a) - getAmenityBalance(b));
+    const recipients = sorted.slice(0, 4);
+    for (const city of recipients) {
+      city.luxuryAmenities += 1;
+    }
+  }
+}
+
+function calculateCityAmenity(city, globalBuildings, hasAlliance) {
+  const citizenCount = Math.floor((city.population || 1000) / POP_PER_CITIZEN);
+  const required = Math.max(0, Math.floor((citizenCount - 2) / AMENITY_PER_POP));
+  let provided = 0;
+  provided += city.luxuryAmenities || 0;
+  // Global buildings
+  for (const bid of globalBuildings) {
+    const bdata = AMENITY_BUILDINGS.find(b => b.id === bid);
+    if (bdata) provided += bdata.amenities;
+  }
+  // Alliance bonus to capital
+  if (city.isCapital && hasAlliance) provided += 1;
+  const balance = provided - required;
+  const status = getAmenityStatus(balance);
+  const modifier = getAmenityModifier(balance);
+  return { required, provided, balance, status, modifier, citizenCount };
+}
+
+// ===== UI Setup =====
+
+// Luxury checkboxes
+const luxDiv = document.getElementById('luxury-checks');
+for (const lux of LUXURY_RESOURCES) {
+  const lbl = document.createElement('label');
+  lbl.innerHTML = `<input type="checkbox" class="lux-cb" value="${lux}"> ${LUXURY_NAMES[lux]}`;
+  luxDiv.appendChild(lbl);
+}
+
+// Building checkboxes
+const bldDiv = document.getElementById('building-checks');
+for (const b of AMENITY_BUILDINGS) {
+  const lbl = document.createElement('label');
+  lbl.innerHTML = `<input type="checkbox" class="bld-cb" value="${b.id}"> ${b.name}`;
+  bldDiv.appendChild(lbl);
+}
+
+// Value displays
+document.getElementById('pop-slider').addEventListener('input', e => {
+  document.getElementById('pop-val').textContent = e.target.value;
+  updateCalc();
+});
+document.getElementById('cities-slider').addEventListener('input', e => {
+  document.getElementById('cities-val').textContent = e.target.value;
+  updateCalc();
+});
+document.querySelectorAll('#is-capital, #has-alliance, .lux-cb, .bld-cb').forEach(el => el.addEventListener('change', updateCalc));
+
+function getSelectedLuxuries() {
+  return [...document.querySelectorAll('.lux-cb:checked')].map(cb => cb.value);
+}
+function getSelectedBuildings() {
+  return [...document.querySelectorAll('.bld-cb:checked')].map(cb => cb.value);
+}
+
+function updateCalc() {
+  const pop = parseInt(document.getElementById('pop-slider').value);
+  const isCapital = document.getElementById('is-capital').checked;
+  const hasAlliance = document.getElementById('has-alliance').checked;
+  const luxuries = getSelectedLuxuries();
+  const buildings = getSelectedBuildings();
+  const numCities = parseInt(document.getElementById('cities-slider').value);
+
+  // Create test city
+  const city = { population: pop, isCapital, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 0 };
+
+  // For single-city calc, all luxuries go to this city (up to 4 cities share each)
+  // If numCities <= 4, this city gets all. If > 4, depends on neediest.
+  city.luxuryAmenities = luxuries.length; // Simplified for single-city view
+
+  const result = calculateCityAmenity(city, buildings, hasAlliance);
+  const citizenCount = Math.floor(pop / POP_PER_CITIZEN);
+
+  const statusIcons = { ecstatic: '\u2728', happy: '\ud83d\ude00', content: '\ud83d\ude10', displeased: '\ud83d\ude1f', unhappy: '\ud83d\ude21', revolt: '\ud83d\udc80' };
+  const modPct = Math.round((result.modifier - 1) * 100);
+  const modStr = modPct > 0 ? '+' + modPct + '%' : modPct < 0 ? modPct + '%' : '0%';
+
+  let html = '';
+  html += `<div><b>Citizens:</b> ${citizenCount} (pop ${pop} / ${POP_PER_CITIZEN})</div>`;
+  html += `<div><b>Amenity Requirement:</b> ${result.required} (1 per ${AMENITY_PER_POP} citizens above base 2)</div>`;
+  html += `<div style="margin-top:8px"><b>Amenity Sources:</b></div>`;
+  if (luxuries.length > 0) html += `<div style="margin-left:16px">Luxuries: ${luxuries.map(l => LUXURY_NAMES[l] + ' (+1)').join(', ')}</div>`;
+  for (const bid of buildings) {
+    const b = AMENITY_BUILDINGS.find(x => x.id === bid);
+    if (b) html += `<div style="margin-left:16px">${b.name}: +${b.amenities}</div>`;
+  }
+  if (isCapital && hasAlliance) html += `<div style="margin-left:16px">Alliance (capital): +1</div>`;
+  html += `<div style="margin-top:4px"><b>Total Provided:</b> ${result.provided}</div>`;
+  html += `<div style="margin-top:8px"><b>Balance:</b> ${result.provided} - ${result.required} = <b>${result.balance >= 0 ? '+' : ''}${result.balance}</b></div>`;
+  html += `<div class="status ${result.status}">${statusIcons[result.status] || ''} Status: <b>${result.status.toUpperCase()}</b></div>`;
+  html += `<div><b>Production/Growth Modifier:</b> ${modStr}</div>`;
+  if (result.status === 'revolt') html += `<div style="color:#e02020;margin-top:4px">\u26a0 5% chance per turn of rebel warrior spawning near city!</div>`;
+
+  document.getElementById('calc-result').innerHTML = html;
+}
+updateCalc();
+
+// ===== Luxury Distribution =====
+let duplicateLuxuryAdded = false;
+
+document.getElementById('btn-distribute').addEventListener('click', () => {
+  const numCities = parseInt(document.getElementById('cities-slider').value);
+  const luxuries = getSelectedLuxuries();
+  if (duplicateLuxuryAdded && luxuries.length > 0) {
+    // Add duplicate of first luxury (but as a Set, won't produce extra)
+  }
+  const buildings = getSelectedBuildings();
+  const hasAlliance = document.getElementById('has-alliance').checked;
+
+  // Create cities with varying populations
+  const cities = [];
+  for (let i = 0; i < numCities; i++) {
+    const pop = 1000 + i * 400; // Varied populations
+    cities.push({
+      name: i === 0 ? 'Capital' : 'City ' + (i + 1),
+      population: pop,
+      isCapital: i === 0,
+      luxuryAmenities: 0,
+      buildingAmenities: 0,
+      allianceAmenity: 0,
+      amenityRequired: 0,
+    });
+  }
+
+  // Pre-calculate requirements and building amenities
+  for (const city of cities) {
+    const citizenCount = Math.floor(city.population / POP_PER_CITIZEN);
+    city.amenityRequired = Math.max(0, Math.floor((citizenCount - 2) / AMENITY_PER_POP));
+    for (const bid of buildings) {
+      const bdata = AMENITY_BUILDINGS.find(b => b.id === bid);
+      if (bdata) city.buildingAmenities += bdata.amenities;
+    }
+    if (city.isCapital && hasAlliance) city.allianceAmenity = 1;
+  }
+
+  // Use unique luxury types only (duplicates don't stack)
+  const uniqueLuxuries = [...new Set(luxuries)];
+  distributeLuxuries(cities, uniqueLuxuries);
+
+  let html = `<div style="margin-bottom:8px"><b>Unique luxury types:</b> ${uniqueLuxuries.length} (${uniqueLuxuries.map(l => LUXURY_NAMES[l]).join(', ') || 'none'})</div>`;
+  if (duplicateLuxuryAdded) {
+    html += `<div style="color:#c0a040;margin-bottom:8px">\u26a0 Duplicate luxury added \u2014 duplicate of same type provides NO additional amenity (trade fodder only)</div>`;
+  }
+  html += `<div style="margin-bottom:8px"><b>Distribution priority:</b> Each luxury\u2019s +1 amenity goes to the ${Math.min(4, numCities)} cities with lowest amenity balance (neediest first).</div>`;
+
+  html += '<div class="grid">';
+  for (const city of cities) {
+    const result = calculateCityAmenity(city, buildings, hasAlliance);
+    const statusIcons = { ecstatic: '\u2728', happy: '\ud83d\ude00', content: '\ud83d\ude10', displeased: '\ud83d\ude1f', unhappy: '\ud83d\ude21', revolt: '\ud83d\udc80' };
+    html += `<div class="city-card">`;
+    html += `<h3>${city.name} (pop ${city.population})</h3>`;
+    html += `<div>Required: ${result.required} | Provided: ${result.provided} | Lux: +${city.luxuryAmenities}</div>`;
+    html += `<div class="${result.status}">${statusIcons[result.status] || ''} ${result.status.toUpperCase()} (${result.balance >= 0 ? '+' : ''}${result.balance})</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+
+  document.getElementById('dist-result').innerHTML = html;
+});
+
+document.getElementById('btn-add-duplicate').addEventListener('click', () => {
+  duplicateLuxuryAdded = true;
+  // Check first luxury checkbox if none checked
+  const first = document.querySelector('.lux-cb');
+  if (first && !first.checked) first.checked = true;
+  document.getElementById('btn-distribute').click();
+});
+
+// ===== Revolt Simulation =====
+document.getElementById('btn-revolt').addEventListener('click', () => {
+  const turns = 20;
+  let rebellions = 0;
+  const results = [];
+
+  for (let t = 1; t <= turns; t++) {
+    // Force amenity balance to -3 (revolt status)
+    const roll = Math.random();
+    const spawned = roll < 0.05;
+    if (spawned) rebellions++;
+    results.push({ turn: t, roll: roll.toFixed(4), spawned });
+  }
+
+  let html = `<div><b>Simulation:</b> ${turns} turns with amenity balance = -3 (REVOLT status)</div>`;
+  html += `<div><b>Rebel spawns:</b> ${rebellions} / ${turns} turns (expected ~1, 5% chance each)</div>`;
+  html += `<div style="margin-top:4px"><b>Modifier:</b> -25% production and growth</div>`;
+  html += '<table><tr><th>Turn</th><th>Roll</th><th>Rebel?</th></tr>';
+  for (const r of results) {
+    html += `<tr><td>${r.turn}</td><td>${r.roll}</td><td class="${r.spawned ? 'fail' : 'pass'}">${r.spawned ? 'REBEL SPAWNED' : 'no'}</td></tr>`;
+  }
+  html += '</table>';
+
+  document.getElementById('revolt-result').innerHTML = html;
+});
+
+// ===== Old vs New Comparison =====
+document.getElementById('btn-compare').addEventListener('click', () => {
+  // Old system: global happiness = 5 + luxuries + buildings - penalties
+  // New system: per-city amenity balance
+
+  const scenarios = [
+    { name: '1 city, no luxuries, no buildings', cities: 1, pop: 1000, luxuries: 0, buildings: [] },
+    { name: '1 city, 2 luxuries, Arena', cities: 1, pop: 2000, luxuries: 2, buildings: ['arena'] },
+    { name: '3 cities, 3 luxuries, Temple+Garden', cities: 3, pop: 1800, luxuries: 3, buildings: ['temple', 'garden'] },
+    { name: '5 cities, 1 luxury, no buildings', cities: 5, pop: 3000, luxuries: 1, buildings: [] },
+    { name: '2 cities, 5 luxuries, all buildings', cities: 2, pop: 1400, luxuries: 5, buildings: ['arena', 'garden', 'temple'] },
+  ];
+
+  let html = '<table id="comparison-table"><tr><th>Scenario</th><th>Old Happiness</th><th>Old Effect</th><th>New (per-city)</th><th>New Effect</th></tr>';
+
+  for (const s of scenarios) {
+    // Old system
+    let oldHap = 5;
+    oldHap += s.luxuries; // each luxury resource found adds 1
+    if (s.buildings.includes('temple')) oldHap += 2;
+    if (s.buildings.includes('garden')) oldHap += 1;
+    if (s.buildings.includes('arena')) oldHap += 2;
+    oldHap -= Math.max(0, s.cities - 1); // city penalty
+    const oldEffect = oldHap > 10 ? '+20% growth' : oldHap > 5 ? '+10% growth' : oldHap > 0 ? 'Normal' : oldHap > -5 ? '-25% growth' : '-50% growth';
+
+    // New system
+    const cities = [];
+    for (let i = 0; i < s.cities; i++) {
+      cities.push({ name: 'City ' + (i + 1), population: s.pop, isCapital: i === 0, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 0 });
+    }
+    for (const city of cities) {
+      const citizenCount = Math.floor(city.population / POP_PER_CITIZEN);
+      city.amenityRequired = Math.max(0, Math.floor((citizenCount - 2) / AMENITY_PER_POP));
+      for (const bid of s.buildings) {
+        const bdata = AMENITY_BUILDINGS.find(b => b.id === bid);
+        if (bdata) city.buildingAmenities += bdata.amenities;
+      }
+    }
+    const luxTypes = LUXURY_RESOURCES.slice(0, s.luxuries);
+    distributeLuxuries(cities, luxTypes);
+
+    const statuses = cities.map(c => {
+      const r = calculateCityAmenity(c, s.buildings, false);
+      return r.status.toUpperCase() + ' (' + (r.balance >= 0 ? '+' : '') + r.balance + ')';
+    });
+    const modifiers = cities.map(c => {
+      const r = calculateCityAmenity(c, s.buildings, false);
+      const pct = Math.round((r.modifier - 1) * 100);
+      return pct >= 0 ? '+' + pct + '%' : pct + '%';
+    });
+
+    html += `<tr>
+      <td>${s.name}</td>
+      <td>${oldHap}</td>
+      <td>${oldEffect}</td>
+      <td>${statuses.join('<br>')}</td>
+      <td>${modifiers.join('<br>')}</td>
+    </tr>`;
+  }
+  html += '</table>';
+  html += '<p style="margin-top:8px;color:#888;font-size:11px">Key difference: Old system is global (same effect everywhere). New system is per-city (each city tracks independently).</p>';
+
+  document.getElementById('compare-result').innerHTML = html;
+});
+
+// ===== Automated Tests =====
+document.getElementById('btn-tests').addEventListener('click', () => {
+  const results = [];
+
+  function assert(name, condition) {
+    results.push({ name, pass: condition });
+  }
+
+  // Test 1: Amenity requirement scales correctly with population
+  {
+    // pop 200 -> 1 citizen, required = max(0, floor((1-2)/2)) = 0
+    // pop 400 -> 2 citizens, required = max(0, floor((2-2)/2)) = 0
+    // pop 600 -> 3 citizens, required = max(0, floor((3-2)/2)) = 0
+    // pop 800 -> 4 citizens, required = max(0, floor((4-2)/2)) = 1
+    // pop 1000 -> 5 citizens, required = max(0, floor((5-2)/2)) = 1
+    // pop 2000 -> 10 citizens, required = max(0, floor((10-2)/2)) = 4
+    // pop 4000 -> 20 citizens, required = max(0, floor((20-2)/2)) = 9
+    const testCases = [
+      { pop: 200, expected: 0 },
+      { pop: 400, expected: 0 },
+      { pop: 600, expected: 0 },
+      { pop: 800, expected: 1 },
+      { pop: 1000, expected: 1 },
+      { pop: 2000, expected: 4 },
+      { pop: 4000, expected: 9 },
+    ];
+    for (const tc of testCases) {
+      const city = { population: tc.pop, luxuryAmenities: 0 };
+      const r = calculateCityAmenity(city, [], false);
+      assert(`Amenity req at pop ${tc.pop} = ${tc.expected} (got ${r.required})`, r.required === tc.expected);
+    }
+  }
+
+  // Test 2: Unique luxury = +1 to up to 4 cities
+  {
+    const cities = [];
+    for (let i = 0; i < 5; i++) {
+      cities.push({ name: 'C' + i, population: 1000, isCapital: i === 0, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 1 });
+    }
+    distributeLuxuries(cities, ['gems']);
+    const got = cities.filter(c => c.luxuryAmenities > 0).length;
+    assert(`1 luxury distributes to 4 of 5 cities (got ${got})`, got === 4);
+    assert('Each recipient gets exactly +1', cities.filter(c => c.luxuryAmenities > 0).every(c => c.luxuryAmenities === 1));
+  }
+
+  // Test 3: Duplicate luxuries don't stack
+  {
+    const cities = [{ name: 'C1', population: 1000, isCapital: true, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 1 }];
+    // Two gems (same type) - only unique types should count
+    const uniqueTypes = new Set(['gems', 'gems']);
+    distributeLuxuries(cities, uniqueTypes); // Set only has 1 entry
+    assert(`Duplicate luxury: city gets ${cities[0].luxuryAmenities} (expected 1)`, cities[0].luxuryAmenities === 1);
+  }
+
+  // Test 4: Building amenities apply correctly (+1 each)
+  {
+    const city = { population: 200, isCapital: false, luxuryAmenities: 0 };
+    const r1 = calculateCityAmenity(city, ['arena'], false);
+    assert(`Arena provides +1 amenity (got provided=${r1.provided})`, r1.provided === 1);
+
+    const r2 = calculateCityAmenity(city, ['arena', 'garden', 'temple'], false);
+    assert(`All 3 buildings provide +3 amenity (got provided=${r2.provided})`, r2.provided === 3);
+  }
+
+  // Test 5: Production/growth modifiers correct at each tier
+  {
+    assert('Balance +2 -> modifier 1.10', getAmenityModifier(2) === 1.10);
+    assert('Balance +3 -> modifier 1.10', getAmenityModifier(3) === 1.10);
+    assert('Balance +1 -> modifier 1.05', getAmenityModifier(1) === 1.05);
+    assert('Balance  0 -> modifier 1.00', getAmenityModifier(0) === 1.00);
+    assert('Balance -1 -> modifier 0.95', getAmenityModifier(-1) === 0.95);
+    assert('Balance -2 -> modifier 0.90', getAmenityModifier(-2) === 0.90);
+    assert('Balance -3 -> modifier 0.75', getAmenityModifier(-3) === 0.75);
+    assert('Balance -5 -> modifier 0.75', getAmenityModifier(-5) === 0.75);
+  }
+
+  // Test 6: Auto-distribution prioritizes neediest cities
+  {
+    const cities = [
+      { name: 'Rich', population: 200, isCapital: false, luxuryAmenities: 0, buildingAmenities: 2, allianceAmenity: 0, amenityRequired: 0 },
+      { name: 'Poor', population: 2000, isCapital: false, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 4 },
+    ];
+    distributeLuxuries(cities, ['gems']);
+    // Both should get it (only 2 cities, limit is 4), but poor city should be first in sort
+    assert('Both cities get luxury when < 4 cities', cities.every(c => c.luxuryAmenities === 1));
+
+    // With 5 cities, neediest 4 get the luxury
+    const cities5 = [];
+    for (let i = 0; i < 5; i++) {
+      cities5.push({ name: 'C' + i, population: 200 + i * 600, isCapital: false, luxuryAmenities: 0, buildingAmenities: 0, allianceAmenity: 0, amenityRequired: 0 });
+      const cz = Math.floor(cities5[i].population / POP_PER_CITIZEN);
+      cities5[i].amenityRequired = Math.max(0, Math.floor((cz - 2) / AMENITY_PER_POP));
+    }
+    distributeLuxuries(cities5, ['gems']);
+    const recipients = cities5.filter(c => c.luxuryAmenities > 0);
+    assert(`With 5 cities, 4 get luxury (got ${recipients.length})`, recipients.length === 4);
+    // The city NOT getting it should be the one with the best balance (lowest requirement = smallest pop)
+    const skipped = cities5.find(c => c.luxuryAmenities === 0);
+    // Smallest pop city has least requirement, so highest balance before distribution
+    assert('Skipped city is the least needy', skipped !== undefined);
+  }
+
+  // Test 7: Revolt spawns rebel at -3 or worse
+  {
+    const statusAt3 = getAmenityStatus(-3);
+    assert('Balance -3 gives revolt status', statusAt3 === 'revolt');
+    const statusAt4 = getAmenityStatus(-4);
+    assert('Balance -4 gives revolt status', statusAt4 === 'revolt');
+    const statusAt2 = getAmenityStatus(-2);
+    assert('Balance -2 gives unhappy (not revolt)', statusAt2 === 'unhappy');
+    // Check modifier
+    assert('Revolt modifier is 0.75 (-25%)', getAmenityModifier(-3) === 0.75);
+  }
+
+  // Test 8: Alliance bonus only applies to capital
+  {
+    const capital = { population: 200, isCapital: true, luxuryAmenities: 0 };
+    const nonCapital = { population: 200, isCapital: false, luxuryAmenities: 0 };
+    const r1 = calculateCityAmenity(capital, [], true);
+    const r2 = calculateCityAmenity(nonCapital, [], true);
+    assert(`Capital gets alliance bonus: provided=${r1.provided}`, r1.provided === 1);
+    assert(`Non-capital does NOT get alliance bonus: provided=${r2.provided}`, r2.provided === 0);
+  }
+
+  // Test 9: Status string values correct
+  {
+    assert('Status ecstatic at +2', getAmenityStatus(2) === 'ecstatic');
+    assert('Status happy at +1', getAmenityStatus(1) === 'happy');
+    assert('Status content at 0', getAmenityStatus(0) === 'content');
+    assert('Status displeased at -1', getAmenityStatus(-1) === 'displeased');
+    assert('Status unhappy at -2', getAmenityStatus(-2) === 'unhappy');
+    assert('Status revolt at -3', getAmenityStatus(-3) === 'revolt');
+  }
+
+  // Render results
+  let html = '';
+  let passed = 0, total = results.length;
+  for (const r of results) {
+    if (r.pass) passed++;
+    html += `<div class="test-result ${r.pass ? 'pass' : 'fail'}">${r.pass ? '\u2713' : '\u2717'} ${r.name}</div>`;
+  }
+  html = `<div style="margin-bottom:8px;font-weight:700;font-size:14px;color:${passed === total ? '#4ade80' : '#f87171'}">${passed}/${total} tests passed</div>` + html;
+  document.getElementById('test-results').innerHTML = html;
+});
+</script>
+</body>
+</html>

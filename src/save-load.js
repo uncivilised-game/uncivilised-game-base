@@ -45,14 +45,18 @@ function migrateTiles(state) {
   if (state.cities) {
     for (const city of state.cities) {
       if (city.food === undefined) city.food = 0;
-      if (city.amenityBalance === undefined) city.amenityBalance = 0;
-      if (city.amenityStatus === undefined) city.amenityStatus = 'CONTENT';
-      if (city.amenityMod === undefined) city.amenityMod = 0;
+      if (city.luxuryAmenities === undefined) city.luxuryAmenities = 0;
+      if (city.buildingAmenities === undefined) city.buildingAmenities = 0;
+      if (city.allianceAmenity === undefined) city.allianceAmenity = 0;
       if (city.amenityRequired === undefined) city.amenityRequired = 0;
-      if (city.amenityFromLuxuries === undefined) city.amenityFromLuxuries = 0;
-      if (city.amenityFromBuildings === undefined) city.amenityFromBuildings = 0;
-      if (city.amenityFromAlliance === undefined) city.amenityFromAlliance = 0;
+      if (city.amenityProvided === undefined) city.amenityProvided = 0;
+      if (city.amenityBalance === undefined) city.amenityBalance = 0;
+      if (city.amenityStatus === undefined) city.amenityStatus = 'content';
+      if (city.amenityModifier === undefined) city.amenityModifier = 1.0;
+      if (city.isCapital === undefined) city.isCapital = false;
     }
+    // First city is always capital
+    if (state.cities.length > 0) state.cities[0].isCapital = true;
   }
   if (!state.aiFactions) state.aiFactions = {};
   if (!state.aiFactionCities) state.aiFactionCities = {};

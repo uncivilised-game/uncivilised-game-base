@@ -306,6 +306,21 @@ function showCityPanel(cityData) {
       const pct = Math.floor((game.buildProgress / bdata.cost) * 100);
       body += `<p style="color:var(--color-gold)">Building: ${bdata.name} (${pct}%)</p>`;
     }
+    // Amenity status display
+    const aStatus = cityData.amenityStatus || 'content';
+    const aIcons = { ecstatic: '\u2728', happy: '\u{1F600}', content: '\u{1F610}', displeased: '\u{1F61F}', unhappy: '\u{1F621}', revolt: '\u{1F480}' };
+    const aColors = { ecstatic: '#ffd700', happy: '#60c060', content: '#888', displeased: '#c0a040', unhappy: '#c06040', revolt: '#e02020' };
+    const aBal = cityData.amenityBalance || 0;
+    const aProv = cityData.amenityProvided || 0;
+    const aReq = cityData.amenityRequired || 0;
+    const aLabel = aStatus.charAt(0).toUpperCase() + aStatus.slice(1);
+    body += `<p style="color:${aColors[aStatus] || '#888'};font-size:12px;margin-top:4px">${aIcons[aStatus] || ''} Amenities: ${aProv} provided / ${aReq} required (${aBal >= 0 ? '+' : ''}${aBal} ${aLabel})</p>`;
+    // Source breakdown
+    let aSrcs = [];
+    if (cityData.luxuryAmenities > 0) aSrcs.push('Luxuries +' + cityData.luxuryAmenities);
+    if (cityData.buildingAmenities > 0) aSrcs.push('Buildings +' + cityData.buildingAmenities);
+    if (cityData.allianceAmenity > 0) aSrcs.push('Alliance +1');
+    if (aSrcs.length > 0) body += `<p style="color:#777;font-size:10px">${aSrcs.join(', ')}</p>`;
     body += `<div style="margin-top:8px"><button class="sel-btn" onclick="togglePanel('build-panel')">Production</button></div>`;
   } else {
     const faction = FACTIONS[cityData.owner];
@@ -555,28 +570,33 @@ function renderVictoryPanel() {
       c.innerHTML += '<div style="padding:3px 0;font-size:12px"><button class="sel-btn" style="font-size:10px;width:100%;text-align:left" onclick="establishTradeRoute(\'' + fid + '\');renderVictoryPanel()">\u{1F6A2} Trade with ' + fname + '</button></div>';
     }
   }
-  // Amenity section (per-city)
+  // Per-city amenity section
+  const amenityIcons = { ecstatic: '\u2728', happy: '\u{1F600}', content: '\u{1F610}', displeased: '\u{1F61F}', unhappy: '\u{1F621}', revolt: '\u{1F480}' };
+  const amenityColors = { ecstatic: '#ffd700', happy: '#60c060', content: '#888', displeased: '#c0a040', unhappy: '#c06040', revolt: '#e02020' };
   c.innerHTML += '<p style="color:#60c060;margin-top:12px;margin-bottom:4px;font-size:13px;font-weight:600;border-bottom:1px solid rgba(96,192,96,0.3);padding-bottom:3px">City Amenities</p>';
   for (const city of game.cities) {
     const bal = city.amenityBalance || 0;
-    const status = city.amenityStatus || 'CONTENT';
-    const statusColors = { ECSTATIC: '#40e040', HAPPY: '#60c060', CONTENT: '#c0c060', DISPLEASED: '#c0a040', UNHAPPY: '#c06040', REVOLT_RISK: '#e02020' };
-    const statusEmojis = { ECSTATIC: '\u{1F929}', HAPPY: '\u{1F600}', CONTENT: '\u{1F610}', DISPLEASED: '\u{1F61F}', UNHAPPY: '\u{1F621}', REVOLT_RISK: '\u{1F525}' };
-    const modPct = Math.round((city.amenityMod || 0) * 100);
+    const status = city.amenityStatus || 'content';
+    const provided = city.amenityProvided || 0;
+    const required = city.amenityRequired || 0;
+    const icon = amenityIcons[status] || '\u{1F610}';
+    const color = amenityColors[status] || '#888';
+    const modPct = Math.round(((city.amenityModifier || 1.0) - 1) * 100);
     const modStr = modPct > 0 ? '+' + modPct + '%' : modPct < 0 ? modPct + '%' : '';
-    const emoji = statusEmojis[status] || '\u{1F610}';
-    const color = statusColors[status] || '#c0c060';
-    c.innerHTML += '<div style="padding:2px 0;font-size:11px">' + emoji + ' <b>' + city.name + '</b>: <span style="color:' + color + '">' + status + '</span> (bal ' + (bal >= 0 ? '+' : '') + bal + ')' + (modStr ? ' <span style="color:#888">' + modStr + ' growth/prod</span>' : '') + '</div>';
+    const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+    c.innerHTML += '<div style="padding:3px 0;font-size:11px">';
+    c.innerHTML += icon + ' <b>' + city.name + '</b>: <span style="color:' + color + '">' + statusLabel + '</span>';
+    c.innerHTML += ' <span style="color:#aaa">(' + provided + ' provided / ' + required + ' required';
+    c.innerHTML += (bal >= 0 ? ', +' : ', ') + bal + ')</span>';
+    if (modStr) c.innerHTML += ' <span style="color:#888">' + modStr + ' growth/prod</span>';
+    // Source breakdown
+    let srcs = [];
+    if (city.luxuryAmenities > 0) srcs.push('Luxury: +' + city.luxuryAmenities);
+    if (city.buildingAmenities > 0) srcs.push('Buildings: +' + city.buildingAmenities);
+    if (city.allianceAmenity > 0) srcs.push('Alliance: +1');
+    if (srcs.length > 0) c.innerHTML += '<div style="color:#777;font-size:10px;margin-left:16px">' + srcs.join(', ') + '</div>';
+    c.innerHTML += '</div>';
   }
-  // Summary of amenity sources
-  const luxCount = new Set();
-  for (const city of game.cities) { if (city.amenityFromLuxuries > 0) luxCount.add(city); }
-  const buildingAmenities = ['arena', 'garden', 'temple'].filter(b => game.buildings.includes(b));
-  const hasAlliance = Object.keys(game.activeAlliances || {}).length > 0;
-  let sources = [];
-  if (buildingAmenities.length > 0) sources.push('Buildings: ' + buildingAmenities.join(', '));
-  if (hasAlliance) sources.push('Alliance: +1 capital');
-  if (sources.length > 0) c.innerHTML += '<p style="color:#888;font-size:10px;margin-top:4px">' + sources.join(' | ') + '</p>';
 }
 
 function toggleVictoryPanel() {

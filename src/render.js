@@ -726,6 +726,15 @@ function render() {
     ctx.shadowBlur = 3;
     ctx.fillText(city.name, sx, sy - 18);
     ctx.shadowBlur = 0;
+
+    // Amenity status dot on city banner
+    const amenityDotColors = { ecstatic: '#ffd700', happy: '#60c060', content: '#888', displeased: '#c0a040', unhappy: '#c06040', revolt: '#e02020' };
+    const dotColor = amenityDotColors[city.amenityStatus] || '#888';
+    const nameWidth = ctx.measureText(city.name).width;
+    ctx.beginPath();
+    ctx.arc(sx + nameWidth / 2 + 6, sy - 21, 3, 0, Math.PI * 2);
+    ctx.fillStyle = dotColor;
+    ctx.fill();
   }
 
   // Draw units
