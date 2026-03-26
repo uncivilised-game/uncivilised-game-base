@@ -15,6 +15,8 @@ function migrateTiles(state) {
       if (!u.promotions) u.promotions = [];
       if (u.pendingPromotion === undefined) u.pendingPromotion = false;
       if (u.hasAttackedThisTurn === undefined) u.hasAttackedThisTurn = false;
+      // Backfill build charges for workers
+      if (u.type === 'worker' && u.buildCharges === undefined) u.buildCharges = 2;
     }
   }
 
