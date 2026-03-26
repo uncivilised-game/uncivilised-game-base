@@ -143,9 +143,18 @@ export function processImprovements() {
           }
         }
 
-        // Wake the worker
+        // Wake the worker and decrement build charges
         const worker = game.units.find(u => u.id === builder.unitId);
-        if (worker) { worker.sleeping = false; }
+        if (worker) {
+          worker.sleeping = false;
+          if (typeof worker.buildCharges === 'number') {
+            worker.buildCharges--;
+            if (worker.buildCharges <= 0) {
+              game.units = game.units.filter(u => u.id !== worker.id);
+              addEvent('Worker exhausted all build charges and was consumed', 'gold');
+            }
+          }
+        }
 
         tile.improvementBuilder = null;
         showCompletionNotification('improvement', imp.name, imp.desc);
@@ -184,7 +193,9 @@ export function showWorkerActions(unitOrId) {
   const available = getAvailableImprovements(unit.col, unit.row);
 
   const panel = document.getElementById('selection-panel');
-  let html = `<div class="panel-header"><h3>👷 Worker Actions</h3><button class="panel-close" onclick="hideSelectionPanel()">&times;</button></div>`;
+  const charges = typeof unit.buildCharges === 'number' ? unit.buildCharges : '?';
+  const chargeColor = charges === 1 ? '#e0a030' : charges === 0 ? '#d9534f' : '#aaa';
+  let html = `<div class="panel-header"><h3>👷 Worker Actions</h3><span style="color:${chargeColor};font-size:12px;margin-left:8px">${charges} charge${charges !== 1 ? 's' : ''} left</span><button class="panel-close" onclick="hideSelectionPanel()">&times;</button></div>`;
   html += `<div class="panel-body" style="padding:8px">`;
 
   // Show current improvement if building
