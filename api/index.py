@@ -1713,7 +1713,8 @@ async def db_proxy(path: str, request: Request):
         return {"error": "Access denied"}, 403
 
     try:
-        url = f"{_SB_REST}/{path}"
+        query_string = request.url.query
+        url = f"{_SB_REST}/{path}?{query_string}" if query_string else f"{_SB_REST}/{path}"
         headers = dict(_SB_HEADERS)
         # Forward Prefer header if present
         prefer = request.headers.get("prefer")

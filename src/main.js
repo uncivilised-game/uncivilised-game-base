@@ -342,7 +342,7 @@ async function continueGame() {
   }
 
   const loaded = await loadGame();
-  if (loaded) {
+  if (loaded && game) {
     document.getElementById('title-screen').classList.remove('active');
     document.getElementById('game-screen').classList.add('active');
     resizeCanvas();

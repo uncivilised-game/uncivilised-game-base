@@ -6,6 +6,7 @@ import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 
 export function addEvent(text, type = '') {
+  if (!game) return;
   const container = document.getElementById('event-log-messages');
   const msg = document.createElement('div');
   msg.className = `event-msg ${type}`;
