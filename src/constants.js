@@ -62,6 +62,11 @@ export let UNIT_TYPES = {
 };
 
 // ============================================
+// ZONE OF CONTROL — civilian units don't project ZOC (but are still affected by it)
+// ============================================
+export const ZOC_EXEMPT_CLASSES = ['civilian'];
+
+// ============================================
 // UNIT UPGRADE PATHS
 // ============================================
 export const UNIT_UPGRADES = {

@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS } from './constants.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
@@ -6,7 +6,7 @@ import { addEvent, logAction } from './events.js';
 import { render } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
-import { deselectUnit, autoSelectNext } from './units.js';
+import { deselectUnit, autoSelectNext, isInEnemyZOC } from './units.js';
 import { updateUI } from './leaderboard.js';
 import { showToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
@@ -662,6 +662,49 @@ function applyTacticModifier(tactic, atkPower, defPower, attacker, defender) {
   return { atkMod, defMod, narrative, retreat: false };
 }
 
+// ============================================
+// ZONE OF CONTROL — Civilian Capture
+// ============================================
+// Called at the start of each turn. Civilians (worker/settler) in enemy ZOC
+// without an adjacent friendly military unit are captured (removed).
+function processZOCCaptures() {
+  const captured = [];
+  for (let i = game.units.length - 1; i >= 0; i--) {
+    const unit = game.units[i];
+    const ut = UNIT_TYPES[unit.type];
+    if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only civilians
+
+    if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;
+
+    // Check if there's a friendly military unit on same tile or adjacent
+    const hasEscort = game.units.some(u => {
+      if (u.owner !== unit.owner) return false;
+      if (u.id === unit.id) return false;
+      const uType = UNIT_TYPES[u.type];
+      if (!uType || ZOC_EXEMPT_CLASSES.includes(uType.class)) return false;
+      return hexDistance(u.col, u.row, unit.col, unit.row) <= 1;
+    });
+
+    if (!hasEscort) {
+      captured.push({ type: unit.type, owner: unit.owner, col: unit.col, row: unit.row });
+      game.units.splice(i, 1);
+    }
+  }
+
+  for (const c of captured) {
+    const name = UNIT_TYPES[c.type]?.name || c.type;
+    if (c.owner === 'player') {
+      addEvent(`${name} captured in enemy Zone of Control at (${c.col},${c.row})!`, 'combat');
+      showToast('Unit Captured!', `Your ${name} was captured — no military escort nearby.`);
+    } else {
+      addEvent(`Enemy ${name} captured in your Zone of Control!`, 'combat');
+    }
+    logAction('combat', `${name} captured in ZOC`, { owner: c.owner, col: c.col, row: c.row });
+  }
+
+  return captured;
+}
+
 export {
   resolveCombat,
   attackFactionCity,
@@ -679,4 +722,5 @@ export {
   getCityAt,
   showBattlePanel,
   applyTacticModifier,
+  processZOCCaptures,
 };

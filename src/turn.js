@@ -12,7 +12,7 @@ import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from 
 import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
-import { getUnitAt } from './combat.js';
+import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
@@ -40,6 +40,9 @@ function endTurn() {
 
   // --- Process AI first ---
   processAITurns();
+
+  // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
+  processZOCCaptures();
 
   // --- Reset player unit move points and process waypoints ---
   for (const unit of game.units) {
