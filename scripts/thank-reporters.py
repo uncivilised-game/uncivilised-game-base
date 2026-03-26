@@ -218,9 +218,9 @@ def thank_reporters_for_issue(issue_number, issue_title):
     return {"sent": sent, "skipped": skipped}
 
 
-# ── Find recently closed conviction issues ─────────────────────────
-def find_closed_conviction_issues():
-    """Fetch conviction-labeled issues closed in the last 7 days."""
+# ── Find closed conviction issues that were actually fixed ─────────
+def find_fixed_conviction_issues():
+    """Fetch conviction-labeled issues closed as 'completed' (not 'not_planned')."""
     issues = []
     page = 1
     while True:
@@ -233,6 +233,9 @@ def find_closed_conviction_issues():
             break
         for item in batch:
             if "pull_request" in item:
+                continue
+            # Skip issues closed as "not planned" — only thank for actual fixes
+            if item.get("state_reason") == "not_planned":
                 continue
             issues.append(item)
         if len(batch) < 50:
@@ -253,12 +256,15 @@ def run():
         # Single issue mode
         issue_number = int(issue_number)
         issue = gh_get(f"/repos/{GITHUB_REPO}/issues/{issue_number}")
+        if issue.get("state_reason") == "not_planned":
+            print(f"\nIssue #{issue_number} was closed as not planned — skipping.")
+            return
         result = thank_reporters_for_issue(issue_number, issue.get("title", "Unknown"))
         print(f"\nDone. Sent {result['sent']} emails, skipped {result['skipped']}.")
     else:
-        # Scan mode: find all closed conviction issues with unthanked reporters
-        print("\nScanning for closed conviction issues with unthanked reporters...")
-        issues = find_closed_conviction_issues()
+        # Scan mode: find all fixed conviction issues with unthanked reporters
+        print("\nScanning for fixed conviction issues with unthanked reporters...")
+        issues = find_fixed_conviction_issues()
         print(f"Found {len(issues)} closed conviction issues")
 
         total_sent = 0
