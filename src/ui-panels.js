@@ -98,9 +98,13 @@ function showSelectionPanel(unit) {
       if (unit.hp < 100) {
         html += `<button class="sel-btn" onclick="unitAction('heal')"><span>Heal</span><span class="sel-key">H</span></button>`;
       }
-      // Pillage: available if on a tile with an enemy improvement or neutral improvement
+      // Pillage: available if on a tile with an improvement/road NOT in player territory
       const pillTile = game.map[unit.row][unit.col];
-      const canPillage = pillTile && (pillTile.improvement || pillTile.road) && ut.combat > 0;
+      let isPlayerTile = false;
+      for (const pc of (game.cities || [])) {
+        if (hexDistance(unit.col, unit.row, pc.col, pc.row) <= (pc.borderRadius || 2)) { isPlayerTile = true; break; }
+      }
+      const canPillage = pillTile && (pillTile.improvement || pillTile.road) && ut.combat > 0 && !isPlayerTile;
       if (canPillage) {
         html += `<button class="sel-btn" style="border-color:#d9534f" onclick="unitAction('pillage')"><span>\u{1F525} Pillage</span><span class="sel-key">P</span></button>`;
       }
@@ -1260,10 +1264,11 @@ window.unitAction = function(action) {
         }
       }
       if (tileOwner) {
+        const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
+        const atWar = (game.relationships[tileOwner] || 0) <= -75;
         const hasPeace = game.ceasefires[tileOwner] || game.nonAggressionPacts[tileOwner] ||
                          game.activeAlliances[tileOwner] || game.defensePacts[tileOwner];
         if (hasPeace) {
-          const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
           const agreements = [];
           if (game.activeAlliances[tileOwner]) agreements.push('Alliance');
           if (game.defensePacts[tileOwner]) agreements.push('Defense Pact');
@@ -1287,6 +1292,18 @@ window.unitAction = function(action) {
           }
           addEvent('\u{26A0} Peace broken with ' + ownerName + '! (-50 relations, -10 with all others)', 'diplomacy');
           logAction('diplomacy', 'Broke peace with ' + ownerName + ' by pillaging', { factionId: tileOwner });
+        } else if (!atWar) {
+          const agreed = confirm(
+            'Pillaging ' + ownerName + '\'s territory is a surprise attack!\n\n' +
+            'This will declare war on ' + ownerName + '.\n\nProceed?'
+          );
+          if (!agreed) break;
+          game.relationships[tileOwner] = Math.min(-75, (game.relationships[tileOwner] || 0) - 50);
+          for (const fid of Object.keys(game.relationships)) {
+            if (fid !== tileOwner) game.relationships[fid] = (game.relationships[fid] || 0) - 10;
+          }
+          addEvent('\u{26A0} Surprise attack! War declared on ' + ownerName + '!', 'diplomacy');
+          logAction('diplomacy', 'Declared war on ' + ownerName + ' by pillaging', { factionId: tileOwner });
         }
       }
       let reward = '';
