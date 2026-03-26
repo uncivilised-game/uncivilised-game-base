@@ -380,15 +380,35 @@ export const GOVERNMENTS = {
 // WONDERS SYSTEM
 // ============================================
 export const WONDERS = [
-  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}' },
-  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}' },
-  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}' },
-  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}' },
-  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}' },
-  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}' },
-  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}' },
-  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}' },
+  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}', category: 'economic' },
+  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}', category: 'economic' },
+  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}', category: 'cultural' },
+  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}', category: 'cultural' },
+  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}', category: 'economic' },
+  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}', category: 'military' },
+  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}', category: 'economic' },
 ];
+
+// Wonder priorities per faction archetype — higher = more desired
+export const WONDER_PRIORITIES = {
+  cultural: {
+    oracle: 1.0, great_library: 0.9, hanging_gardens: 0.7,
+    colossus: 0.3, terracotta_army: 0.2, pyramids: 0.4, petra: 0.3, great_lighthouse: 0.4,
+  },
+  militaristic: {
+    terracotta_army: 1.0, colossus: 0.9, pyramids: 0.5,
+    oracle: 0.2, great_library: 0.3, hanging_gardens: 0.3, petra: 0.4, great_lighthouse: 0.5,
+  },
+  expansionist: {
+    pyramids: 1.0, petra: 0.9, hanging_gardens: 0.7,
+    great_lighthouse: 0.6, colossus: 0.5, oracle: 0.3, great_library: 0.3, terracotta_army: 0.5,
+  },
+  diplomatic: {
+    hanging_gardens: 1.0, oracle: 0.9, great_library: 0.7,
+    pyramids: 0.5, petra: 0.4, colossus: 0.3, terracotta_army: 0.2, great_lighthouse: 0.5,
+  },
+};
 
 export const BARBARIAN_UNITS = {
   barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee', desc: 'Basic barbarian raider' },

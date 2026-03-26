@@ -770,14 +770,26 @@ function renderBuildPanel() {
 
   for (const w of WONDERS) {
     const techOk = !w.requires || game.techs.includes(w.requires);
-    const alreadyBuilt = game.wonders.includes(w.id);
-    const canBuild = techOk && !alreadyBuilt && !prodBusy && !game.currentWonderBuild;
+    const alreadyBuiltByPlayer = game.wonders.includes(w.id);
+    const globallyBuilt = game.builtWonders && game.builtWonders[w.id];
+    const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt && !prodBusy && !game.currentWonderBuild;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
     div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
-    div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuilt ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + w.desc + (!techOk ? ' (needs tech)' : '') + '</div></div>'
+    let statusLabel = '';
+    if (globallyBuilt) {
+      const ownerFid = game.builtWonders[w.id];
+      const ownerName = ownerFid === 'player' ? 'You' : (FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid);
+      statusLabel = ' <span style="color:#e05050;font-size:10px">(Built by ' + ownerName + ')</span>';
+    } else if (!techOk) {
+      statusLabel = ' <span style="color:#888;font-size:10px">(needs tech)</span>';
+    }
+    div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuiltByPlayer ? ' \u2713' : '') + statusLabel + '</div>'
+      + '<div class="item-desc">' + w.desc + '</div></div>'
       + '<div class="item-cost" style="color:#ffd700">' + turns + 'T</div>';
+    if (globallyBuilt && !alreadyBuiltByPlayer) {
+      div.style.opacity = '0.4';
+    }
     if (canBuild) {
       div.addEventListener('click', ((wid) => () => {
         startWonderBuild(wid);
@@ -866,6 +878,13 @@ function cancelProduction() {
 
 function startWonderBuild(wonderId) {
   if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) return;
+  // Wonder exclusivity check
+  if (game.builtWonders && game.builtWonders[wonderId]) {
+    const ownerFid = game.builtWonders[wonderId];
+    const ownerName = ownerFid === 'player' ? 'You' : (FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid);
+    showToast('Cannot Build', 'This wonder has already been built by ' + ownerName);
+    return;
+  }
   game.currentWonderBuild = wonderId;
   game.wonderBuildProgress = 0;
   const wd = WONDERS.find(w => w.id === wonderId);

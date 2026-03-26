@@ -217,6 +217,7 @@ function createInitialState() {
     activeEvents: [], minorFactions: [], tribalVillages: tribalVillages,
     recentEvents: [], gameLog: [],
     aiCommitments: [], aiWonders: {},
+    builtWonders: {}, aiWonderProgress: {},
     fogOfWar: createFogOfWar(startCol, startRow),
     cameraX: 0, cameraY: 0, selectedHex: null,
     score: 0, gameId: Date.now(), factionsEliminated: 0,

@@ -48,6 +48,9 @@ realisticTerrainTileset.src = 'assets/terrain-tiles/hex_terrain_flat.png';
 // ============================================
 // GAME STATE
 // ============================================
+// Wonder race state fields (initialized in main.js createGameState):
+//   game.builtWonders = {}      — maps wonder_id to owner faction (e.g. { pyramids: 'player', oracle: 'pirate_queen_elara' })
+//   game.aiWonderProgress = {}  — maps faction_id to { wonderId, progress } for AI wonder building
 
 export let game = null;
 export function setGame(g) { game = g; }

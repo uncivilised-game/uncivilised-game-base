@@ -4,7 +4,8 @@ import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields } from './improvements.js';
-import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory } from './events.js';
+import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification } from './events.js';
+import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -43,6 +44,9 @@ function endTurn() {
 
   // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
   processZOCCaptures();
+
+  // --- AI Wonder Race production ---
+  processAIWonderTurns();
 
   // --- Reset player unit move points and process waypoints ---
   for (const unit of game.units) {
@@ -319,22 +323,37 @@ function endTurn() {
       }
     }
   } else if (game.currentWonderBuild) {
-    game.wonderBuildProgress += prodThisTurn;
-    const wdata = WONDERS.find(w => w.id === game.currentWonderBuild);
-    if (wdata && game.wonderBuildProgress >= wdata.cost) {
-      game.wonders.push(game.currentWonderBuild);
-      const eff = wdata.effect;
-      if (eff.food) game.foodPerTurn += eff.food;
-      if (eff.gold) game.goldPerTurn += eff.gold;
-      if (eff.science) game.sciencePerTurn += eff.science;
-      if (eff.production) game.productionPerTurn += eff.production;
-      if (eff.culture) game.culture += eff.culture;
-      events.push(wdata.icon + ' ' + wdata.name + ' completed!');
-      addEvent(wdata.icon + ' ' + wdata.name + ' completed!', 'gold');
+    // Check if another faction already completed this wonder (AI scooped it)
+    if (game.builtWonders[game.currentWonderBuild]) {
+      const scoopedW = WONDERS.find(w => w.id === game.currentWonderBuild);
+      const ownerFid = game.builtWonders[game.currentWonderBuild];
+      const ownerName = FACTIONS[ownerFid] ? FACTIONS[ownerFid].name : ownerFid;
+      const refundGold = Math.floor(game.wonderBuildProgress * 0.5);
+      game.gold += refundGold;
+      showWonderScoopedNotification(scoopedW ? scoopedW.name : game.currentWonderBuild, ownerName, refundGold);
       game.currentWonderBuild = null;
       game.wonderBuildProgress = 0;
-      showCompletionNotification('wonder', wdata.name, wdata.desc);
-      if (typeof showToast === 'function') showToast('\u{1F3DB} Wonder Complete', wdata.name + ' has been built!');
+    } else {
+      game.wonderBuildProgress += prodThisTurn;
+      const wdata = WONDERS.find(w => w.id === game.currentWonderBuild);
+      if (wdata && game.wonderBuildProgress >= wdata.cost) {
+        game.wonders.push(game.currentWonderBuild);
+        game.builtWonders[game.currentWonderBuild] = 'player';
+        const eff = wdata.effect;
+        if (eff.food) game.foodPerTurn += eff.food;
+        if (eff.gold) game.goldPerTurn += eff.gold;
+        if (eff.science) game.sciencePerTurn += eff.science;
+        if (eff.production) game.productionPerTurn += eff.production;
+        if (eff.culture) game.culture += eff.culture;
+        events.push(wdata.icon + ' ' + wdata.name + ' completed!');
+        addEvent(wdata.icon + ' ' + wdata.name + ' completed!', 'gold');
+        // Cancel AI factions building the same wonder and refund them
+        cancelAIWonderBuilders(game.currentWonderBuild, 'player');
+        game.currentWonderBuild = null;
+        game.wonderBuildProgress = 0;
+        showCompletionNotification('wonder', wdata.name, wdata.desc);
+        showToast('\u{1F3DB} Wonder Complete', wdata.name + ' has been built!');
+      }
     }
   }
 
