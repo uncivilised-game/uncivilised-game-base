@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
@@ -194,6 +194,49 @@ function endTurn() {
     }
   }
 
+  // --- Wall repair: +5 HP per turn if not attacked for 2 turns ---
+  for (const city of game.cities) {
+    // Initialize wall fields if building walls was just completed
+    if ((city.buildings || []).includes('walls') && !city.wallMaxHP) {
+      city.wallMaxHP = WALL_HP.ancient_walls;
+      if (city.wallHP === undefined) city.wallHP = WALL_HP.ancient_walls;
+    }
+    if (city.wallHP !== undefined && city.wallMaxHP > 0 && city.wallHP < city.wallMaxHP) {
+      const lastAttacked = city.wallLastAttackedTurn || -99;
+      if (game.turn - lastAttacked >= 2) {
+        const oldWallHP = city.wallHP;
+        city.wallHP = Math.min(city.wallMaxHP, city.wallHP + 5);
+        if (city.wallHP > oldWallHP) {
+          events.push(city.name + ' walls repaired (+' + (city.wallHP - oldWallHP) + ' wall HP)');
+        }
+      }
+    }
+  }
+  // Wall repair for faction cities
+  if (game.factionCities) {
+    for (const fc of Object.values(game.factionCities)) {
+      if (fc.wallHP !== undefined && fc.wallMaxHP > 0 && fc.wallHP < fc.wallMaxHP) {
+        const lastAttacked = fc.wallLastAttackedTurn || -99;
+        if (game.turn - lastAttacked >= 2) {
+          fc.wallHP = Math.min(fc.wallMaxHP, fc.wallHP + 5);
+        }
+      }
+    }
+  }
+  // Wall repair for AI expansion cities
+  if (game.aiFactionCities) {
+    for (const cities of Object.values(game.aiFactionCities)) {
+      for (const ec of cities) {
+        if (ec.wallHP !== undefined && ec.wallMaxHP > 0 && ec.wallHP < ec.wallMaxHP) {
+          const lastAttacked = ec.wallLastAttackedTurn || -99;
+          if (game.turn - lastAttacked >= 2) {
+            ec.wallHP = Math.min(ec.wallMaxHP, ec.wallHP + 5);
+          }
+        }
+      }
+    }
+  }
+
   // --- Process tile improvements ---
   processImprovements();
 
@@ -221,6 +264,15 @@ function endTurn() {
       if (eff.defense) game.defense += eff.defense;
       if (eff.production) game.productionPerTurn += eff.production;
       if (eff.culture) game.culture += eff.culture;
+      // Initialize wall HP when walls building completes
+      if (game.currentBuild === 'walls') {
+        const buildCity = game.cities[0]; // Primary city for global builds
+        if (buildCity) {
+          buildCity.wallMaxHP = WALL_HP.ancient_walls;
+          buildCity.wallHP = WALL_HP.ancient_walls;
+          buildCity.wallLastAttackedTurn = -99;
+        }
+      }
       events.push(`${bdata.name} completed!`);
       addEvent(`${bdata.name} completed!`, 'gold');
       game.currentBuild = null;

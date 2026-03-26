@@ -25,6 +25,12 @@ export const CITY_DEFENSE = {
   CAPTURE_MELEE_ONLY: true,
 };
 
+export const WALL_HP = {
+  ancient_walls: 50,
+};
+
+export const SIEGE_WALL_MULTIPLIER = 2.0;
+
 export const BASE_TERRAIN = {
   ocean:     { name: 'Ocean',     baseColor: '#0e2a42', food: 1, prod: 0, gold: 0, movable: false, moveCost: 99, group: 'water' },
   coast:     { name: 'Coast',     baseColor: '#184060', food: 1, prod: 0, gold: 1, movable: false, moveCost: 99, group: 'water' },

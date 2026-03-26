@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY } from './constants.js';
+import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY, WALL_HP } from './constants.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
 import { showToast } from './events.js';
@@ -39,12 +39,27 @@ function migrateTiles(state) {
       if (fc.population === undefined) fc.population = 1000;
       if (fc.borderRadius === undefined) fc.borderRadius = 2;
       if (fc.improvements === undefined) fc.improvements = 0;
+      // Wall HP for faction cities (capitals get walls by default if military > 20)
+      if (fc.wallHP === undefined) fc.wallHP = 0;
+      if (fc.wallMaxHP === undefined) fc.wallMaxHP = 0;
+      if (fc.wallLastAttackedTurn === undefined) fc.wallLastAttackedTurn = -99;
     }
   }
-  // Ensure cities have per-city food field
+  // Ensure cities have per-city food field and wall HP fields
   if (state.cities) {
     for (const city of state.cities) {
       if (city.food === undefined) city.food = 0;
+      // Wall HP: initialize based on whether city has walls building
+      if (city.wallHP === undefined) {
+        const hasWalls = (city.buildings || []).includes('walls');
+        city.wallHP = hasWalls ? WALL_HP.ancient_walls : 0;
+        city.wallMaxHP = hasWalls ? WALL_HP.ancient_walls : 0;
+      }
+      if (city.wallMaxHP === undefined) {
+        const hasWalls = (city.buildings || []).includes('walls');
+        city.wallMaxHP = hasWalls ? WALL_HP.ancient_walls : 0;
+      }
+      if (city.wallLastAttackedTurn === undefined) city.wallLastAttackedTurn = -99;
     }
   }
   if (!state.aiFactions) state.aiFactions = {};

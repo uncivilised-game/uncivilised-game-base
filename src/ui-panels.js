@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE } from './constants.js';
 import { getNextUnitId } from './state.js';
 import { game } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
@@ -300,6 +300,13 @@ function showCityPanel(cityData) {
       <span class="yield gold">${yields.gold} Gold</span>
     </div>`;
     body += `<p>Population: ${(cityData.population || game.population).toLocaleString()}</p>`;
+    if (cityData.wallMaxHP > 0) {
+      const wallPct = Math.round((cityData.wallHP / cityData.wallMaxHP) * 100);
+      body += `<p style="color:#7090b0">Wall HP: ${cityData.wallHP}/${cityData.wallMaxHP} (${wallPct}%)</p>`;
+    }
+    if (cityData.hp !== undefined) {
+      body += `<p style="color:#6aab5c">City HP: ${cityData.hp}/${CITY_DEFENSE.BASE_HP}</p>`;
+    }
     body += `<p>Buildings: ${game.buildings.length}</p>`;
     if (game.currentBuild) {
       const bdata = BUILDINGS.find(b => b.id === game.currentBuild);

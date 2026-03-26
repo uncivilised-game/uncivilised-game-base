@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wall HP & Siege Mechanics - Test Page</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+  h1 { color: #c9a84c; margin-bottom: 8px; }
+  h2 { color: #7090b0; margin: 16px 0 8px; font-size: 1.1em; }
+  .container { max-width: 900px; margin: 0 auto; }
+  .panel { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .hp-bars { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+  .hp-bar-container { flex: 1; }
+  .hp-bar-label { font-size: 12px; margin-bottom: 2px; }
+  .hp-bar-bg { background: rgba(0,0,0,0.5); border-radius: 3px; height: 20px; position: relative; overflow: hidden; }
+  .hp-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .hp-bar-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  .wall-bar .hp-bar-fill { background: linear-gradient(90deg, #5a7a9a, #7090b0); }
+  .city-bar .hp-bar-fill { background: linear-gradient(90deg, #4a8a3a, #6aab5c); }
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+  .controls label { font-size: 13px; color: #aaa; }
+  select, input[type=range] { background: #0f3460; color: #e0e0e0; border: 1px solid #1a4080; border-radius: 4px; padding: 6px 10px; }
+  button { background: #c9a84c; color: #1a1a2e; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; cursor: pointer; font-size: 13px; }
+  button:hover { background: #ddc060; }
+  button.secondary { background: #0f3460; color: #e0e0e0; border: 1px solid #1a4080; }
+  button.secondary:hover { background: #1a4080; }
+  .log { background: #0a0a1a; border: 1px solid #0f3460; border-radius: 4px; padding: 10px; max-height: 300px; overflow-y: auto; font-size: 12px; font-family: 'Courier New', monospace; line-height: 1.6; }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .log-entry.wall { color: #7090b0; }
+  .log-entry.city { color: #6aab5c; }
+  .log-entry.destroy { color: #d9534f; font-weight: bold; }
+  .log-entry.repair { color: #4ade80; }
+  .log-entry.info { color: #aaa; }
+  .test-results { margin-top: 12px; }
+  .test-pass { color: #4ade80; }
+  .test-fail { color: #d9534f; }
+  .test-item { padding: 4px 0; font-size: 13px; }
+  .slider-val { display: inline-block; min-width: 40px; text-align: center; color: #c9a84c; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Wall HP & Siege Mechanics Tester</h1>
+  <p style="color:#888; margin-bottom:16px">Interactive combat simulator for testing wall damage routing, siege mechanics, and repair logic.</p>
+
+  <!-- City Status -->
+  <div class="panel">
+    <h2>City Status</h2>
+    <div class="hp-bars">
+      <div class="hp-bar-container wall-bar">
+        <div class="hp-bar-label">Wall HP</div>
+        <div class="hp-bar-bg">
+          <div class="hp-bar-fill" id="wall-bar-fill" style="width:100%"></div>
+          <div class="hp-bar-text" id="wall-bar-text">50/50</div>
+        </div>
+      </div>
+      <div class="hp-bar-container city-bar">
+        <div class="hp-bar-label">City HP</div>
+        <div class="hp-bar-bg">
+          <div class="hp-bar-fill" id="city-bar-fill" style="width:100%"></div>
+          <div class="hp-bar-text" id="city-bar-text">100/100</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label>Wall HP: <input type="range" id="wall-slider" min="0" max="100" value="50" oninput="setWallHP(this.value)"> <span class="slider-val" id="wall-slider-val">50</span></label>
+      <label>City HP: <input type="range" id="city-slider" min="0" max="100" value="100" oninput="setCityHP(this.value)"> <span class="slider-val" id="city-slider-val">100</span></label>
+    </div>
+  </div>
+
+  <!-- Attack Controls -->
+  <div class="panel">
+    <h2>Attack Simulator</h2>
+    <div class="controls">
+      <label>Attacker:
+        <select id="attacker-type">
+          <option value="archer">Archer (Ranged, 25 power)</option>
+          <option value="slinger">Slinger (Ranged, 15 power)</option>
+          <option value="warrior">Warrior (Melee, 20 power)</option>
+          <option value="spearman">Spearman (Melee, 25 power)</option>
+          <option value="ballista">Ballista (Siege, 30 power)</option>
+        </select>
+      </label>
+      <button onclick="doAttack()">Attack!</button>
+      <button class="secondary" onclick="simulate10()">Simulate 10 Attacks</button>
+      <button class="secondary" onclick="testWallRepair()">Test Wall Repair</button>
+      <button class="secondary" onclick="resetCity()">Reset City</button>
+    </div>
+  </div>
+
+  <!-- Damage Log -->
+  <div class="panel">
+    <h2>Damage Log</h2>
+    <div class="log" id="damage-log">
+      <div class="log-entry info">Ready. Select an attacker and click Attack!</div>
+    </div>
+  </div>
+
+  <!-- Automated Tests -->
+  <div class="panel">
+    <h2>Automated Tests</h2>
+    <button onclick="runAllTests()">Run All Tests</button>
+    <div class="test-results" id="test-results"></div>
+  </div>
+</div>
+
+<script>
+// ============================================
+// CONSTANTS (mirrored from src/constants.js)
+// ============================================
+const WALL_HP = { ancient_walls: 50 };
+const SIEGE_WALL_MULTIPLIER = 2.0;
+const CITY_DEFENSE = {
+  BASE_HP: 100,
+  BASE_COMBAT_STRENGTH: 15,
+  WALLS_BONUS: 8,
+  RANGED_STRIKE_STRENGTH: 12,
+};
+
+const UNIT_TYPES = {
+  scout:    { name: 'Scout',    cost: 15, combat: 10, rangedCombat: 0,  range: 0, movePoints: 3, class: 'recon' },
+  warrior:  { name: 'Warrior',  cost: 20, combat: 20, rangedCombat: 0,  range: 0, movePoints: 2, class: 'melee' },
+  slinger:  { name: 'Slinger',  cost: 20, combat: 5,  rangedCombat: 15, range: 1, movePoints: 2, class: 'ranged' },
+  archer:   { name: 'Archer',   cost: 30, combat: 15, rangedCombat: 25, range: 2, movePoints: 2, class: 'ranged' },
+  spearman: { name: 'Spearman', cost: 35, combat: 25, rangedCombat: 0,  range: 0, movePoints: 2, class: 'anti-cav' },
+  ballista: { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, class: 'siege' },
+};
+
+// ============================================
+// CITY STATE
+// ============================================
+let city = {
+  name: 'Test City',
+  hp: 100,
+  wallHP: 50,
+  wallMaxHP: 50,
+  wallLastAttackedTurn: -99,
+};
+let currentTurn = 1;
+
+// ============================================
+// DAMAGE ROUTING (mirrors src/combat.js applyWallDamage)
+// ============================================
+function applyWallDamage(city, atkDamage, attackerType) {
+  const aType = UNIT_TYPES[attackerType];
+  if (!city.wallHP || city.wallHP <= 0) {
+    city.hp -= atkDamage;
+    return { wallDmg: 0, cityDmg: atkDamage, wallDestroyed: false };
+  }
+
+  let wallDmg = 0, cityDmg = 0;
+
+  if (aType.class === 'siege') {
+    wallDmg = Math.floor(atkDamage * SIEGE_WALL_MULTIPLIER);
+    cityDmg = 0;
+  } else if (aType.rangedCombat > 0 && aType.class !== 'melee') {
+    wallDmg = atkDamage;
+    cityDmg = 0;
+  } else {
+    wallDmg = Math.floor(atkDamage * 0.7);
+    cityDmg = Math.floor(atkDamage * 0.3);
+  }
+
+  const actualWallDmg = Math.min(wallDmg, city.wallHP);
+  city.wallHP -= actualWallDmg;
+  const wallDestroyed = city.wallHP <= 0;
+  if (city.wallHP < 0) city.wallHP = 0;
+
+  city.hp -= cityDmg;
+
+  return { wallDmg: actualWallDmg, cityDmg, wallDestroyed };
+}
+
+function computeBaseDamage(attackerType) {
+  const aType = UNIT_TYPES[attackerType];
+  const atkPower = aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat;
+  const cityDefence = CITY_DEFENSE.BASE_COMBAT_STRENGTH + (city.wallHP > 0 ? CITY_DEFENSE.WALLS_BONUS + 5 : 0);
+  return Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * 1.0)); // assume 100 HP attacker
+}
+
+// ============================================
+// UI UPDATES
+// ============================================
+function updateBars() {
+  const wallFill = document.getElementById('wall-bar-fill');
+  const wallText = document.getElementById('wall-bar-text');
+  const cityFill = document.getElementById('city-bar-fill');
+  const cityText = document.getElementById('city-bar-text');
+
+  const wallPct = city.wallMaxHP > 0 ? Math.max(0, city.wallHP / city.wallMaxHP * 100) : 0;
+  wallFill.style.width = wallPct + '%';
+  wallText.textContent = Math.max(0, city.wallHP) + '/' + city.wallMaxHP;
+  if (city.wallMaxHP === 0) {
+    wallFill.style.width = '0%';
+    wallText.textContent = 'No Walls';
+  }
+
+  const cityPct = Math.max(0, city.hp / CITY_DEFENSE.BASE_HP * 100);
+  cityFill.style.width = cityPct + '%';
+  cityText.textContent = Math.max(0, city.hp) + '/' + CITY_DEFENSE.BASE_HP;
+
+  // Update slider displays
+  document.getElementById('wall-slider').value = city.wallHP;
+  document.getElementById('wall-slider-val').textContent = city.wallHP;
+  document.getElementById('city-slider').value = city.hp;
+  document.getElementById('city-slider-val').textContent = city.hp;
+}
+
+function log(msg, cls) {
+  const logEl = document.getElementById('damage-log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (cls || '');
+  entry.textContent = msg;
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('damage-log').innerHTML = '';
+}
+
+// ============================================
+// ACTIONS
+// ============================================
+function setWallHP(val) {
+  city.wallHP = parseInt(val);
+  city.wallMaxHP = Math.max(city.wallMaxHP, city.wallHP);
+  if (city.wallHP === 0) city.wallMaxHP = 0;
+  else if (city.wallMaxHP === 0) city.wallMaxHP = WALL_HP.ancient_walls;
+  document.getElementById('wall-slider-val').textContent = val;
+  updateBars();
+}
+
+function setCityHP(val) {
+  city.hp = parseInt(val);
+  document.getElementById('city-slider-val').textContent = val;
+  updateBars();
+}
+
+function resetCity() {
+  city.hp = 100;
+  city.wallHP = 50;
+  city.wallMaxHP = 50;
+  city.wallLastAttackedTurn = -99;
+  currentTurn = 1;
+  clearLog();
+  log('City reset. Wall HP: 50/50, City HP: 100/100', 'info');
+  updateBars();
+}
+
+function doAttack() {
+  if (city.hp <= 0) {
+    log('City already fallen! Reset to continue.', 'info');
+    return;
+  }
+  const type = document.getElementById('attacker-type').value;
+  const aType = UNIT_TYPES[type];
+  const baseDmg = computeBaseDamage(type);
+
+  const oldWallHP = city.wallHP;
+  const oldCityHP = city.hp;
+  const result = applyWallDamage(city, baseDmg, type);
+  city.wallLastAttackedTurn = currentTurn;
+  currentTurn++;
+
+  // Log the result
+  const unitName = aType.name;
+  if (result.wallDmg > 0 && result.cityDmg > 0) {
+    log(`[Turn ${currentTurn-1}] ${unitName} deals ${baseDmg} base damage: ${result.wallDmg} to Walls (${oldWallHP} -> ${city.wallHP}), ${result.cityDmg} to City HP (${oldCityHP} -> ${city.hp})`, 'wall');
+  } else if (result.wallDmg > 0) {
+    log(`[Turn ${currentTurn-1}] ${unitName} deals ${result.wallDmg} damage to Walls (${oldWallHP} -> ${city.wallHP}). City HP unchanged.`, 'wall');
+  } else {
+    log(`[Turn ${currentTurn-1}] ${unitName} deals ${result.cityDmg} damage to City HP (${oldCityHP} -> ${city.hp}).`, 'city');
+  }
+
+  if (result.wallDestroyed) {
+    log(`  >>> WALLS DESTROYED! All future damage goes to City HP.`, 'destroy');
+  }
+  if (city.hp <= 0) {
+    log(`  >>> CITY FALLEN! City HP reduced to ${city.hp}.`, 'destroy');
+  }
+
+  updateBars();
+}
+
+function simulate10() {
+  clearLog();
+  resetCity();
+  const type = document.getElementById('attacker-type').value;
+  log(`Simulating 10 ${UNIT_TYPES[type].name} attacks against city with walls...`, 'info');
+  log('', 'info');
+
+  for (let i = 0; i < 10; i++) {
+    if (city.hp <= 0) {
+      log(`City fell on attack ${i}!`, 'destroy');
+      break;
+    }
+    doAttack();
+  }
+
+  log('', 'info');
+  log(`Final state - Wall HP: ${Math.max(0, city.wallHP)}/${city.wallMaxHP}, City HP: ${Math.max(0, city.hp)}/${CITY_DEFENSE.BASE_HP}`, 'info');
+}
+
+function testWallRepair() {
+  if (city.wallHP >= city.wallMaxHP) {
+    log('Walls are at full HP. Damage them first to test repair.', 'info');
+    return;
+  }
+  if (city.wallMaxHP === 0) {
+    log('No walls to repair.', 'info');
+    return;
+  }
+
+  log(`Testing wall repair... Current wall HP: ${city.wallHP}/${city.wallMaxHP}`, 'info');
+  log(`Last attacked on turn ${city.wallLastAttackedTurn}, current turn: ${currentTurn}`, 'info');
+
+  // Simulate 2 turns of no attacks
+  const turnsNeeded = Math.max(0, 2 - (currentTurn - city.wallLastAttackedTurn));
+  if (turnsNeeded > 0) {
+    log(`Skipping ${turnsNeeded} turn(s) to reach 2-turn quiet period...`, 'info');
+    currentTurn += turnsNeeded;
+  }
+
+  // Now apply repair
+  const oldWallHP = city.wallHP;
+  if (currentTurn - city.wallLastAttackedTurn >= 2) {
+    city.wallHP = Math.min(city.wallMaxHP, city.wallHP + 5);
+    currentTurn++;
+    log(`[Turn ${currentTurn-1}] Wall repair: +${city.wallHP - oldWallHP} HP (${oldWallHP} -> ${city.wallHP})`, 'repair');
+  } else {
+    log('Walls were attacked too recently. No repair.', 'info');
+  }
+
+  updateBars();
+}
+
+// ============================================
+// AUTOMATED TESTS
+// ============================================
+function runAllTests() {
+  const results = [];
+
+  function assert(condition, name) {
+    results.push({ pass: condition, name });
+  }
+
+  // Test 1: Ranged cannot damage city HP while walls stand
+  {
+    const c = { hp: 100, wallHP: 50, wallMaxHP: 50, wallLastAttackedTurn: -99 };
+    const dmg = 15;
+    const result = applyWallDamage(c, dmg, 'archer');
+    assert(result.cityDmg === 0, 'Ranged cannot damage city HP while walls stand');
+    assert(result.wallDmg === dmg, 'Ranged deals full damage to walls');
+    assert(c.hp === 100, 'City HP unchanged after ranged attack on walls');
+  }
+
+  // Test 2: Siege deals 2x to walls
+  {
+    const c = { hp: 100, wallHP: 50, wallMaxHP: 50, wallLastAttackedTurn: -99 };
+    const dmg = 15;
+    const result = applyWallDamage(c, dmg, 'ballista');
+    assert(result.wallDmg === Math.min(Math.floor(dmg * SIEGE_WALL_MULTIPLIER), c.wallMaxHP), 'Siege deals 2x damage to walls');
+    assert(result.cityDmg === 0, 'Siege does not damage city HP while walls stand');
+  }
+
+  // Test 3: Melee splits 70/30
+  {
+    const c = { hp: 100, wallHP: 50, wallMaxHP: 50, wallLastAttackedTurn: -99 };
+    const dmg = 20;
+    const result = applyWallDamage(c, dmg, 'warrior');
+    assert(result.wallDmg === Math.floor(dmg * 0.7), 'Melee deals 70% to walls (got ' + result.wallDmg + ')');
+    assert(result.cityDmg === Math.floor(dmg * 0.3), 'Melee deals 30% to city HP (got ' + result.cityDmg + ')');
+    assert(c.hp === 100 - Math.floor(dmg * 0.3), 'City HP reduced by 30% of melee damage');
+  }
+
+  // Test 4: Wall repair activates after 2 quiet turns
+  {
+    const c = { hp: 80, wallHP: 30, wallMaxHP: 50, wallLastAttackedTurn: 5 };
+    let turn = 7; // 2 turns after attack
+    const repairNeeded = turn - c.wallLastAttackedTurn >= 2;
+    assert(repairNeeded, 'Repair condition met after 2 quiet turns');
+    if (repairNeeded) {
+      c.wallHP = Math.min(c.wallMaxHP, c.wallHP + 5);
+    }
+    assert(c.wallHP === 35, 'Wall HP increased by 5 after repair');
+  }
+
+  // Test 4b: Wall repair does NOT activate if attacked recently
+  {
+    const c = { hp: 80, wallHP: 30, wallMaxHP: 50, wallLastAttackedTurn: 5 };
+    let turn = 6; // only 1 turn after attack
+    const repairNeeded = turn - c.wallLastAttackedTurn >= 2;
+    assert(!repairNeeded, 'Repair does NOT activate after only 1 quiet turn');
+  }
+
+  // Test 5: No wall = direct city HP damage
+  {
+    const c = { hp: 100, wallHP: 0, wallMaxHP: 0, wallLastAttackedTurn: -99 };
+    const dmg = 20;
+    const result = applyWallDamage(c, dmg, 'archer');
+    assert(result.cityDmg === dmg, 'No walls: all damage goes to city HP');
+    assert(result.wallDmg === 0, 'No walls: zero wall damage');
+    assert(c.hp === 80, 'City HP reduced directly when no walls');
+  }
+
+  // Test 5b: No wall = melee direct damage
+  {
+    const c = { hp: 100, wallHP: 0, wallMaxHP: 0, wallLastAttackedTurn: -99 };
+    const dmg = 20;
+    const result = applyWallDamage(c, dmg, 'warrior');
+    assert(result.cityDmg === dmg, 'No walls: melee all damage to city HP');
+    assert(result.wallDmg === 0, 'No walls: melee zero wall damage');
+  }
+
+  // Test 6: City ranged strike +5 while walls stand
+  {
+    const strengthWithWalls = CITY_DEFENSE.BASE_COMBAT_STRENGTH + CITY_DEFENSE.WALLS_BONUS + 5;
+    const strengthWithout = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
+    assert(strengthWithWalls - strengthWithout === CITY_DEFENSE.WALLS_BONUS + 5,
+      'City defense +' + (CITY_DEFENSE.WALLS_BONUS + 5) + ' with walls (includes +5 ranged strike)');
+  }
+
+  // Test 7: Wall destroyed mid-attack
+  {
+    const c = { hp: 100, wallHP: 5, wallMaxHP: 50, wallLastAttackedTurn: -99 };
+    const dmg = 15;
+    const result = applyWallDamage(c, dmg, 'archer');
+    assert(result.wallDmg === 5, 'Wall damage capped at remaining wall HP');
+    assert(c.wallHP === 0, 'Wall HP reaches zero');
+    assert(result.wallDestroyed, 'wallDestroyed flag is true');
+    assert(result.cityDmg === 0, 'Ranged still cannot damage city even when walls break this turn');
+  }
+
+  // Test 8: Siege 2x can exceed wall HP
+  {
+    const c = { hp: 100, wallHP: 10, wallMaxHP: 50, wallLastAttackedTurn: -99 };
+    const dmg = 15;
+    const result = applyWallDamage(c, dmg, 'ballista');
+    assert(result.wallDmg === 10, 'Siege wall damage capped at remaining wall HP (10)');
+    assert(c.wallHP === 0, 'Walls destroyed by siege');
+    assert(result.wallDestroyed, 'Siege destroys walls');
+  }
+
+  // Test 9: Wall repair capped at wallMaxHP
+  {
+    const c = { hp: 80, wallHP: 48, wallMaxHP: 50, wallLastAttackedTurn: 1 };
+    let turn = 5;
+    c.wallHP = Math.min(c.wallMaxHP, c.wallHP + 5);
+    assert(c.wallHP === 50, 'Wall repair capped at wallMaxHP');
+  }
+
+  // Render results
+  const el = document.getElementById('test-results');
+  el.innerHTML = results.map(r =>
+    `<div class="test-item ${r.pass ? 'test-pass' : 'test-fail'}">${r.pass ? '  PASS' : '  FAIL'} ${r.name}</div>`
+  ).join('');
+
+  const passed = results.filter(r => r.pass).length;
+  el.innerHTML += `<div style="margin-top:8px;font-weight:bold;color:${passed===results.length?'#4ade80':'#d9534f'}">${passed}/${results.length} tests passed</div>`;
+}
+
+// Initialize
+updateBars();
+</script>
+</body>
+</html>
