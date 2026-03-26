@@ -1,18 +1,22 @@
-name: Thank Reporters
+name: Newsletter
 
 on:
   workflow_dispatch:
     inputs:
       message:
-        description: 'Custom message to include in the email (e.g. "We just shipped a big patch fixing rendering and save bugs.")'
+        description: 'Custom message body for the newsletter'
         required: true
+      subject:
+        description: 'Email subject line'
+        required: false
+        default: 'News from Uncivilized'
       dry_run:
         description: 'Preview who would receive emails without sending (true/false)'
         required: false
         default: 'false'
 
 jobs:
-  thank:
+  send:
     runs-on: ubuntu-latest
     permissions:
       issues: read
@@ -26,7 +30,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Send thank-you emails
+      - name: Send newsletter
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -34,5 +38,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
           CUSTOM_MESSAGE: ${{ github.event.inputs.message }}
+          EMAIL_SUBJECT: ${{ github.event.inputs.subject }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
-        run: python scripts/thank-reporters.py
+        run: python scripts/newsletter.py
