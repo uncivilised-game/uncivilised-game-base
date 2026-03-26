@@ -37,6 +37,7 @@ import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassabl
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
+import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
@@ -84,6 +85,12 @@ window.showBattlePanel = showBattlePanel;
 window.createUnit = createUnit;
 window.endTurn = endTurn;
 window.processAITurns = processAITurns;
+window.processAIDiplomacy = processAIDiplomacy;
+window.getAIRelation = getAIRelation;
+window.getAIWars = getAIWars;
+window.getAIAlliances = getAIAlliances;
+window.getAISecretPacts = getAISecretPacts;
+window.getAITradeDeals = getAITradeDeals;
 window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
 window.discoverVillage = discoverVillage;
@@ -231,6 +238,8 @@ function createInitialState() {
     recentEvents: [], gameLog: [],
     aiCommitments: [], aiWonders: {},
     builtWonders: {}, aiWonderProgress: {},
+    aiRelations: {}, aiWars: [], aiSecretPacts: [], aiAlliances: [], aiTradeDeals: [], aiDenouncements: [],
+    rumourQueue: [],
     fogOfWar: createFogOfWar(startCol, startRow),
     cameraX: 0, cameraY: 0, selectedHex: null,
     score: 0, gameId: Date.now(), factionsEliminated: 0,

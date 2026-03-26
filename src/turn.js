@@ -18,6 +18,7 @@ import { decayReputation, detectContradictions, updateReputation, ensureReputati
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
+import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
 
 let _processingTurn = false;
 
@@ -47,6 +48,11 @@ function endTurn() {
 
   // --- AI Wonder Race production ---
   processAIWonderTurns();
+
+  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
+  resetTurnActions();
+  processAIDiplomacy();
+  processAITradeIncome();
 
   // --- Reset player unit move points and process waypoints ---
   for (const unit of game.units) {
