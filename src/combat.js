@@ -3,7 +3,7 @@ import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction } from './events.js';
-import { render } from './render.js';
+import { render, markVisibilityDirty } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
 import { deselectUnit, autoSelectNext } from './units.js';
@@ -96,10 +96,12 @@ function resolveCombat(attacker, defender) {
     result.defenderDied = true;
     // Gold reward for kill
     game.gold += Math.floor(dType.cost / 3);
+    markVisibilityDirty();
   }
   if (attacker.hp <= 0) {
     game.units = game.units.filter(u => u.id !== attacker.id);
     result.attackerDied = true;
+    markVisibilityDirty();
   }
 
   // Melee: if defender dies and melee attacker survives, move to defender's tile
