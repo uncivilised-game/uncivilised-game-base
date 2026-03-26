@@ -51,6 +51,14 @@ function migrateTiles(state) {
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];
   if (!state.aiWonders) state.aiWonders = {};
+  // AI-to-AI diplomacy state
+  if (!state.aiRelations) state.aiRelations = {};
+  if (!state.aiWars) state.aiWars = [];
+  if (!state.aiSecretPacts) state.aiSecretPacts = [];
+  if (!state.aiAlliances) state.aiAlliances = [];
+  if (!state.aiTradeDeals) state.aiTradeDeals = [];
+  if (!state.aiDenouncements) state.aiDenouncements = [];
+  if (!state.rumourQueue) state.rumourQueue = [];
   // Ensure every tile has col/row (missing in saves before v4)
   if (state.map) {
     for (let r = 0; r < state.map.length; r++) {
