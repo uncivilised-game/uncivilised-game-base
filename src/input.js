@@ -136,6 +136,19 @@ export function initInputHandlers() {
         endTurn();
       }
     }
+    // Panel keyboard shortcuts (D/B/R/U/T/V) — only in-game, not while typing
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input, textarea, [contenteditable]')) {
+      const gameActive = game && game.turn !== undefined && document.getElementById('game-screen')?.classList.contains('active');
+      if (gameActive) {
+        const key = e.key.toLowerCase();
+        if (key === 'd') { e.preventDefault(); togglePanel('diplomacy-panel'); }
+        else if (key === 'b') { e.preventDefault(); togglePanel('build-panel'); }
+        else if (key === 'r') { e.preventDefault(); togglePanel('research-panel'); }
+        else if (key === 'u') { e.preventDefault(); togglePanel('units-panel'); }
+        else if (key === 't') { e.preventDefault(); toggleCivicsPanel(); }
+        else if (key === 'v') { e.preventDefault(); toggleVictoryPanel(); }
+      }
+    }
     // Escape key closes any open panel or overlay
     if (e.key === 'Escape') {
       const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'];
