@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, RESOURCE_REVEAL_TECHS, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -625,18 +625,16 @@ function generateMap() {
 // TERRAIN HELPERS
 // ============================================
 /**
- * Check whether a resource is revealed for a given tech list.
+ * Check whether a resource is revealed for the player (or a given revealed set).
  * Non-strategic resources (bonus, luxury) are always visible.
- * Strategic resources require the revealing tech to have been researched.
- * If no techs array is passed, uses the player's tech list.
+ * Strategic resources must be in game.revealedResources (or the supplied array).
  */
-function isResourceRevealed(resourceId, techs) {
+function isResourceRevealed(resourceId, revealedList) {
   const res = RESOURCES[resourceId];
   if (!res || res.category !== 'strategic') return true;
-  const revealTech = RESOURCE_REVEAL_TECHS[resourceId];
-  if (!revealTech) return true;
-  const techList = techs || (game && game.techs) || [];
-  return techList.includes(revealTech);
+  if (!res.revealedBy) return true;
+  const revealed = revealedList || (game && game.revealedResources) || [];
+  return revealed.includes(resourceId);
 }
 
 function getTileYields(tile) {
@@ -807,6 +805,20 @@ function updateFactionStats() {
         if (gov.bonuses.foodBonus) stats.population += Math.floor(10 * gov.bonuses.foodBonus);
       }
     }
+    // AI resource visibility — auto-reveal strategic resources as tech count grows
+    if (!game.factionRevealedResources) game.factionRevealedResources = {};
+    if (!game.factionRevealedResources[fid]) game.factionRevealedResources[fid] = [];
+    const fRevealed = game.factionRevealedResources[fid];
+    for (const [resId, res] of Object.entries(RESOURCES)) {
+      if (res.revealedBy && !fRevealed.includes(resId)) {
+        // Reveal when faction has enough techs (roughly matching when a player would get the tech)
+        const techIndex = TECHNOLOGIES.findIndex(t => t.id === res.revealedBy);
+        if (techIndex >= 0 && stats.techs > techIndex) {
+          fRevealed.push(resId);
+        }
+      }
+    }
+
     // AI wonder construction — chance to claim an unclaimed wonder
     if (game.turn >= 15 && Math.random() < 0.02) {
       if (!game.aiWonders) game.aiWonders = {};

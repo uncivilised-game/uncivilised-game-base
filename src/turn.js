@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, RESOURCE_REVEAL_TECHS, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
@@ -300,23 +300,27 @@ function endTurn() {
       if (typeof showToast === 'function') showToast('\u{1F4A1} Research Complete', tdata.name + ' researched!');
 
       // --- Reveal strategic resources gated by this tech ---
-      const revealedTypes = Object.entries(RESOURCE_REVEAL_TECHS)
-        .filter(([, tech]) => tech === completedTechId)
+      const newlyRevealed = Object.entries(RESOURCES)
+        .filter(([, res]) => res.revealedBy === completedTechId)
         .map(([resId]) => resId);
-      if (revealedTypes.length > 0) {
+      if (newlyRevealed.length > 0) {
+        if (!game.revealedResources) game.revealedResources = [];
         const now = Date.now();
-        for (let r = 0; r < MAP_ROWS; r++) {
-          for (let c = 0; c < MAP_COLS; c++) {
-            const tile = game.map[r][c];
-            if (tile.resource && revealedTypes.includes(tile.resource)) {
-              tile._revealedAt = now; // trigger reveal animation
+        for (const resId of newlyRevealed) {
+          if (!game.revealedResources.includes(resId)) game.revealedResources.push(resId);
+          let depositCount = 0;
+          for (let r = 0; r < MAP_ROWS; r++) {
+            for (let c = 0; c < MAP_COLS; c++) {
+              const tile = game.map[r][c];
+              if (tile.resource === resId) {
+                tile._revealedAt = now; // trigger reveal animation
+                depositCount++;
+              }
             }
           }
-        }
-        for (const resId of revealedTypes) {
-          const resName = RESOURCES[resId] ? RESOURCES[resId].name : resId;
-          if (typeof showToast === 'function') showToast('\u{26CF}\u{FE0F} Resource Discovered', resName + ' deposits discovered!');
-          addEvent(`${resName} deposits revealed across the map!`, 'science');
+          const resName = RESOURCES[resId].name;
+          if (typeof showToast === 'function') showToast('\u{26CF}\u{FE0F} Resource Discovered', `Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`);
+          addEvent(`Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`, 'science');
         }
       }
     }

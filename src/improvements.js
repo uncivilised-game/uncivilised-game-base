@@ -1,4 +1,4 @@
-import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, RESOURCE_REVEAL_TECHS, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
+import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileMoveCost, isTilePassable } from './map.js';
@@ -36,7 +36,7 @@ export function getAvailableImprovements(col, row) {
     // Check resource requirement
     if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
     // Cannot build on unrevealed strategic resources
-    if (tile.resource && RESOURCE_REVEAL_TECHS[tile.resource] && !isResourceRevealed(tile.resource)) continue;
+    if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) continue;
     // Terraforming checks
     if (imp.terraform) {
       if (imp.terraform.removeFeature && !tile.feature) continue;
@@ -176,7 +176,12 @@ export function showWorkerActions(unitOrId) {
   if (tile.road) html += `<p style="color:var(--color-text-muted)">Has Road</p>`;
 
   if (available.length === 0 && !tile.improvementBuilder) {
-    html += `<p style="color:var(--color-text-faint);font-style:italic">City tile \u2014 move to an adjacent tile to build improvements</p>`;
+    // Check if blocked by an unrevealed strategic resource
+    if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) {
+      html += `<p style="color:var(--color-text-faint);font-style:italic">\u{2753} Unknown resource \u{2014} research needed</p>`;
+    } else {
+      html += `<p style="color:var(--color-text-faint);font-style:italic">City tile \u{2014} move to an adjacent tile to build improvements</p>`;
+    }
   } else {
     for (const imp of available) {
       const yieldParts = [];
