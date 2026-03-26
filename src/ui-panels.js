@@ -457,10 +457,12 @@ function renderUnitsPanel() {
     const prodBusy = game.currentBuild || game.currentUnitBuild;
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !prodBusy && !needsPop;
-    const reason = !techUnlocked ? `Needs ${requiredTech}` : (needsBarracks && !hasBarracks) ? 'Needs Barracks' : needsPop ? 'Need pop 2,000+' : prodBusy ? 'Production busy' : '';
+    const reqTechName = requiredTech ? (TECHNOLOGIES.find(t => t.id === requiredTech)?.name || requiredTech) : null;
+    const reason = !techUnlocked ? `Requires ${reqTechName || 'a technology'}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : prodBusy ? 'Production is busy' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    if (reason) div.title = reason;
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
@@ -635,6 +637,12 @@ function renderBuildPanel() {
   bh.textContent = 'Buildings';
   container.appendChild(bh);
 
+  // Reverse map: item ID → tech name (used for tooltips)
+  const techNameForItem = {};
+  for (const tech of TECHNOLOGIES) {
+    if (tech.unlocks) tech.unlocks.forEach(id => { techNameForItem[id] = tech.name; });
+  }
+
   const unlockedBuildings = new Set();
   for (const tech of game.techs) {
     const td = TECHNOLOGIES.find(t => t.id === tech);
@@ -649,9 +657,14 @@ function renderBuildPanel() {
     const turns = Math.ceil(b.cost / prodRate);
     const div = document.createElement('div');
     const disabled = !can && !canBuy;
+    let bReason = '';
+    if (built) bReason = 'Already built in this city';
+    else if (!unlocked) bReason = 'Requires ' + (techNameForItem[b.id] || 'a technology');
+    else if (prodBusy) bReason = 'Production is busy';
     div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    if (bReason) div.title = bReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + b.name + (built ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + b.desc + (!unlocked ? ' (needs tech)' : '') + '</div></div>'
+      + '<div class="item-desc">' + b.desc + (bReason ? ' \u2014 ' + bReason : '') + '</div></div>'
       + '<div class="item-cost-group">'
       + (can ? '<span class="cost-prod" title="Build with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
       + (unlocked && !built ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
@@ -685,14 +698,15 @@ function renderBuildPanel() {
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
     let reason = '';
-    if (!techOk) reason = 'Needs ' + (reqTech || 'tech');
-    else if (needsBarr && !hasBarracks) reason = 'Needs Barracks';
-    else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
-    else if (prodBusy && !canBuy) reason = 'Production busy';
+    if (!techOk) reason = 'Requires ' + (techNameForItem[tid] || (reqTech ? TECHNOLOGIES.find(t => t.id === reqTech)?.name : null) || 'a technology');
+    else if (needsBarr && !hasBarracks) reason = 'Requires Barracks';
+    else if (needsPop) reason = 'Requires population 2,000+ (have ' + game.population.toLocaleString() + ')';
+    else if (prodBusy && !canBuy) reason = 'Production is busy';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
     const unitDisabled = !can && !canBuy;
     div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    if (reason) div.title = reason;
     const popNote = tid === 'settler' ? ' (-500 pop)' : '';
     const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
     div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
@@ -722,10 +736,12 @@ function renderBuildPanel() {
   for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
     if (gid === game.government) continue;
     const techOk = !gov.unlockTech || game.techs.includes(gov.unlockTech);
+    const govReason = !techOk ? 'Requires ' + (TECHNOLOGIES.find(t => t.id === gov.unlockTech)?.name || gov.unlockTech) : '';
     const div = document.createElement('div');
     div.className = 'build-item ' + (!techOk ? 'item-disabled' : '');
+    if (govReason) div.title = govReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + (gov.icon || '') + ' ' + gov.name + '</div>'
-      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (needs ' + gov.unlockTech + ')' : '') + '</div></div>'
+      + '<div class="item-desc">' + gov.desc + (govReason ? ' \u2014 ' + govReason : '') + '</div></div>'
       + '<div class="item-cost" style="color:#d4a0ff;font-size:11px">Switch</div>';
     if (techOk) {
       div.addEventListener('click', ((gidCopy) => () => {
@@ -767,9 +783,14 @@ function renderBuildPanel() {
     const canBuild = techOk && !alreadyBuilt && !prodBusy && !game.currentWonderBuild;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
+    let wReason = '';
+    if (alreadyBuilt) wReason = 'Already built';
+    else if (!techOk) wReason = 'Requires ' + (techNameForItem[w.id] || (w.requires ? TECHNOLOGIES.find(t => t.id === w.requires)?.name : null) || 'a technology');
+    else if (prodBusy) wReason = 'Production is busy';
     div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
+    if (wReason) div.title = wReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuilt ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + w.desc + (!techOk ? ' (needs tech)' : '') + '</div></div>'
+      + '<div class="item-desc">' + w.desc + (wReason ? ' \u2014 ' + wReason : '') + '</div></div>'
       + '<div class="item-cost" style="color:#ffd700">' + turns + 'T</div>';
     if (canBuild) {
       div.addEventListener('click', ((wid) => () => {
