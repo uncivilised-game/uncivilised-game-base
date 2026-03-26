@@ -1,5 +1,5 @@
-import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES } from './constants.js';
-import { game } from './state.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
+import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction } from './events.js';
@@ -188,9 +188,15 @@ function attackFactionCity(attacker, factionId) {
 function computeCityDefense(city, factionId) {
   let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
 
-  // Walls bonus — check if faction has walls (simulated via military stat)
+  // Walls bonus — check wall HP or military stat fallback
+  const hasActiveWalls = city.wallHP !== undefined && city.wallHP > 0;
   const fStats = game.factionStats[factionId];
-  if (fStats && fStats.military > 20) strength += CITY_DEFENSE.WALLS_BONUS;
+  if (hasActiveWalls) {
+    strength += CITY_DEFENSE.WALLS_BONUS;
+    strength += 5; // City ranged strike enhanced by walls
+  } else if (fStats && fStats.military > 20) {
+    strength += CITY_DEFENSE.WALLS_BONUS;
+  }
 
   // Fortress bonus
   if (fStats && fStats.military > 40) strength += CITY_DEFENSE.FORTRESS_BONUS;
@@ -278,11 +284,28 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
-  ec.hp -= atkDamage;
+  // Initialize wall fields if missing
+  if (ec.wallHP === undefined) ec.wallHP = 0;
+  if (ec.wallMaxHP === undefined) ec.wallMaxHP = 0;
+  if (ec.wallLastAttackedTurn === undefined) ec.wallLastAttackedTurn = -99;
+
+  // Route damage through walls
+  const wallResult = applyWallDamage(ec, atkDamage, attacker.type);
   attacker.hp -= defDamage;
   ec._lastAttackedTurn = game.turn;
+  if (wallResult.wallDmg > 0) ec.wallLastAttackedTurn = game.turn;
 
-  addEvent(aType.name + ' attacks ' + ec.name + '! (-' + atkDamage + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  // Build descriptive event message
+  if (wallResult.wallDmg > 0 && wallResult.cityDmg > 0) {
+    addEvent(aType.name + ' attacks ' + ec.name + '! (-' + wallResult.wallDmg + ' wall HP, -' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  } else if (wallResult.wallDmg > 0) {
+    addEvent(aType.name + ' attacks ' + ec.name + ' walls! (-' + wallResult.wallDmg + ' wall HP, -' + defDamage + ' unit HP). City HP unchanged.', 'combat');
+  } else {
+    addEvent(aType.name + ' attacks ' + ec.name + '! (-' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  }
+  if (wallResult.wallDestroyed) {
+    addEvent(ec.name + ' walls have been destroyed!', 'combat');
+  }
 
   // Damage garrison units
   for (const g of garrison) {
@@ -315,8 +338,9 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
       captureExpansionCity(factionId, cityIdx);
     }
   } else {
-    addEvent(ec.name + ' holds! (' + ec.hp + ' HP remaining)', 'combat');
-    showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP remaining', factionName);
+    const wallInfo = ec.wallHP > 0 ? ' [Walls: ' + ec.wallHP + '/' + ec.wallMaxHP + ']' : '';
+    addEvent(ec.name + ' holds! (' + ec.hp + ' HP remaining' + wallInfo + ')', 'combat');
+    showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
   attacker.moveLeft = 0;
@@ -341,6 +365,7 @@ function captureExpansionCity(factionId, cityIdx) {
     borderRadius: ec.borderRadius || 1,
     cultureAccum: 0,
     owner: 'player',
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove garrison units
@@ -369,6 +394,44 @@ function captureExpansionCity(factionId, cityIdx) {
   updateUI();
 }
 
+// Route damage through wall HP before city HP
+// Returns { wallDmg, cityDmg, wallDestroyed } and mutates the city object
+function applyWallDamage(city, atkDamage, attackerType) {
+  const aType = UNIT_TYPES[attackerType];
+  if (!city.wallHP || city.wallHP <= 0) {
+    // No walls — all damage goes to city HP
+    city.hp -= atkDamage;
+    return { wallDmg: 0, cityDmg: atkDamage, wallDestroyed: false };
+  }
+
+  let wallDmg = 0, cityDmg = 0;
+
+  if (aType.class === 'siege') {
+    // Siege: 2x damage to walls only
+    wallDmg = Math.floor(atkDamage * SIEGE_WALL_MULTIPLIER);
+    cityDmg = 0;
+  } else if (aType.rangedCombat > 0 && aType.class !== 'melee') {
+    // Ranged: all damage to walls, cannot touch city HP
+    wallDmg = atkDamage;
+    cityDmg = 0;
+  } else {
+    // Melee: 70% to walls, 30% bleeds through to city HP
+    wallDmg = Math.floor(atkDamage * 0.7);
+    cityDmg = Math.floor(atkDamage * 0.3);
+  }
+
+  // Apply wall damage (cap at remaining wall HP, overflow doesn't transfer)
+  const actualWallDmg = Math.min(wallDmg, city.wallHP);
+  city.wallHP -= actualWallDmg;
+  const wallDestroyed = city.wallHP <= 0;
+  if (city.wallHP < 0) city.wallHP = 0;
+
+  // Apply city damage
+  city.hp -= cityDmg;
+
+  return { wallDmg: actualWallDmg, cityDmg, wallDestroyed };
+}
+
 function executeCityAttack(attacker, factionId, tactic) {
   const fc = game.factionCities[factionId];
   if (!fc) return;
@@ -392,11 +455,28 @@ function executeCityAttack(attacker, factionId, tactic) {
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
-  fc.hp -= atkDamage;
+  // Initialize wall fields if missing
+  if (fc.wallHP === undefined) fc.wallHP = 0;
+  if (fc.wallMaxHP === undefined) fc.wallMaxHP = 0;
+  if (fc.wallLastAttackedTurn === undefined) fc.wallLastAttackedTurn = -99;
+
+  // Route damage through walls
+  const wallResult = applyWallDamage(fc, atkDamage, attacker.type);
   attacker.hp -= defDamage;
   fc._lastAttackedTurn = game.turn;
+  if (wallResult.wallDmg > 0) fc.wallLastAttackedTurn = game.turn;
 
-  addEvent(aType.name + ' attacks ' + fc.name + '! (-' + atkDamage + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  // Build descriptive event message
+  if (wallResult.wallDmg > 0 && wallResult.cityDmg > 0) {
+    addEvent(aType.name + ' attacks ' + fc.name + '! (-' + wallResult.wallDmg + ' wall HP, -' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  } else if (wallResult.wallDmg > 0) {
+    addEvent(aType.name + ' attacks ' + fc.name + ' walls! (-' + wallResult.wallDmg + ' wall HP, -' + defDamage + ' unit HP). City HP unchanged.', 'combat');
+  } else {
+    addEvent(aType.name + ' attacks ' + fc.name + '! (-' + wallResult.cityDmg + ' city HP, -' + defDamage + ' unit HP)', 'combat');
+  }
+  if (wallResult.wallDestroyed) {
+    addEvent(fc.name + ' walls have been destroyed!', 'combat');
+  }
 
   // Damage garrison units
   for (const g of garrison) {
@@ -431,8 +511,9 @@ function executeCityAttack(attacker, factionId, tactic) {
       captureFactionCity(factionId);
     }
   } else {
-    addEvent(fc.name + ' holds! (' + fc.hp + ' HP remaining)', 'combat');
-    showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP remaining', factionName);
+    const wallInfo = fc.wallHP > 0 ? ' [Walls: ' + fc.wallHP + '/' + fc.wallMaxHP + ']' : '';
+    addEvent(fc.name + ' holds! (' + fc.hp + ' HP remaining' + wallInfo + ')', 'combat');
+    showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
   attacker.moveLeft = 0;
@@ -465,6 +546,7 @@ function captureFactionCity(factionId) {
     population: 500,
     borderRadius: 2,
     cultureAccum: 0,
+    ...CITY_WALL_DEFAULTS,
   });
 
   // Remove from faction cities
@@ -723,4 +805,5 @@ export {
   showBattlePanel,
   applyTacticModifier,
   processZOCCaptures,
+  applyWallDamage,
 };
