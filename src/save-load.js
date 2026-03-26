@@ -45,7 +45,7 @@ function migrateTiles(state) {
       if (fc.wallLastAttackedTurn === undefined) fc.wallLastAttackedTurn = -99;
     }
   }
-  // Ensure cities have per-city food field and wall HP fields
+  // Ensure cities have per-city food field, wall HP fields, and amenity fields
   if (state.cities) {
     for (const city of state.cities) {
       if (city.food === undefined) city.food = 0;
@@ -60,6 +60,13 @@ function migrateTiles(state) {
         city.wallMaxHP = hasWalls ? WALL_HP.ancient_walls : 0;
       }
       if (city.wallLastAttackedTurn === undefined) city.wallLastAttackedTurn = -99;
+      if (city.amenityBalance === undefined) city.amenityBalance = 0;
+      if (city.amenityStatus === undefined) city.amenityStatus = 'CONTENT';
+      if (city.amenityMod === undefined) city.amenityMod = 0;
+      if (city.amenityRequired === undefined) city.amenityRequired = 0;
+      if (city.amenityFromLuxuries === undefined) city.amenityFromLuxuries = 0;
+      if (city.amenityFromBuildings === undefined) city.amenityFromBuildings = 0;
+      if (city.amenityFromAlliance === undefined) city.amenityFromAlliance = 0;
     }
   }
   if (!state.aiFactions) state.aiFactions = {};

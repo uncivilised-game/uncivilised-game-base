@@ -392,10 +392,16 @@ function updateUI() {
     }
   }
   if (hapEl) {
-    const h = game.happiness || 0;
-    const e = h > 5 ? '\u{1F600}' : h > 0 ? '\u{1F610}' : h > -5 ? '\u{1F61F}' : '\u{1F621}';
-    hapEl.textContent = e + ' ' + h;
-    hapEl.style.color = h > 5 ? '#60c060' : h > 0 ? '#c0c060' : '#c06060';
+    // Show worst amenity status across cities as the top-bar indicator
+    const statuses = (game.cities || []).map(c => c.amenityStatus || 'CONTENT');
+    const order = ['REVOLT_RISK', 'UNHAPPY', 'DISPLEASED', 'CONTENT', 'HAPPY', 'ECSTATIC'];
+    let worst = 'CONTENT';
+    for (const s of statuses) { if (order.indexOf(s) < order.indexOf(worst)) worst = s; }
+    const emojiMap = { ECSTATIC: '\u{1F929}', HAPPY: '\u{1F600}', CONTENT: '\u{1F610}', DISPLEASED: '\u{1F61F}', UNHAPPY: '\u{1F621}', REVOLT_RISK: '\u{1F525}' };
+    const colorMap = { ECSTATIC: '#40e040', HAPPY: '#60c060', CONTENT: '#c0c060', DISPLEASED: '#c0a040', UNHAPPY: '#c06040', REVOLT_RISK: '#e02020' };
+    hapEl.textContent = (emojiMap[worst] || '\u{1F610}') + ' ' + worst;
+    hapEl.style.color = colorMap[worst] || '#c0c060';
+    hapEl.title = 'City Amenities — click for Victory panel (V)';
   }
   // Show trade routes in top bar
   let tradeEl = document.getElementById('stat-trade');
