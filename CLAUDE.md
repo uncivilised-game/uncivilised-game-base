@@ -132,7 +132,11 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - **`devel`** → Staging (`staging.uncivilized.fun`) — `vercel deploy` + `vercel alias`
 - Other branches are ignored by CI
 
-**Workflow:** Single `.github/workflows/deploy.yml` triggers on push to `main` or `devel`. It checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
+**Workflows:**
+- `.github/workflows/deploy.yml` — triggers on push to `main` or `devel`. Checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
+- `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
+- `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
