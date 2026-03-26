@@ -572,7 +572,7 @@ function handleHexClick(col, row) {
   if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return;
   if (!game.fogOfWar[row][col]) return;
   // Block clicks while unit movement animation is in progress
-  if (unitMoveAnim) return;
+  if (game._unitMoveAnim) return;
 
   // If a player unit is selected
   if (game.selectedUnitId) {
