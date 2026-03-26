@@ -90,6 +90,20 @@ jobs:
             echo "issue_number=$ISSUE" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Extract instructions after /fix
+        id: instructions
+        if: github.event_name == 'issue_comment'
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Extract everything after /fix (trim leading whitespace)
+          EXTRA=$(echo "$COMMENT_BODY" | sed 's|.*/fix||' | sed 's/^[[:space:]]*//')
+          {
+            echo "text<<INSTRUCTIONS_EOF"
+            echo "$EXTRA"
+            echo "INSTRUCTIONS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Get issue details
         id: issue
         run: |
@@ -114,6 +128,9 @@ jobs:
             ISSUE TITLE: ${{ steps.issue.outputs.title }}
 
             Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            ADDITIONAL INSTRUCTIONS FROM THE /fix COMMENT:
+            ${{ steps.instructions.outputs.text }}
 
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
@@ -149,6 +166,9 @@ jobs:
             ISSUE TITLE: ${{ steps.issue.outputs.title }}
 
             Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            ADDITIONAL INSTRUCTIONS FROM THE /fix COMMENT:
+            ${{ steps.instructions.outputs.text }}
 
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
