@@ -22,9 +22,10 @@ ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "uncivilised-game/uncivilised-game-base")
 
-EMBEDDING_MODEL = "models/gemini-embedding-001"  # 768 dims, swap later if needed
-SIMILARITY_THRESHOLD = 0.75
-MIN_CONVICTION_SCORE = 6  # minimum score to open an issue (single report can't reach this unless critical)
+EMBEDDING_MODEL = "models/gemini-embedding-001"
+EMBEDDING_DIMS = 768  # default is 3072 but 768 is 99.7% quality at 4x less storage
+SIMILARITY_THRESHOLD = 0.82
+MIN_CONVICTION_SCORE = 8  # minimum score to open an issue (requires 2+ reporters or 1 critical with recency)
 
 MIN_MESSAGE_LENGTH = 10  # skip very short/empty messages
 ACTIONABLE_CATEGORIES = {"bug_report", "feature_request", "gameplay_feedback"}
@@ -104,7 +105,7 @@ def embed_texts(texts):
         batch = texts[i:i + 100]
         requests_body = {
             "requests": [
-                {"model": EMBEDDING_MODEL, "content": {"parts": [{"text": t}]}}
+                {"model": EMBEDDING_MODEL, "content": {"parts": [{"text": t}]}, "outputDimensionality": EMBEDDING_DIMS}
                 for t in batch
             ]
         }
@@ -298,6 +299,10 @@ Respond with EXACTLY this JSON (no other text):
     # Handle possible markdown code blocks
     if text.startswith("```"):
         text = "\n".join(text.split("\n")[1:-1])
+    # Fix trailing commas (common LLM JSON error)
+    import re
+    text = re.sub(r',\s*}', '}', text)
+    text = re.sub(r',\s*]', ']', text)
     return json.loads(text)
 
 
