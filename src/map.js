@@ -824,12 +824,11 @@ function getPlayerStats() {
 
 function getComparisonData() {
   const playerStats = getPlayerStats();
-  const entries = [{ id: 'player', name: 'Your Civilization', stats: playerStats, isPlayer: true }];
+  const entries = [{ factionId: 'player', id: 'player', name: 'Your Civilization', stats: playerStats, isPlayer: true }];
   for (const [fid, met] of Object.entries(game.metFactions || {})) {
-    const stats = game.factionStats[fid];
-    if (stats) {
-      entries.push({ id: fid, name: FACTIONS[fid].name, stats: stats, isPlayer: false, color: FACTIONS[fid].color });
-    }
+    if (!FACTIONS[fid]) continue;
+    const stats = game.factionStats[fid] || {};
+    entries.push({ factionId: fid, id: fid, name: FACTIONS[fid].name, stats: stats, isPlayer: false, color: FACTIONS[fid].color });
   }
   return entries;
 }
