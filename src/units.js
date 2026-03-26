@@ -153,6 +153,14 @@ function computeMoveRange() {
       // Can't move through hexes with units (enemy or own)
       const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
       if (blockingUnit) continue;
+      // Civilian units can't enter enemy city tiles
+      const ut = UNIT_TYPES[unit.type];
+      if (ut && ut.class === 'civilian') {
+        const isEnemyCity = Object.entries(game.factionCities).some(([, fc]) => fc.col === nb.col && fc.row === nb.row)
+          || (game.aiFactionCities && Object.values(game.aiFactionCities).some(cities =>
+              cities.some(ec => ec.col === nb.col && ec.row === nb.row)));
+        if (isEnemyCity) continue;
+      }
       visited.set(key, remaining);
       if (remaining > 0) {
         queue.push({ col: nb.col, row: nb.row, move: remaining });
