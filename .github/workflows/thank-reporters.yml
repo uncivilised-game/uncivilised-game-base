@@ -1,0 +1,42 @@
+name: Thank Reporters
+
+on:
+  # Trigger when a conviction issue is closed
+  issues:
+    types: [closed]
+
+  # Manual trigger with optional issue number
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Specific issue number to process (leave empty to scan all closed conviction issues)'
+        required: false
+
+jobs:
+  thank:
+    runs-on: ubuntu-latest
+    # Only run for conviction-labeled issues (or manual dispatch)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.issue.labels.*.name, 'conviction')
+    permissions:
+      issues: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Send thank-you emails
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number || '' }}
+        run: python scripts/thank-reporters.py
