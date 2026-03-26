@@ -523,10 +523,14 @@ function render() {
         const progress = i / (pts.length - 1);
         const width = riverBaseWidth * (0.5 + progress * 2.2) * (HEX_SIZE / 36);
 
-        // Build bezier curve segment
+        // Build bezier curve segment (fall back to straight line if neighbors wrap)
+        const halfMap = mapPixelW * 0.5;
+        const useBezier = i > 0 && i < pts.length - 2
+          && Math.abs(pts[i - 1].x - p0.x) < halfMap
+          && Math.abs(pts[i + 2].x - p1.x) < halfMap;
         function drawBezierSeg() {
           ctx.beginPath();
-          if (i > 0 && i < pts.length - 2) {
+          if (useBezier) {
             const prev = pts[i - 1], next2 = pts[i + 2];
             const cpx1 = p0.x + (p1.x - prev.x) * tension;
             const cpy1 = p0.y + (p1.y - prev.y) * tension;
