@@ -12,12 +12,11 @@ on:
 
 jobs:
   implement:
-    # Run on manual trigger OR /fix comment on a conviction-labeled issue
+    # Run on manual trigger OR /fix comment from an admin on any issue
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body, '/fix') &&
-       contains(toJSON(github.event.issue.labels.*.name), 'conviction') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     permissions:
