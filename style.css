@@ -584,7 +584,7 @@ a:hover { text-decoration: underline; }
 
 .overlay-panel {
   position: absolute;
-  z-index: 50;
+  z-index: 250;
 }
 
 .panel-header {
@@ -876,6 +876,7 @@ a:hover { text-decoration: underline; }
   width: min(440px, 90vw);
   max-height: 75vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .build-item, .research-item {
