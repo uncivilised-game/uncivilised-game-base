@@ -1,7 +1,7 @@
 import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileYields, updateFactionStats, initFactionStats } from './map.js';
+import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification } from './events.js';
@@ -162,7 +162,7 @@ function endTurn() {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, city.col, city.row) <= bRadius) {
           const tile = game.map[r][c];
-          if (tile.resource && RESOURCES[tile.resource]) {
+          if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
             const bonus = RESOURCES[tile.resource].bonus;
             if (bonus.food) resBonus.food += bonus.food;
             if (bonus.gold) resBonus.gold += bonus.gold;
@@ -363,7 +363,8 @@ function endTurn() {
     const tdata = TECHNOLOGIES.find(t => t.id === game.currentResearch);
     if (!tdata) { game.currentResearch = null; game.researchProgress = 0; }
     else if (game.researchProgress >= tdata.cost) {
-      game.techs.push(game.currentResearch);
+      const completedTechId = game.currentResearch;
+      game.techs.push(completedTechId);
       events.push(`${tdata.name} discovered!`);
       addEvent(`Technology: ${tdata.name} discovered!`, 'science');
       game.currentResearch = null;
@@ -371,6 +372,31 @@ function endTurn() {
       // Show completion notification with prompt
       showCompletionNotification('research', tdata.name, tdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F4A1} Research Complete', tdata.name + ' researched!');
+
+      // --- Reveal strategic resources gated by this tech ---
+      const newlyRevealed = Object.entries(RESOURCES)
+        .filter(([, res]) => res.revealedBy === completedTechId)
+        .map(([resId]) => resId);
+      if (newlyRevealed.length > 0) {
+        if (!game.revealedResources) game.revealedResources = [];
+        const now = Date.now();
+        for (const resId of newlyRevealed) {
+          if (!game.revealedResources.includes(resId)) game.revealedResources.push(resId);
+          let depositCount = 0;
+          for (let r = 0; r < MAP_ROWS; r++) {
+            for (let c = 0; c < MAP_COLS; c++) {
+              const tile = game.map[r][c];
+              if (tile.resource === resId) {
+                tile._revealedAt = now; // trigger reveal animation
+                depositCount++;
+              }
+            }
+          }
+          const resName = RESOURCES[resId].name;
+          if (typeof showToast === 'function') showToast('\u{26CF}\u{FE0F} Resource Discovered', `Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`);
+          addEvent(`Research complete: ${tdata.name} \u{2014} ${resName} deposits revealed! (${depositCount} deposits found)`, 'science');
+        }
+      }
     }
   }
 

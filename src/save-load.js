@@ -100,6 +100,18 @@ function migrateTiles(state) {
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
   if (!state.tribalVillages) state.tribalVillages = [];
+  // --- Resource visibility migration ---
+  // Rebuild revealedResources from techs for saves that pre-date this feature
+  if (!state.revealedResources) {
+    state.revealedResources = [];
+    const techs = state.techs || [];
+    for (const [resId, res] of Object.entries(RESOURCES)) {
+      if (res.revealedBy && techs.includes(res.revealedBy)) {
+        state.revealedResources.push(resId);
+      }
+    }
+  }
+  if (!state.factionRevealedResources) state.factionRevealedResources = {};
   // --- Reputation system migration ---
   if (!state.reputation) {
     state.reputation = {};

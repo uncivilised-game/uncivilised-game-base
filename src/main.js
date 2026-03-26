@@ -9,7 +9,7 @@ import './assets.js';      // preloads terrain tiles, portraits, improvement ima
 import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
-import { SAVE_KEY, GAME_VERSION } from './constants.js';
+import { SAVE_KEY, GAME_VERSION, RESOURCES } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
   currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS
@@ -90,6 +90,17 @@ window.discoverVillage = discoverVillage;
 window.rollTribalVillageReward = rollTribalVillageReward;
 
 // --- createInitialState (here to avoid circular deps between map.js and units.js) ---
+/** Build Set of resource IDs revealed by a given list of techs */
+function buildRevealedResources(techs) {
+  const revealed = [];
+  for (const [resId, res] of Object.entries(RESOURCES)) {
+    if (res.revealedBy && techs.includes(res.revealedBy)) {
+      revealed.push(resId);
+    }
+  }
+  return revealed;
+}
+
 function createInitialState() {
   const { map, riverPaths } = generateMap();
   const continentId = Array.from({ length: MAP_ROWS }, () => new Int16Array(MAP_COLS).fill(-1));
@@ -196,6 +207,8 @@ function createInitialState() {
     map: map,
     riverPaths: riverPaths,
     techs: ['agriculture', 'mining'],
+    revealedResources: buildRevealedResources(['agriculture', 'mining']),
+    factionRevealedResources: {},
     currentResearch: null, researchProgress: 0,
     buildings: [], currentBuild: null, buildProgress: 0,
     currentUnitBuild: null, unitBuildProgress: 0,
