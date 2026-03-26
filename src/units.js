@@ -1,5 +1,5 @@
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES } from './constants.js';
-import { game, getNextUnitId } from './state.js';
+import { game, getNextUnitId, unitMoveAnim, setUnitMoveAnim } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
 import { resolveCombat, isAtWarWith, declareSurpriseWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
@@ -64,6 +64,7 @@ function createUnit(type, col, row, owner) {
     xp: 0,
     promotions: [],
     pendingPromotion: false,
+    ...(ut.buildCharges !== undefined ? { buildCharges: ut.buildCharges } : {}),
   };
 }
 
@@ -323,62 +324,93 @@ function computeAttackRange() {
   return attackable.size > 0 ? attackable : null;
 }
 
-function moveUnitTo(unit, targetCol, targetRow) {
+function moveUnitTo(unit, targetCol, targetRow, onComplete) {
   // Block movement if worker is building an improvement
   if (unit.type === 'worker' && unit.sleeping) {
     const tile = game.map[unit.row]?.[unit.col];
     if (tile && tile.improvementBuilder && tile.improvementBuilder.unitId === unit.id) {
       showToast('Worker Busy', 'This worker is building ' + (TILE_IMPROVEMENTS?.[tile.improvementBuilder.improvementId]?.name || 'an improvement') + '. Cancel the build first.');
+      if (onComplete) onComplete(false);
       return false;
     }
   }
 
   const moveRange = computeMoveRange();
-  if (!moveRange) return false;
+  if (!moveRange) { if (onComplete) onComplete(false); return false; }
   const key = `${targetCol},${targetRow}`;
-  if (!moveRange.has(key)) return false;
+  if (!moveRange.has(key)) { if (onComplete) onComplete(false); return false; }
 
   const remaining = moveRange.get(key);
   const sightRange = unit.type === 'scout' ? 4 : 3;
 
-  // Reveal fog along the path, not just at destination
-  // Trace path using BFS parent pointers
+  // Reconstruct path for animated movement
   const path = reconstructMovePath(unit.col, unit.row, targetCol, targetRow, unit);
-  for (const step of path) {
-    revealAround(step.col, step.row, sightRange);
+
+  if (path.length === 0) {
+    // No intermediate steps — just apply destination
+    unit.col = targetCol;
+    unit.row = targetRow;
+    markVisibilityDirty();
+    unit.moveLeft = remaining;
+    unit.fortified = false;
+    unit.sleeping = false;
+    revealAround(unit.col, unit.row, sightRange);
+    logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
+    checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+    if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+    render();
+    if (onComplete) onComplete(true);
+    return true;
   }
 
-  // Check if move crosses a river (for logging)
-  const prevCol = unit.col, prevRow = unit.row;
-  unit.col = targetCol;
-  unit.row = targetRow;
-  markVisibilityDirty();
-  unit.moveLeft = remaining;
+  // Animate tile-by-tile (150ms per step)
+  const STEP_DELAY = 150;
+  let stepIndex = 0;
   unit.fortified = false;
   unit.sleeping = false;
 
-  // Log river crossing info
-  const riverCrossed = crossesRiver(prevCol, prevRow, targetCol, targetRow);
-  if (riverCrossed) {
-    if (roadBridgesRiver(prevCol, prevRow, targetCol, targetRow)) {
-      addEvent('Crossed river via bridge — normal movement', 'movement');
+  // Store animation state so other systems know movement is in progress
+  setUnitMoveAnim({ unitId: unit.id, path, step: 0 });
+
+  function advanceStep() {
+    const step = path[stepIndex];
+    const prevCol = unit.col, prevRow = unit.row;
+    unit.col = step.col;
+    unit.row = step.row;
+
+    // Reveal fog at each intermediate tile
+    revealAround(step.col, step.row, sightRange);
+    markVisibilityDirty();
+
+    // Log river crossing if applicable
+    const riverCrossed = crossesRiver(prevCol, prevRow, step.col, step.row);
+    if (riverCrossed) {
+      if (roadBridgesRiver(prevCol, prevRow, step.col, step.row)) {
+        addEvent('Crossed river via bridge — normal movement', 'movement');
+      } else {
+        addEvent('Crossed river — all movement points consumed', 'movement');
+      }
+    }
+
+    stepIndex++;
+    setUnitMoveAnim({ unitId: unit.id, path, step: stepIndex });
+    render();
+
+    if (stepIndex < path.length) {
+      setTimeout(advanceStep, STEP_DELAY);
     } else {
-      addEvent('Crossed river — all movement points consumed', 'movement');
+      // Animation complete — apply final state
+      unit.moveLeft = remaining;
+      setUnitMoveAnim(null);
+      logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
+      checkAndClearBarbarianCamp(unit, targetCol, targetRow);
+      if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+      render();
+      if (onComplete) onComplete(true);
     }
   }
 
-  // Reveal at destination too (in case path was empty)
-  revealAround(unit.col, unit.row, sightRange);
-  logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
-
-  // Auto-clear barbarian camps when stepping on them
-  checkAndClearBarbarianCamp(unit, targetCol, targetRow);
-
-  // Check for tribal village discovery
-  if (unit.owner === 'player') {
-    discoverVillage(targetCol, targetRow, unit);
-  }
-
+  advanceStep();
   return true;
 }
 
@@ -615,15 +647,15 @@ function handleHexClick(col, row) {
       const moveRange = computeMoveRange();
       const mKey = `${col},${row}`;
       if (moveRange && moveRange.has(mKey)) {
-        moveUnitTo(unit, col, row);
-
-        if (unit.moveLeft <= 0) {
-          autoSelectNext();
-        } else {
-          showSelectionPanel(unit);
-          render();
-        }
         game.selectedHex = null;
+        moveUnitTo(unit, col, row, () => {
+          if (unit.moveLeft <= 0) {
+            autoSelectNext();
+          } else {
+            showSelectionPanel(unit);
+            render();
+          }
+        });
         return;
       }
     }

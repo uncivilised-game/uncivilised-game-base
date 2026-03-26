@@ -59,7 +59,7 @@ export let UNIT_TYPES = {
   archer:    { name: 'Archer',        cost: 30, combat: 15, rangedCombat: 25,range: 2, movePoints: 2, icon: '🏹', class: 'ranged',   desc: 'Strong ranged attacker, range 2' },
   spearman:  { name: 'Spearman',      cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 2, icon: '🔱', class: 'anti-cav', desc: '+10 vs cavalry units' },
   chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐎', class: 'cavalry',  desc: 'Powerful mobile unit' },
-  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', desc: 'Builds improvements on tiles' },
+  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', buildCharges: 2, desc: 'Builds improvements on tiles (2 charges)' },
   settler:   { name: 'Settler',       cost: 60, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '🏕', class: 'civilian', desc: 'Founds new cities' },
   horseman:  { name: 'Horseman', cost: 45, combat: 30, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast cavalry unit, 3 moves' },
   ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
@@ -328,7 +328,7 @@ export const TILE_IMPROVEMENTS = {
 };
 
 // Worker unit type
-export const WORKER_TYPE = { name: 'Worker', cost: 30, combat: 0, rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', desc: 'Builds tile improvements' };
+export const WORKER_TYPE = { name: 'Worker', cost: 30, combat: 0, rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', buildCharges: 2, desc: 'Builds tile improvements (2 charges)' };
 
 export const FACTIONS = {
   emperor_valerian:         { name: 'High Chieftain Aethelred', city: 'Nordhaven',      color: '#e03030', unitColor: '#ff4444', portrait: 'A', type: 'leader',  title: 'High Chieftain of the Northern Trade',  portraitClass: 'portrait-leader', portraitImg: 'assets/character-portraits.jpg' },

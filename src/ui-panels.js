@@ -100,9 +100,13 @@ function showSelectionPanel(unit) {
       if (unit.hp < 100) {
         html += `<button class="sel-btn" onclick="unitAction('heal')"><span>Heal</span><span class="sel-key">H</span></button>`;
       }
-      // Pillage: available if on a tile with an enemy improvement or neutral improvement
+      // Pillage: available if on a tile with an improvement/road NOT in player territory
       const pillTile = game.map[unit.row][unit.col];
-      const canPillage = pillTile && (pillTile.improvement || pillTile.road) && ut.combat > 0;
+      let isPlayerTile = false;
+      for (const pc of (game.cities || [])) {
+        if (hexDistance(unit.col, unit.row, pc.col, pc.row) <= (pc.borderRadius || 2)) { isPlayerTile = true; break; }
+      }
+      const canPillage = pillTile && (pillTile.improvement || pillTile.road) && ut.combat > 0 && !isPlayerTile;
       if (canPillage) {
         html += `<button class="sel-btn" style="border-color:#d9534f" onclick="unitAction('pillage')"><span>\u{1F525} Pillage</span><span class="sel-key">P</span></button>`;
       }
@@ -472,10 +476,8 @@ function renderUnitsPanel() {
     const requiredTech = UNIT_UNLOCKS[typeId];
     const techUnlocked = !requiredTech || game.techs.includes(requiredTech);
     const needsBarracks = !['scout', 'warrior', 'slinger', 'worker', 'settler'].includes(typeId);
-    const prodBusy = game.currentBuild || game.currentUnitBuild;
-    const needsPop = typeId === 'settler' && game.population < 2000;
-    const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !prodBusy && !needsPop;
-    const reason = !techUnlocked ? `Needs ${requiredTech}` : (needsBarracks && !hasBarracks) ? 'Needs Barracks' : needsPop ? 'Need pop 2,000+' : prodBusy ? 'Production busy' : '';
+    const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
+    const reason = !techUnlocked ? `Needs ${requiredTech}` : (needsBarracks && !hasBarracks) ? 'Needs Barracks' : needsPop ? 'Need pop 2,000+' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
@@ -493,25 +495,53 @@ function renderUnitsPanel() {
   }
 }
 
+function getCurrentProductionName() {
+  if (game.currentBuild) {
+    const bd = BUILDINGS.find(b => b.id === game.currentBuild);
+    return bd ? bd.name : game.currentBuild;
+  }
+  if (game.currentUnitBuild) {
+    const ut = UNIT_TYPES[game.currentUnitBuild];
+    return ut ? ut.name : game.currentUnitBuild;
+  }
+  if (game.currentWonderBuild) {
+    const wd = WONDERS.find(w => w.id === game.currentWonderBuild);
+    return wd ? wd.name : game.currentWonderBuild;
+  }
+  return null;
+}
+
+function switchProduction(startFn) {
+  const currentName = getCurrentProductionName();
+  if (!currentName) { startFn(); return; }
+  const agreed = confirm('Cancel ' + currentName + '? All progress will be lost.');
+  if (!agreed) return;
+  cancelProduction();
+  startFn();
+}
+
 function recruitUnit(typeId) {
   const ut = UNIT_TYPES[typeId];
-  if (game.currentBuild || game.currentUnitBuild) {
-    addEvent('Production is busy — cancel current project first', 'gold');
-    return;
-  }
   if (typeId === 'settler' && game.population < 2000) {
     addEvent('Need population 2,000+ to train Settler (current: ' + game.population.toLocaleString() + ')', 'combat');
     return;
   }
-  game.currentUnitBuild = typeId;
-  game.unitBuildProgress = 0;
-  const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
-  logAction('build', 'Started training ' + ut.name, { unitType: typeId });
-  addEvent('Training ' + ut.name + ' (' + turnsNeeded + ' turns)', 'combat');
-  if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
-  updateUI();
-  closeAllPanels();
-  render();
+  const doRecruit = () => {
+    game.currentUnitBuild = typeId;
+    game.unitBuildProgress = 0;
+    const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
+    logAction('build', 'Started training ' + ut.name, { unitType: typeId });
+    addEvent('Training ' + ut.name + ' (' + turnsNeeded + ' turns)', 'combat');
+    if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
+    updateUI();
+    closeAllPanels();
+    render();
+  };
+  if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) {
+    switchProduction(doRecruit);
+  } else {
+    doRecruit();
+  }
 }
 
 function checkVictoryConditions() {
@@ -608,6 +638,21 @@ function toggleVictoryPanel() {
   }
 }
 
+// Look up the display name for a tech ID
+function getTechNameById(techId) {
+  if (!techId) return 'tech';
+  const td = TECHNOLOGIES.find(t => t.id === techId);
+  return td ? td.name : techId;
+}
+
+// Build reverse map: building/unit id -> tech name that unlocks it
+function getBuildingUnlockTech(buildingId) {
+  for (const tech of TECHNOLOGIES) {
+    if (tech.unlocks && tech.unlocks.includes(buildingId)) return tech.name;
+  }
+  return null;
+}
+
 function renderBuildPanel() {
   const container = document.getElementById('build-options');
   container.innerHTML = '';
@@ -676,15 +721,20 @@ function renderBuildPanel() {
   for (const b of BUILDINGS) {
     const unlocked = unlockedBuildings.has(b.id);
     const built = game.buildings.includes(b.id);
-    const can = !prodBusy && unlocked && !built;
+    const can = unlocked && !built;
     const gCost = goldCost(b.cost);
     const canBuy = unlocked && !built && game.gold >= gCost;
     const turns = Math.ceil(b.cost / prodRate);
     const div = document.createElement('div');
     const disabled = !can && !canBuy;
+    let bReason = '';
+    if (built) bReason = 'Already built';
+    else if (!unlocked) { const tn = getBuildingUnlockTech(b.id); bReason = 'Requires ' + (tn || 'tech'); }
+    else if (!can && !canBuy) bReason = 'Production busy';
     div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    if (disabled && bReason) div.title = bReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + b.name + (built ? ' \u2713' : '') + '</div>'
-      + '<div class="item-desc">' + b.desc + (!unlocked ? ' (needs tech)' : '') + '</div></div>'
+      + '<div class="item-desc">' + b.desc + (!unlocked ? ' (Requires ' + (getBuildingUnlockTech(b.id) || 'tech') + ')' : '') + '</div></div>'
       + '<div class="item-cost-group">'
       + (can ? '<span class="cost-prod" title="Build with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
       + (unlocked && !built ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
@@ -713,7 +763,7 @@ function renderBuildPanel() {
     const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
     const needsPop = tid === 'settler' && game.population < 2000;
     const prereqMet = techOk && (!needsBarr || hasBarracks) && !needsPop;
-    const can = prereqMet && !prodBusy;
+    const can = prereqMet;
     const gCost = goldCost(ut.cost);
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
@@ -721,7 +771,6 @@ function renderBuildPanel() {
     if (!techOk) reason = 'Needs ' + (reqTech || 'tech');
     else if (needsBarr && !hasBarracks) reason = 'Needs Barracks';
     else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
-    else if (prodBusy && !canBuy) reason = 'Production busy';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
     const unitDisabled = !can && !canBuy;
@@ -798,7 +847,7 @@ function renderBuildPanel() {
     const techOk = !w.requires || game.techs.includes(w.requires);
     const alreadyBuiltByPlayer = game.wonders.includes(w.id);
     const globallyBuilt = game.builtWonders && game.builtWonders[w.id];
-    const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt && !prodBusy && !game.currentWonderBuild;
+    const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
     div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
@@ -875,14 +924,20 @@ function purchaseUnit(typeId) {
 }
 
 function startBuild(buildingId) {
-  if (game.currentBuild || game.currentUnitBuild) return;
-  game.currentBuild = buildingId;
-  game.buildProgress = 0;
-  const bd = BUILDINGS.find(b => b.id === buildingId);
-  const tl = Math.ceil(bd.cost / Math.max(1, game.productionPerTurn));
-  logAction('build', 'Started building ' + bd.name, { buildingId });
-  addEvent('Building ' + bd.name + ' (' + tl + ' turns)', 'gold');
-  closeAllPanels();
+  const doBuild = () => {
+    game.currentBuild = buildingId;
+    game.buildProgress = 0;
+    const bd = BUILDINGS.find(b => b.id === buildingId);
+    const tl = Math.ceil(bd.cost / Math.max(1, game.productionPerTurn));
+    logAction('build', 'Started building ' + bd.name, { buildingId });
+    addEvent('Building ' + bd.name + ' (' + tl + ' turns)', 'gold');
+    closeAllPanels();
+  };
+  if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) {
+    switchProduction(doBuild);
+  } else {
+    doBuild();
+  }
 }
 
 function cancelProduction() {
@@ -903,7 +958,6 @@ function cancelProduction() {
 }
 
 function startWonderBuild(wonderId) {
-  if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) return;
   // Wonder exclusivity check
   if (game.builtWonders && game.builtWonders[wonderId]) {
     const ownerFid = game.builtWonders[wonderId];
@@ -911,13 +965,20 @@ function startWonderBuild(wonderId) {
     showToast('Cannot Build', 'This wonder has already been built by ' + ownerName);
     return;
   }
-  game.currentWonderBuild = wonderId;
-  game.wonderBuildProgress = 0;
-  const wd = WONDERS.find(w => w.id === wonderId);
-  const tl = Math.ceil(wd.cost / Math.max(1, game.productionPerTurn));
-  logAction('build', 'Started building wonder ' + wd.name, { wonderId });
-  addEvent('Wonder: ' + wd.icon + ' ' + wd.name + ' (' + tl + ' turns)', 'gold');
-  closeAllPanels();
+  const doBuild = () => {
+    game.currentWonderBuild = wonderId;
+    game.wonderBuildProgress = 0;
+    const wd = WONDERS.find(w => w.id === wonderId);
+    const tl = Math.ceil(wd.cost / Math.max(1, game.productionPerTurn));
+    logAction('build', 'Started building wonder ' + wd.name, { wonderId });
+    addEvent('Wonder: ' + wd.icon + ' ' + wd.name + ' (' + tl + ' turns)', 'gold');
+    closeAllPanels();
+  };
+  if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild) {
+    switchProduction(doBuild);
+  } else {
+    doBuild();
+  }
 }
 
 function ensureCivicsPanel() {
