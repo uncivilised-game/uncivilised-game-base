@@ -482,6 +482,9 @@ function render() {
   const tension = 0.3;
 
   if (game.riverPaths && game.riverPaths.length > 0) {
+    // Map pixel width for detecting horizontal wrap-around
+    const mapPixelW = HEX_SIZE * SQRT3 * MAP_COLS;
+
     for (const river of game.riverPaths) {
       if (river.length < 2) continue;
 
@@ -515,6 +518,8 @@ function render() {
         if (tile && (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake')) continue;
 
         const p0 = pts[i], p1 = pts[i + 1];
+        // Skip segments that wrap around the map horizontally
+        if (Math.abs(p0.x - p1.x) > mapPixelW * 0.5) continue;
         const progress = i / (pts.length - 1);
         const width = riverBaseWidth * (0.5 + progress * 2.2) * (HEX_SIZE / 36);
 
@@ -565,6 +570,8 @@ function render() {
         const lastTile = game.map[lastSeg.r] && game.map[lastSeg.r][lastSeg.c];
         if (lastTile && (lastTile.base === 'ocean' || lastTile.base === 'coast' || lastTile.base === 'lake')) {
           const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+          // Skip delta if it wraps around the map
+          if (Math.abs(last.x - prev.x) > mapPixelW * 0.5) continue;
           const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
           const fan = HEX_SIZE * 0.4;
           ctx.beginPath();
