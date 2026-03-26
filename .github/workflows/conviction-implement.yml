@@ -1,7 +1,6 @@
 name: Conviction Implement
 
 on:
-  # Manual trigger — pick an issue to implement
   workflow_dispatch:
     inputs:
       issue_number:
@@ -15,25 +14,26 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      issues: write
+      issues: read
       id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: devel
 
       - name: Pick issue
         id: pick
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_ISSUE: ${{ inputs.issue_number }}
         run: |
-          if [ -n "${{ inputs.issue_number }}" ]; then
-            echo "issue_number=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_ISSUE" ]; then
+            echo "issue_number=$INPUT_ISSUE" >> "$GITHUB_OUTPUT"
           else
-            # Pick the open conviction issue with highest score from the body
-            # Parse "## Conviction Score: N" from issue bodies
             ISSUE=$(gh issue list \
               --label conviction \
               --state open \
@@ -62,15 +62,16 @@ jobs:
 
       - name: Get issue details
         id: issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ISSUE_NUM="${{ steps.pick.outputs.issue_number }}"
           echo "Implementing issue #${ISSUE_NUM}"
-          gh issue view "$ISSUE_NUM" --json title,body,labels > /tmp/issue.json
-          TITLE=$(cat /tmp/issue.json | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
-          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title' | tr -d '\n' | head -c 200)
           echo "number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+          {
+            echo "title<<TITLE_EOF"
+            echo "$TITLE"
+            echo "TITLE_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Implement with Claude Code
         uses: anthropics/claude-code-action@v1
@@ -91,7 +92,7 @@ jobs:
             5. Keep changes minimal and focused — fix exactly what the issue describes
             6. Test your changes if possible (npm run build at minimum)
             7. Create a branch named "fix/${{ steps.issue.outputs.number }}" and commit your changes
-            8. Create a PR targeting the "devel" branch with:
+            8. Push the branch and create a PR targeting the "devel" branch with:
                - Title referencing the issue
                - Description explaining what you changed and why
                - "Fixes #${{ steps.issue.outputs.number }}" in the body to auto-close the issue
