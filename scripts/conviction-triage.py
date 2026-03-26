@@ -97,7 +97,7 @@ def sb_rpc(fn_name, data):
 # ── Gemini embeddings ──────────────────────────────────────────────
 def embed_texts(texts):
     """Generate embeddings via Gemini API. Batches for efficiency."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:batchEmbedContents?key={GOOGLE_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:batchEmbedContents"
     # Gemini batch limit is 100 per request
     all_embeddings = []
     for i in range(0, len(texts), 100):
@@ -108,7 +108,7 @@ def embed_texts(texts):
                 for t in batch
             ]
         }
-        result = _req("POST", url, data=requests_body)
+        result = _req("POST", url, data=requests_body, headers={"x-goog-api-key": GOOGLE_API_KEY})
         for emb in result["embeddings"]:
             all_embeddings.append(emb["values"])
     return all_embeddings
@@ -166,11 +166,11 @@ def cluster_feedback(items):
 def score_cluster(cluster):
     """
     Score a cluster by conviction signals. Designed so that:
-    - 1 person, 1 medium report     = 2+1 = 3  (below threshold, no issue)
-    - 1 person, 1 critical report   = 5+1 = 6  (just at threshold)
-    - 2 people, same medium bug     = 4+3 = 7  (above threshold — real signal)
-    - 3 people, mixed priority      = ~9+5 = 14 (strong conviction)
-    - 1 person spamming 3 reports   = 6+1 = 7  (barely passes — unique reporters matter)
+    - 1 person, 1 medium report     = 2+2 = 4  (below threshold, no issue)
+    - 1 person, 1 critical report   = 5+2 = 7  (above threshold)
+    - 2 people, same medium bug     = 4+4 = 8  (above threshold — real signal)
+    - 3 people, mixed priority      = ~9+6 = 15 (strong conviction)
+    - 1 person spamming 3 reports   = 6+2 = 8  (barely passes — unique reporters matter)
 
     Formula:
       priority_sum + (unique_reporters * 2) + recency_bonus
