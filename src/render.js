@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -10,6 +10,85 @@ import { getWaypointPath } from './improvements.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
+
+// ============================================
+// SETTLEMENT RENDERING HELPERS
+// ============================================
+
+// Map population to settlement sprite stage (1-4)
+function getSettlementStage(population) {
+  if (population >= 7000) return 4;
+  if (population >= 4000) return 3;
+  if (population >= 2000) return 2;
+  return 1;
+}
+
+// Draw the settlement sprite for a city
+function drawSettlementSprite(cx, sx, sy, population) {
+  const stage = getSettlementStage(population || 1000);
+  const img = SETTLEMENT_IMAGES[stage];
+  if (img && img.complete && img.naturalWidth > 0) {
+    cx.save();
+    cx.globalAlpha = 0.85;
+    const spriteSize = HEX_SIZE * 2.25;
+    cx.drawImage(img, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
+    cx.globalAlpha = 1.0;
+    cx.restore();
+  }
+}
+
+// Draw a glowing faction ownership hexagon around a settlement
+function drawFactionRing(cx, sx, sy, color) {
+  const r = HEX_SIZE * 1.15;
+  cx.save();
+  cx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 6 + (i * Math.PI) / 3; // flat-top hex
+    const px = sx + r * Math.cos(angle);
+    const py = sy + r * Math.sin(angle);
+    if (i === 0) cx.moveTo(px, py);
+    else cx.lineTo(px, py);
+  }
+  cx.closePath();
+  cx.strokeStyle = color;
+  cx.lineWidth = 2.5;
+  cx.shadowColor = color;
+  cx.shadowBlur = 6;
+  cx.stroke();
+  cx.shadowBlur = 0;
+  cx.restore();
+}
+
+// Draw a capital star at the centre of a settlement
+function drawCapitalStar(cx, sx, sy, color) {
+  const starY = sy;
+  const outerR = 14;
+  const innerR = 6;
+  const spikes = 5;
+
+  cx.save();
+  cx.shadowColor = color;
+  cx.shadowBlur = 8;
+
+  cx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const angle = -Math.PI / 2 + (i * Math.PI) / spikes;
+    const r = i % 2 === 0 ? outerR : innerR;
+    const px = sx + Math.cos(angle) * r;
+    const py = starY + Math.sin(angle) * r;
+    if (i === 0) cx.moveTo(px, py);
+    else cx.lineTo(px, py);
+  }
+  cx.closePath();
+  cx.fillStyle = color;
+  cx.fill();
+  cx.strokeStyle = 'rgba(0,0,0,0.4)';
+  cx.lineWidth = 1;
+  cx.stroke();
+
+  cx.shadowBlur = 0;
+  cx.restore();
+}
 
 function resizeCanvas() {
   const w = canvas.parentElement.clientWidth;
@@ -438,41 +517,32 @@ function render() {
       const fcVisible = game.visibleTiles && game.visibleTiles[fc.row] && game.visibleTiles[fc.row][fc.col];
       ctx.save();
       if (!fcVisible) ctx.globalAlpha = 0.4;
-      // City circle
-      ctx.beginPath();
-      ctx.arc(sx, sy, 11, 0, Math.PI * 2);
-      ctx.fillStyle = fc.color;
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      // Faction ownership ring
+      drawFactionRing(ctx, sx, sy, fc.color);
+      // Settlement sprite (based on population)
+      drawSettlementSprite(ctx, sx, sy, fc.population);
+      // Capital star
+      drawCapitalStar(ctx, sx, sy, fc.color);
       // City name
       ctx.fillStyle = '#fff';
       ctx.font = '600 9px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.shadowColor = 'rgba(0,0,0,0.8)';
       ctx.shadowBlur = 3;
-      ctx.fillText(fc.name, sx, sy - 16);
+      ctx.fillText(fc.name, sx, sy - HEX_SIZE * 1.2);
       ctx.shadowBlur = 0;
-      // Capital star icon
-      ctx.fillStyle = '#1a1400';
-      ctx.font = 'bold 11px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('\u2605', sx, sy + 1);
-      ctx.textBaseline = 'alphabetic';
-      // Show wall HP bar (grey/blue, above city HP bar)
+      // Wall HP bar
       if (fc.wallHP !== undefined && fc.wallMaxHP > 0) {
-        const hpW = 22;
+        const hpW = 26;
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(sx - hpW/2, sy + 11, hpW, 3);
+        ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW, 3);
         ctx.fillStyle = fc.wallHP > fc.wallMaxHP * 0.5 ? '#7090b0' : fc.wallHP > fc.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
-        ctx.fillRect(sx - hpW/2, sy + 11, hpW * (fc.wallHP / fc.wallMaxHP), 3);
+        ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW * (fc.wallHP / fc.wallMaxHP), 3);
       }
-      // Show city HP bar if damaged
+      // City HP bar if damaged
       if (fc.hp !== undefined && fc.hp < CITY_DEFENSE.BASE_HP) {
-        const hpW = 22;
-        const hpY = (fc.wallHP !== undefined && fc.wallMaxHP > 0) ? sy + 15 : sy + 14;
+        const hpW = 26;
+        const hpY = (fc.wallHP !== undefined && fc.wallMaxHP > 0) ? sy + HEX_SIZE * 1.0 + 4 : sy + HEX_SIZE * 1.0;
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillRect(sx - hpW/2, hpY, hpW, 3);
         ctx.fillStyle = fc.hp > 50 ? '#6aab5c' : fc.hp > 25 ? '#ddc060' : '#d9534f';
@@ -500,24 +570,28 @@ function render() {
             drawHex(ctx, bp.x - camX, bp.y - camY, HEX_SIZE - 1); ctx.fill();
           }
         }
-        ctx.beginPath(); ctx.arc(ax, ay, 9, 0, Math.PI * 2);
-        ctx.fillStyle = aic.color || '#888'; ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
+        const aColor = aic.color || '#888';
+        // Faction ownership ring
+        drawFactionRing(ctx, ax, ay, aColor);
+        // Settlement sprite (based on population)
+        drawSettlementSprite(ctx, ax, ay, aic.population);
+        // No capital star — expansion cities
+        // City name
         ctx.fillStyle = '#fff'; ctx.font = '600 8px sans-serif'; ctx.textAlign = 'center';
         ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 2;
-        ctx.fillText(aic.name, ax, ay - 13); ctx.shadowBlur = 0;
-        // Show wall HP bar for expansion city
+        ctx.fillText(aic.name, ax, ay - HEX_SIZE * 1.2); ctx.shadowBlur = 0;
+        // Wall HP bar for expansion city
         if (aic.wallHP !== undefined && aic.wallMaxHP > 0) {
-          const hpW = 22;
+          const hpW = 26;
           ctx.fillStyle = 'rgba(0,0,0,0.5)';
-          ctx.fillRect(ax - hpW/2, ay + 11, hpW, 3);
+          ctx.fillRect(ax - hpW/2, ay + HEX_SIZE * 1.0, hpW, 3);
           ctx.fillStyle = aic.wallHP > aic.wallMaxHP * 0.5 ? '#7090b0' : aic.wallHP > aic.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
-          ctx.fillRect(ax - hpW/2, ay + 11, hpW * (aic.wallHP / aic.wallMaxHP), 3);
+          ctx.fillRect(ax - hpW/2, ay + HEX_SIZE * 1.0, hpW * (aic.wallHP / aic.wallMaxHP), 3);
         }
-        // Show expansion city HP bar if damaged
+        // Expansion city HP bar if damaged
         if (aic.hp !== undefined && aic.hp < CITY_DEFENSE.BASE_HP) {
-          const hpW = 22;
-          const hpY = (aic.wallHP !== undefined && aic.wallMaxHP > 0) ? ay + 15 : ay + 14;
+          const hpW = 26;
+          const hpY = (aic.wallHP !== undefined && aic.wallMaxHP > 0) ? ay + HEX_SIZE * 1.0 + 4 : ay + HEX_SIZE * 1.0;
           ctx.fillStyle = 'rgba(0,0,0,0.5)';
           ctx.fillRect(ax - hpW/2, hpY, hpW, 3);
           ctx.fillStyle = aic.hp > 50 ? '#6aab5c' : aic.hp > 25 ? '#ddc060' : '#d9534f';
@@ -749,25 +823,22 @@ function render() {
   }
 
   // Draw player cities
-  for (const city of game.cities) {
+  const PLAYER_COLOR = '#c9a84c';
+  for (let ci = 0; ci < game.cities.length; ci++) {
+    const city = game.cities[ci];
+    const isCapital = (ci === 0);
     const pos = hexToPixel(city.col, city.row);
     const sx = pos.x - camX;
     const sy = pos.y - camY;
 
-    ctx.beginPath();
-    ctx.arc(sx, sy, 13, 0, Math.PI * 2);
-    ctx.fillStyle = '#c9a84c';
-    ctx.fill();
-    ctx.strokeStyle = '#f0ebe0';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#1a1400';
-    ctx.font = 'bold 13px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('\u2605', sx, sy + 1);
-    ctx.textBaseline = 'alphabetic';
+    // Faction ownership ring
+    drawFactionRing(ctx, sx, sy, PLAYER_COLOR);
+    // Settlement sprite (based on population)
+    drawSettlementSprite(ctx, sx, sy, city.population);
+    // Capital star (first city only)
+    if (isCapital) {
+      drawCapitalStar(ctx, sx, sy, PLAYER_COLOR);
+    }
 
     // Construction progress ring
     let buildPct = 0;
@@ -785,16 +856,14 @@ function render() {
       ringColor = '#c084fc'; // purple for wonders
     }
     if (buildPct > 0) {
-      const ringRadius = 16;
-      const startAngle = -Math.PI / 2; // start at top
+      const ringRadius = HEX_SIZE * 1.3;
+      const startAngle = -Math.PI / 2;
       const endAngle = startAngle + (2 * Math.PI * buildPct);
-      // Background track
       ctx.beginPath();
       ctx.arc(sx, sy, ringRadius, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255,255,255,0.15)';
       ctx.lineWidth = 3;
       ctx.stroke();
-      // Progress arc
       ctx.beginPath();
       ctx.arc(sx, sy, ringRadius, startAngle, endAngle);
       ctx.strokeStyle = ringColor;
@@ -804,35 +873,34 @@ function render() {
       ctx.lineCap = 'butt';
     }
 
-    ctx.fillStyle = '#c9a84c';
+    // City name label
+    ctx.fillStyle = PLAYER_COLOR;
     ctx.font = '700 11px Inter, sans-serif';
+    ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.8)';
     ctx.shadowBlur = 3;
-    ctx.fillText(city.name, sx, sy - 18);
+    ctx.fillText(city.name, sx, sy - HEX_SIZE * 1.2);
     ctx.shadowBlur = 0;
 
     // Dual HP bars for player cities with walls
     if (city.wallHP !== undefined && city.wallMaxHP > 0) {
-      const hpW = 22;
-      // Wall HP bar (grey/blue)
+      const hpW = 26;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(sx - hpW/2, sy + 17, hpW, 3);
+      ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW, 3);
       ctx.fillStyle = city.wallHP > city.wallMaxHP * 0.5 ? '#7090b0' : city.wallHP > city.wallMaxHP * 0.25 ? '#a0a060' : '#d09050';
-      ctx.fillRect(sx - hpW/2, sy + 17, hpW * (city.wallHP / city.wallMaxHP), 3);
-      // City HP bar (green) below wall bar
+      ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW * (city.wallHP / city.wallMaxHP), 3);
       if (city.hp !== undefined && city.hp < CITY_DEFENSE.BASE_HP) {
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(sx - hpW/2, sy + 21, hpW, 3);
+        ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0 + 4, hpW, 3);
         ctx.fillStyle = city.hp > 50 ? '#6aab5c' : city.hp > 25 ? '#ddc060' : '#d9534f';
-        ctx.fillRect(sx - hpW/2, sy + 21, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
+        ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0 + 4, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
       }
     } else if (city.hp !== undefined && city.hp < CITY_DEFENSE.BASE_HP) {
-      // No walls — just city HP bar
-      const hpW = 22;
+      const hpW = 26;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(sx - hpW/2, sy + 17, hpW, 3);
+      ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW, 3);
       ctx.fillStyle = city.hp > 50 ? '#6aab5c' : city.hp > 25 ? '#ddc060' : '#d9534f';
-      ctx.fillRect(sx - hpW/2, sy + 17, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
+      ctx.fillRect(sx - hpW/2, sy + HEX_SIZE * 1.0, hpW * (city.hp / CITY_DEFENSE.BASE_HP), 3);
     }
   }
 
