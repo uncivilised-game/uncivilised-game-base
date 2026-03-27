@@ -137,6 +137,9 @@ export function setCurrentCompetition(v) { currentCompetition = v; }
 export let activeGameRecord = null; // The active_games row for this player+competition
 export function setActiveGameRecord(v) { activeGameRecord = v; }
 
+export let playerRole = 'user'; // 'user' | 'admin' | 'dev'
+export function setPlayerRole(v) { playerRole = v; }
+
 // ============================================
 // ANIMATION STATE
 // ============================================

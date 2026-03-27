@@ -12,7 +12,8 @@ import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin i
 import { SAVE_KEY, GAME_VERSION, RESOURCES } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
-  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS
+  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS,
+  playerRole, setPlayerRole
 } from './state.js';
 import { setRenderCallback } from './assets.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
@@ -286,6 +287,7 @@ async function startNewGame() {
       headers: { 'x-player-name': playerName },
     });
     const gateData = await gateRes.json();
+    if (gateData.role) setPlayerRole(gateData.role);
     if (!gateData.allowed) {
       if (gateData.reason === 'waitlisted') {
         alert('You\'re on the waitlist. We\'ll email you when a spot opens.');
@@ -299,7 +301,7 @@ async function startNewGame() {
   } catch (_) {
     // Network error — fail open
   }
-  if (playerName && currentCompetition) {
+  if (playerName && currentCompetition && playerRole === 'user') {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
       alert(check.reason || 'Session limit reached for this competition.');
@@ -367,12 +369,13 @@ async function continueGame() {
       headers: { 'x-player-name': playerName },
     });
     const gateData = await gateRes.json();
+    if (gateData.role) setPlayerRole(gateData.role);
     if (!gateData.allowed) {
       alert('Access not available. Check your email or sign up.');
       return;
     }
   } catch (_) {}
-  if (playerName && currentCompetition) {
+  if (playerName && currentCompetition && playerRole === 'user') {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
       alert(check.reason || 'Session limit reached for this competition.');
@@ -662,6 +665,7 @@ async function refreshAuthUI() {
       headers: { 'x-player-name': username },
     });
     const data = await res.json();
+    if (data.role) setPlayerRole(data.role);
     if (data.allowed) {
       // Active + verified — show play buttons
       if (guestBtns) guestBtns.style.display = 'none';
