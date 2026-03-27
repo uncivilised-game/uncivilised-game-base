@@ -1360,6 +1360,39 @@ async def admin_analytics(secret: str = "", hours: int = 24):
 
 # /api/health — health check
 # ═══════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
+# Email unsubscribe (token-signed link from newsletters)
+# ═══════════════════════════════════════════════════
+@app.get("/api/unsubscribe")
+async def unsubscribe(request: Request):
+    """One-click email unsubscribe via signed token."""
+    import hashlib
+    import hmac
+    from fastapi.responses import HTMLResponse
+
+    username = request.query_params.get("u", "")
+    token = request.query_params.get("t", "")
+    if not username or not token or not SUPABASE_SERVICE_KEY:
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(token, expected):
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    try:
+        _sb_update("players", {"email_opt_out": True}, f"username=eq.{quote(username)}")
+    except Exception:
+        return HTMLResponse("<h2>Something went wrong. Please email hello@uncivilized.fun to unsubscribe.</h2>", status_code=500)
+
+    return HTMLResponse(
+        '<div style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center">'
+        '<h2 style="color:#c9a84c">Unsubscribed</h2>'
+        f'<p>You won\'t receive further emails from Uncivilized, {username}.</p>'
+        '<p style="color:#888">If this was a mistake, just reply to any previous email or contact hello@uncivilized.fun.</p>'
+        '</div>'
+    )
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint. Tests Supabase connectivity."""

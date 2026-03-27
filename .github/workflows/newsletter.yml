@@ -3,9 +3,13 @@ name: Newsletter
 on:
   workflow_dispatch:
     inputs:
+      template:
+        description: 'Template to use: "newsletter" (reusable) or "launch" (open-source announcement)'
+        required: false
+        default: 'newsletter'
       message:
-        description: 'Custom message body for the newsletter'
-        required: true
+        description: 'Custom message body (required for newsletter template, ignored for launch)'
+        required: false
       subject:
         description: 'Email subject line'
         required: false
@@ -14,6 +18,10 @@ on:
         description: 'Preview who would receive emails without sending (true/false)'
         required: false
         default: 'false'
+      test_email:
+        description: 'Send preview to this single address instead of all players'
+        required: false
+        default: ''
 
 jobs:
   send:
@@ -37,7 +45,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
+          TEMPLATE: ${{ github.event.inputs.template }}
           CUSTOM_MESSAGE: ${{ github.event.inputs.message }}
           EMAIL_SUBJECT: ${{ github.event.inputs.subject }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
+          TEST_EMAIL: ${{ github.event.inputs.test_email }}
         run: python scripts/newsletter.py
