@@ -1054,6 +1054,18 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry):
+    # Plausibility check: reject obviously manipulated scores.
+    # Based on the score formula in turn.js: max ~300pts/turn + bonuses per city/faction.
+    # A generous upper bound gives legitimate top players plenty of headroom.
+    turns = max(1, min(entry.turns_played, 200))
+    cities = max(1, min(entry.cities_count, 50))
+    factions = max(0, min(entry.factions_eliminated, 10))
+    max_plausible = turns * 300 + cities * 300 + factions * 100 + 5000
+    if entry.score > max_plausible:
+        return {"success": False, "error": "Score rejected: value exceeds plausible maximum"}
+    if entry.score < 0:
+        return {"success": False, "error": "Score rejected: negative value"}
+
     record = {
         "player_name": entry.player_name[:20],
         "score": entry.score,
@@ -1128,8 +1140,9 @@ def _update_player_stats(player_name: str, score: int):
 # — player profiles via Supabase players table
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
-async def claim_username(data: ClaimUsername):
-    """Claim a unique username. Optionally associate an email."""
+async def claim_username(data: ClaimUsername, request: Request):
+    """Claim a unique username. If username exists, verify visitor_id ownership."""
+    visitor_id = request.headers.get("x-visitor-id", "")
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -1141,21 +1154,28 @@ async def claim_username(data: ClaimUsername):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id",
+                "players", select="id,username,visitor_id",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                return {"success": False, "error": "Username already taken"}
+                p = existing[0]
+                stored_vid = p.get("visitor_id") or ""
+                # Allow sign-in if visitor_id matches, or if username was claimed before
+                # visitor_id tracking was added (stored_vid is empty)
+                if stored_vid and stored_vid != visitor_id:
+                    return {"success": False, "error": "Username already taken by another player"}
+                return {"success": True, "username": p["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
                 "username_lower": key,
                 "email": data.email,
+                "visitor_id": visitor_id or None,
                 "games_played": 0,
                 "best_score": 0,
                 "total_score": 0,
             }, return_data=False)
-            return {"success": True, "username": username}
+            return {"success": True, "username": username, "returning": False}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -1694,7 +1714,9 @@ Respond with EXACTLY this JSON format (no other text):
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
 _DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players', 'feedback'}
-_DB_PROXY_WRITE = {'active_games', 'leaderboard', 'players'}
+# leaderboard and players writes go through dedicated endpoints (/api/leaderboard, /api/claim-username)
+# so they can be validated server-side before touching the DB
+_DB_PROXY_WRITE = {'active_games'}
 
 
 @app.api_route("/api/db/{path:path}", methods=["GET", "POST", "PATCH"])
