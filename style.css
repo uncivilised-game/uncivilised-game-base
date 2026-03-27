@@ -423,6 +423,15 @@ a:hover { text-decoration: underline; }
   color: rgba(138, 133, 120, 0.4);
   font-size: 10px;
 }
+.social-link {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+}
+.social-link:hover {
+  opacity: 1;
+}
 .footer-count {
   opacity: 0.6;
 }
