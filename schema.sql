@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS players (
   games_played  INTEGER NOT NULL DEFAULT 0,
   best_score    INTEGER NOT NULL DEFAULT 0,
   total_score   INTEGER NOT NULL DEFAULT 0,
+  email_opt_out BOOLEAN NOT NULL DEFAULT false,
   last_active   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -159,12 +160,17 @@ CREATE TABLE IF NOT EXISTS feedback (
   status               TEXT NOT NULL DEFAULT 'new',
   embedding            vector(768),
   github_issue_number  INTEGER,
+  thanked_at           TIMESTAMPTZ,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_feedback_embedding
   ON feedback USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 10);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_unthanked
+  ON feedback (github_issue_number)
+  WHERE status = 'processed' AND thanked_at IS NULL AND github_issue_number IS NOT NULL;
 
 -- ═══════════════════════════════════════════════════
 -- CHAT RATE LIMITS
