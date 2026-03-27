@@ -1403,14 +1403,16 @@ async def player_signup(data: SignupRequest):
 
 
 @app.post("/api/signin")
-async def player_signin(data: SigninRequest):
-    """Sign in a returning player by username."""
+async def player_signin(data: SigninRequest, request: Request):
+    """Sign in a returning player by username. Requires access_token match."""
     username = data.username.strip()
     if not username:
         return {"success": False, "error": "Username required"}
 
     if not _sb_ok:
         return {"success": False, "error": "Database unavailable"}
+
+    access_token = request.headers.get("x-access-token", "")
 
     try:
         # Try with new gating columns first
@@ -1454,7 +1456,6 @@ async def player_signin(data: SigninRequest):
             }
 
         if player.get("email_verified") is False:
-            # Resend the access email
             _send_access_email(player.get("email", ""), player["username"], player.get("access_token", ""))
             return {
                 "success": True,
@@ -1463,12 +1464,23 @@ async def player_signin(data: SigninRequest):
                 "message": "Please check your email and click the verification link to play.",
             }
 
-        # Active + verified — they can play
+        # Verified player — check access_token
+        stored_token = player.get("access_token") or ""
+        if stored_token and access_token == stored_token:
+            # Token matches — sign in
+            return {
+                "success": True,
+                "status": "active",
+                "username": player["username"],
+                "verified": True,
+            }
+
+        # No token or mismatch — send sign-in link via email
+        _send_access_email(player.get("email", ""), player["username"], stored_token)
         return {
             "success": True,
-            "status": "active",
-            "username": player["username"],
-            "verified": True,
+            "status": "needs_email",
+            "message": "New browser? We sent a sign-in link to your email.",
         }
     except Exception as e:
         print(f"[SIGNIN] Error: {e}")
