@@ -814,8 +814,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "mutual_defense", "duration": 15}}]
   [ACTION: {{"type": "open_borders", "duration": 10}}] \u2014 allow free passage through territories
   [ACTION: {{"type": "non_aggression", "duration": 20}}] \u2014 promise no hostilities for set turns
-  [ACTION: {{"type": "send_gift", "amount": 25}}] \u2014 send gold as a gesture of goodwill
-  [ACTION: {{"type": "accept_tribute", "amount": 15}}] \u2014 agree to pay tribute to the player
+  [ACTION: {{"type": "send_gift", "amount": 25}}] \u2014 YOU send gold to the player as a gesture of goodwill (player receives gold)
+  [ACTION: {{"type": "accept_tribute", "amount": 15}}] \u2014 YOU agree to pay tribute to the player (YOU pay, player receives gold)
   [ACTION: {{"type": "embargo", "duration": 15}}] \u2014 cut off trade with the faction
   [ACTION: {{"type": "ceasefire", "duration": 10}}] \u2014 stop hostilities temporarily
   [ACTION: {{"type": "vassalage", "tribute_gold": 5}}] \u2014 become a vassal paying tribute per turn
@@ -872,6 +872,8 @@ DIPLOMACY DEPTH RULES:
 - Open borders allow passage through territory \u2014 propose when friendly, refuse when hostile
 - Non-aggression pacts are weaker than alliances but still useful \u2014 propose to neutral factions
 - Gifts improve relations \u2014 offer proportional to what you can afford based on your personality
+- IMPORTANT: All actions are from YOUR perspective. `send_gift` means YOU give gold to the player. `demand_tribute` means YOU demand gold FROM the player (they will pay you). `accept_tribute` means YOU agree to pay the player. If the player offers to give YOU gold, acknowledge it in your response text \u2014 do NOT use `accept_tribute` (that means you paying them). If they offer to pay you tribute, use `[ACTION: {{"type": "none"}}]` or describe accepting verbally.
+- IMPORTANT: Every proposal or demand you make MUST use an ACTION tag \u2014 never state a demand only in text. Players must always be able to accept or reject your proposals. Tribute demands, gifts, and peace offers all require an ACTION tag so the player can respond.
 - Embargoes hurt the target economically \u2014 use when hostile or trying to pressure
 - Ceasefires stop fighting \u2014 use to give both sides time to recover
 - Vassalage is extreme \u2014 only accept if militarily outmatched, only propose to very weak factions
