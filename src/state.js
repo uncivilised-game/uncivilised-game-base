@@ -31,6 +31,9 @@ export const TERRAIN_TILE_IMAGES = {};
 // Improvement images — populated by loadImprovementImages()
 export const IMPROVEMENT_IMAGES = {};
 
+// Settlement stage images — populated by preloadSettlementImages()
+export const SETTLEMENT_IMAGES = {};
+
 // Whether terrain tile images have finished loading
 export let tilesLoaded = false;
 export function setTilesLoaded(v) { tilesLoaded = v; }

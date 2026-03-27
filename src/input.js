@@ -148,6 +148,11 @@ export function initInputHandlers() {
         else if (key === 'u') { e.preventDefault(); togglePanel('units-panel'); }
         else if (key === 't') { e.preventDefault(); toggleCivicsPanel(); }
         else if (key === 'v') { e.preventDefault(); toggleVictoryPanel(); }
+        else if (key === 'c') {
+          e.preventDefault();
+          const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
+          if (sel) { panCameraTo(sel.col, sel.row); render(); }
+        }
       }
     }
     // Escape key closes any open panel or overlay
