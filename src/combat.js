@@ -17,6 +17,21 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
+  // Civilian capture — attacker takes ownership instead of fighting
+  if (dType.class === 'civilian') {
+    const prevOwner = defender.owner;
+    defender.owner = attacker.owner;
+    defender.moveLeft = 0;
+    const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
+    const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
+    if (prevOwner === 'player') {
+      addEvent(`${captorName} captured your ${dType.name}!`, 'combat');
+    } else if (attacker.owner === 'player') {
+      addEvent(`Captured ${dType.name} from ${ownerName}!`, 'combat');
+    }
+    return { attackerDied: false, defenderDied: false, captured: true };
+  }
+
   let atkPower = aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat;
   let defPower = dType.combat;
 
