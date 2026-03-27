@@ -114,26 +114,13 @@ function submitToLeaderboard(playerName, victory) {
     game_version: GAME_VERSION,
     competition_id: currentCompetition ? currentCompetition.id : null,
   };
-  sbFetch('leaderboard', { method: 'POST', body: JSON.stringify(payload) }).catch(() => {});
+  // Route through /api/leaderboard so the server can validate the score
+  fetch(API + '/api/leaderboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
   finishActiveGame();
-  // Update player stats if registered
-  const key = playerName.toLowerCase();
-  sbFetch('players?username=eq.' + encodeURIComponent(key), { method: 'GET' })
-    .then(r => r.json())
-    .then(rows => {
-      if (rows.length > 0) {
-        const p = rows[0];
-        sbFetch('players?username=eq.' + encodeURIComponent(key), {
-          method: 'PATCH',
-          body: JSON.stringify({
-            games_played: (p.games_played || 0) + 1,
-            total_score: (p.total_score || 0) + game.score,
-            best_score: Math.max(p.best_score || 0, game.score),
-          }),
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-    }).catch(() => {});
 }
 
 function showLeaderboard(tab) {
@@ -247,34 +234,25 @@ function showUsernamePrompt() {
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) { feedback.innerHTML = '<span style="color:#d9534f">Letters, numbers, _ and - only</span>'; return; }
     feedback.innerHTML = '<span style="color:#888">Checking...</span>';
     try {
-      // Check if username is taken
-      const checkRes = await sbFetch('players?username=eq.' + encodeURIComponent(name.toLowerCase()));
-      const existing = await checkRes.json();
-      if (existing.length > 0) {
-        // Username exists — let them reclaim it locally
-        safeStorage.setItem('uncivilised_username', existing[0].username);
-        feedback.innerHTML = '<span style="color:#f0ad4e">Welcome back, ' + existing[0].username + '!</span>';
-        initUsernameUI();
-        setTimeout(() => { modal.style.display = 'none'; }, 1200);
-        return;
-      }
-      // Register new username
-      const insertRes = await sbFetch('players', {
+      const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+      const res = await fetch(API + '/api/claim-username', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
         body: JSON.stringify({ username: name, email: email.value.trim() || null }),
       });
-      if (insertRes.ok) {
-        const data = await insertRes.json();
-        safeStorage.setItem('uncivilised_username', data[0].username);
-        feedback.innerHTML = '<span style="color:#5cb85c">\u2713 Username claimed: <strong>' + data[0].username + '</strong></span>';
+      const data = await res.json();
+      if (data.success) {
+        safeStorage.setItem('uncivilised_username', data.username);
+        feedback.innerHTML = data.returning
+          ? '<span style="color:#f0ad4e">Welcome back, ' + data.username + '!</span>'
+          : '<span style="color:#5cb85c">\u2713 Username claimed: <strong>' + data.username + '</strong></span>';
         initUsernameUI();
         setTimeout(() => { modal.style.display = 'none'; }, 1200);
       } else {
-        const err = await insertRes.json();
-        feedback.innerHTML = '<span style="color:#d9534f">' + (err.message || 'Could not claim username') + '</span>';
+        feedback.innerHTML = '<span style="color:#d9534f">' + (data.error || 'Could not claim username') + '</span>';
       }
     } catch (err) {
-      // Supabase unavailable — save locally
+      // API unavailable — save locally
       safeStorage.setItem('uncivilised_username', name);
       feedback.innerHTML = '<span style="color:#5cb85c">\u2713 Username saved locally: <strong>' + name + '</strong></span>';
       initUsernameUI();

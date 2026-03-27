@@ -389,6 +389,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
+    competition_id: str | None = None
 
 
 class ClaimUsername(BaseModel):
@@ -1064,6 +1065,11 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry):
+    # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
+    # 5000 gives plenty of headroom without relying on client-supplied inputs.
+    if not (0 <= entry.score <= 5000):
+        return {"success": False, "error": "Score rejected"}
+
     record = {
         "player_name": entry.player_name[:20],
         "score": entry.score,
@@ -1073,6 +1079,8 @@ async def submit_leaderboard(entry: LeaderboardEntry):
         "cities_count": entry.cities_count,
         "game_version": entry.game_version,
     }
+    if entry.competition_id:
+        record["competition_id"] = entry.competition_id
 
     if _sb_ok:
         try:
@@ -1138,8 +1146,9 @@ def _update_player_stats(player_name: str, score: int):
 # — player profiles via Supabase players table
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
-async def claim_username(data: ClaimUsername):
-    """Claim a unique username. Optionally associate an email."""
+async def claim_username(data: ClaimUsername, request: Request):
+    """Claim a unique username. If username exists, verify ownership via access_token."""
+    access_token = request.headers.get("x-access-token", "")
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -1151,21 +1160,29 @@ async def claim_username(data: ClaimUsername):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id",
+                "players", select="id,username,access_token",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                return {"success": False, "error": "Username already taken"}
+                p = existing[0]
+                stored_token = p.get("access_token") or ""
+                if not stored_token or not access_token:
+                    # No token on record or no token provided — can't verify ownership
+                    return {"success": False, "error": "Username already taken"}
+                if stored_token != access_token:
+                    return {"success": False, "error": "Username already taken by another player"}
+                return {"success": True, "username": p["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
                 "username_lower": key,
                 "email": data.email,
+                "access_token": access_token,
                 "games_played": 0,
                 "best_score": 0,
                 "total_score": 0,
             }, return_data=False)
-            return {"success": True, "username": username}
+            return {"success": True, "username": username, "returning": False}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -1387,14 +1404,16 @@ async def player_signup(data: SignupRequest):
 
 
 @app.post("/api/signin")
-async def player_signin(data: SigninRequest):
-    """Sign in a returning player by username."""
+async def player_signin(data: SigninRequest, request: Request):
+    """Sign in a returning player by username. Requires access_token match."""
     username = data.username.strip()
     if not username:
         return {"success": False, "error": "Username required"}
 
     if not _sb_ok:
         return {"success": False, "error": "Database unavailable"}
+
+    access_token = request.headers.get("x-access-token", "")
 
     try:
         # Try with new gating columns first
@@ -1438,7 +1457,6 @@ async def player_signin(data: SigninRequest):
             }
 
         if player.get("email_verified") is False:
-            # Resend the access email
             _send_access_email(player.get("email", ""), player["username"], player.get("access_token", ""))
             return {
                 "success": True,
@@ -1447,12 +1465,23 @@ async def player_signin(data: SigninRequest):
                 "message": "Please check your email and click the verification link to play.",
             }
 
-        # Active + verified — they can play
+        # Verified player — check access_token
+        stored_token = player.get("access_token") or ""
+        if stored_token and access_token == stored_token:
+            # Token matches — sign in
+            return {
+                "success": True,
+                "status": "active",
+                "username": player["username"],
+                "verified": True,
+            }
+
+        # No token or mismatch — send sign-in link via email
+        _send_access_email(player.get("email", ""), player["username"], stored_token)
         return {
             "success": True,
-            "status": "active",
-            "username": player["username"],
-            "verified": True,
+            "status": "needs_email",
+            "message": "New browser? We sent a sign-in link to your email.",
         }
     except Exception as e:
         print(f"[SIGNIN] Error: {e}")
@@ -1486,6 +1515,7 @@ async def verify_token(token: str):
                 "verified": True,
                 "status": player["status"],
                 "username": player["username"],
+                "access_token": token,
                 "can_play": False,
                 "message": "Email verified but you're on the waitlist.",
             }
@@ -1495,6 +1525,7 @@ async def verify_token(token: str):
             "verified": True,
             "status": "active",
             "username": player["username"],
+            "access_token": token,
             "can_play": True,
         }
     except Exception as e:
@@ -1704,7 +1735,9 @@ Respond with EXACTLY this JSON format (no other text):
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
 _DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players', 'feedback'}
-_DB_PROXY_WRITE = {'active_games', 'leaderboard', 'players'}
+# leaderboard and players writes go through dedicated endpoints (/api/leaderboard, /api/claim-username)
+# so they can be validated server-side before touching the DB
+_DB_PROXY_WRITE = {'active_games'}
 
 
 @app.api_route("/api/db/{path:path}", methods=["GET", "POST", "PATCH"])

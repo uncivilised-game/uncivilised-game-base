@@ -579,15 +579,28 @@ async function handleSignin(e) {
   const username = document.getElementById('signin-username').value.trim();
 
   try {
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
     const res = await fetch(API + '/api/signin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
       body: JSON.stringify({ username }),
     });
     const data = await res.json();
     if (!data.success) {
       errEl.textContent = data.error || 'Sign in failed';
       errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      return;
+    }
+
+    if (data.status === 'needs_email') {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+      const feedbackEl = document.getElementById('signin-error');
+      feedbackEl.style.display = 'block';
+      feedbackEl.style.color = '#f0ad4e';
+      feedbackEl.textContent = 'New browser? We sent a sign-in link to your email.';
       btn.disabled = false;
       btn.textContent = 'Sign In';
       return;
@@ -702,6 +715,7 @@ async function handleTokenVerification() {
     const data = await res.json();
     if (data.success && data.username) {
       safeStorage.setItem('uncivilised_username', data.username);
+      if (data.access_token) safeStorage.setItem('uncivilised_access_token', data.access_token);
       if (data.can_play) {
         showStatusMessage('Email verified! You\'re ready to play, ' + data.username + '.');
       } else {

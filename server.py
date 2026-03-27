@@ -392,6 +392,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
+    competition_id: Optional[str] = None
 
 
 class ClaimUsername(BaseModel):
@@ -817,6 +818,11 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry):
+    # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
+    # 5000 gives plenty of headroom without relying on client-supplied inputs.
+    if not (0 <= entry.score <= 5000):
+        return {"success": False, "error": "Score rejected"}
+
     record = {
         "player_name": entry.player_name[:20],
         "score": entry.score,
@@ -826,6 +832,8 @@ async def submit_leaderboard(entry: LeaderboardEntry):
         "cities_count": entry.cities_count,
         "game_version": entry.game_version,
     }
+    if entry.competition_id:
+        record["competition_id"] = entry.competition_id
 
     if _sb_ok:
         try:
@@ -892,7 +900,7 @@ def _update_player_stats(player_name: str, score: int):
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
 async def claim_username(data: ClaimUsername):
-    """Claim a unique username. Optionally associate an email."""
+    """Claim a unique username. Local dev — no ownership verification."""
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -904,11 +912,11 @@ async def claim_username(data: ClaimUsername):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id",
+                "players", select="id,username",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                return {"success": False, "error": "Username already taken"}
+                return {"success": True, "username": existing[0]["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
@@ -918,7 +926,7 @@ async def claim_username(data: ClaimUsername):
                 "best_score": 0,
                 "total_score": 0,
             }, return_data=False)
-            return {"success": True, "username": username}
+            return {"success": True, "username": username, "returning": False}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
