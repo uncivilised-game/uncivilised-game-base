@@ -236,7 +236,17 @@ function render() {
           const villageImg = IMPROVEMENT_IMAGES['tribal_village'];
           if (villageImg && villageImg.complete && villageImg.naturalWidth > 0) {
             ctx.save();
-            const imgS = HEX_SIZE * 2.0;
+            // Clip to hex shape
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+              const angle = Math.PI / 180 * (60 * i - 30);
+              const hx = sx + HEX_SIZE * Math.cos(angle);
+              const hy = sy + HEX_SIZE * Math.sin(angle);
+              if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+            }
+            ctx.closePath();
+            ctx.clip();
+            const imgS = HEX_SIZE * 1.0;
             ctx.drawImage(villageImg, sx - imgS / 2, sy - imgS / 2, imgS, imgS);
             ctx.restore();
           }
