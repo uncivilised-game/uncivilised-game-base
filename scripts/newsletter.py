@@ -266,6 +266,10 @@ def send_email(to_email, username, custom_message, subject, issues=None):
                 return True
             print(f"  [EMAIL] Failed for {to_email}: {resp.status}")
             return False
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        print(f"  [EMAIL] Error sending to {to_email}: {e} — {err_body}")
+        return False
     except Exception as e:
         print(f"  [EMAIL] Error sending to {to_email}: {e}")
         return False
