@@ -1,5 +1,5 @@
 import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
-import { game, CITY_WALL_DEFAULTS } from './state.js';
+import { game, CITY_WALL_DEFAULTS, deathMarkers } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
@@ -12,6 +12,10 @@ import { showToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
 import { panCameraTo } from './input.js';
 import { startAnimLoop } from './feedback.js';
+
+function addDeathMarker(col, row) {
+  deathMarkers.push({ col, row, time: performance.now() });
+}
 
 function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
@@ -109,6 +113,7 @@ function resolveCombat(attacker, defender) {
 
   // Remove dead units
   if (defender.hp <= 0) {
+    addDeathMarker(defender.col, defender.row);
     game.units = game.units.filter(u => u.id !== defender.id);
     markVisibilityDirty();
     result.defenderDied = true;
@@ -131,6 +136,7 @@ function resolveCombat(attacker, defender) {
     }
   }
   if (attacker.hp <= 0) {
+    addDeathMarker(attacker.col, attacker.row);
     game.units = game.units.filter(u => u.id !== attacker.id);
     markVisibilityDirty();
     result.attackerDied = true;
@@ -373,6 +379,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   for (const g of garrison) {
     g.hp -= Math.floor(atkDamage * 0.4);
     if (g.hp <= 0) {
+      addDeathMarker(g.col, g.row);
       game.units = game.units.filter(u => u.id !== g.id);
       markVisibilityDirty();
       addEvent('Garrison ' + (UNIT_TYPES[g.type]?.name || 'unit') + ' destroyed!', 'combat');
@@ -380,6 +387,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   }
 
   if (attacker.hp <= 0) {
+    addDeathMarker(attacker.col, attacker.row);
     game.units = game.units.filter(u => u.id !== attacker.id);
     markVisibilityDirty();
     addEvent(aType.name + ' lost in the assault on ' + ec.name, 'combat');
@@ -548,6 +556,7 @@ function executeCityAttack(attacker, factionId, tactic) {
   for (const g of garrison) {
     g.hp -= Math.floor(atkDamage * 0.4);
     if (g.hp <= 0) {
+      addDeathMarker(g.col, g.row);
       game.units = game.units.filter(u => u.id !== g.id);
       markVisibilityDirty();
       addEvent('Garrison ' + (UNIT_TYPES[g.type]?.name || 'unit') + ' destroyed!', 'combat');
@@ -556,6 +565,7 @@ function executeCityAttack(attacker, factionId, tactic) {
 
   // Check if attacker died
   if (attacker.hp <= 0) {
+    addDeathMarker(attacker.col, attacker.row);
     game.units = game.units.filter(u => u.id !== attacker.id);
     markVisibilityDirty();
     addEvent(aType.name + ' lost in the assault on ' + fc.name, 'combat');
@@ -878,4 +888,5 @@ export {
   applyTacticModifier,
   processZOCCaptures,
   applyWallDamage,
+  addDeathMarker,
 };

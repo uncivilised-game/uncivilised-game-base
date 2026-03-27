@@ -1561,7 +1561,7 @@ async def verify_access(request: Request):
         try:
             rows = _sb_select(
                 "players",
-                select="status,email_verified",
+                select="status,email_verified,role",
                 filters=f"username_lower=eq.{quote(username.lower())}",
                 limit=1,
             )
@@ -1573,19 +1573,25 @@ async def verify_access(request: Request):
                 limit=1,
             )
             if rows:
-                return {"allowed": True, "reason": "migration_pending"}
+                return {"allowed": True, "reason": "migration_pending", "role": "user"}
             return {"allowed": False, "reason": "not_signed_up"}
 
         if not rows:
             return {"allowed": False, "reason": "not_signed_up"}
 
         player = rows[0]
+        role = player.get("role", "user") or "user"
+
+        # Admin/dev accounts always get access
+        if role in ("admin", "dev"):
+            return {"allowed": True, "reason": "ok", "role": role}
+
         if player.get("status") != "active":
             return {"allowed": False, "reason": "waitlisted"}
         if not player.get("email_verified", True):
             return {"allowed": False, "reason": "not_verified"}
 
-        return {"allowed": True, "reason": "ok"}
+        return {"allowed": True, "reason": "ok", "role": role}
     except Exception:
         return {"allowed": True, "reason": "error_fail_open"}
 

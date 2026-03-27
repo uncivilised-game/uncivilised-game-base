@@ -137,9 +137,15 @@ export function setCurrentCompetition(v) { currentCompetition = v; }
 export let activeGameRecord = null; // The active_games row for this player+competition
 export function setActiveGameRecord(v) { activeGameRecord = v; }
 
+export let playerRole = 'user'; // 'user' | 'admin' | 'dev'
+export function setPlayerRole(v) { playerRole = v; }
+
 // ============================================
 // ANIMATION STATE
 // ============================================
 
 export let animRunning = false;
 export function setAnimRunning(v) { animRunning = v; }
+
+// Death markers — skull emoji shown at unit death locations, fading out
+export const deathMarkers = [];

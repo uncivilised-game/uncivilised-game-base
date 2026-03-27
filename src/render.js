@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -1084,6 +1084,37 @@ function render() {
     ctx.strokeStyle = '#c9a84c';
     ctx.lineWidth = 2.5;
     ctx.stroke();
+  }
+
+  // Death markers — floating skull emoji that fades out
+  const DEATH_MARKER_DURATION = 1500;
+  const DEATH_MARKER_RISE = 20;
+  const now = performance.now();
+  let hasActiveMarkers = false;
+  for (let i = deathMarkers.length - 1; i >= 0; i--) {
+    const m = deathMarkers[i];
+    const elapsed = now - m.time;
+    if (elapsed > DEATH_MARKER_DURATION) {
+      deathMarkers.splice(i, 1);
+      continue;
+    }
+    hasActiveMarkers = true;
+    const t = elapsed / DEATH_MARKER_DURATION;
+    const alpha = 1 - t;
+    const rise = t * DEATH_MARKER_RISE;
+    const pos = hexToPixel(m.col, m.row);
+    const sx = pos.x - camX;
+    const sy = pos.y - camY - rise;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = '20px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('\u{1F480}', sx, sy);
+    ctx.restore();
+  }
+  if (hasActiveMarkers) {
+    requestAnimationFrame(render);
   }
 
   } finally {
