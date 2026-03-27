@@ -392,6 +392,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
+    competition_id: Optional[str] = None
 
 
 class ClaimUsername(BaseModel):
@@ -807,17 +808,10 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry):
-    # Plausibility check: reject obviously manipulated scores.
-    # Based on the score formula in turn.js: max ~300pts/turn + bonuses per city/faction.
-    # A generous upper bound gives legitimate top players plenty of headroom.
-    turns = max(1, min(entry.turns_played, 200))
-    cities = max(1, min(entry.cities_count, 50))
-    factions = max(0, min(entry.factions_eliminated, 10))
-    max_plausible = turns * 300 + cities * 300 + factions * 100 + 5000
-    if entry.score > max_plausible:
-        return {"success": False, "error": "Score rejected: value exceeds plausible maximum"}
-    if entry.score < 0:
-        return {"success": False, "error": "Score rejected: negative value"}
+    # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
+    # 5000 gives plenty of headroom without relying on client-supplied inputs.
+    if not (0 <= entry.score <= 5000):
+        return {"success": False, "error": "Score rejected"}
 
     record = {
         "player_name": entry.player_name[:20],
@@ -828,6 +822,8 @@ async def submit_leaderboard(entry: LeaderboardEntry):
         "cities_count": entry.cities_count,
         "game_version": entry.game_version,
     }
+    if entry.competition_id:
+        record["competition_id"] = entry.competition_id
 
     if _sb_ok:
         try:
@@ -893,9 +889,8 @@ def _update_player_stats(player_name: str, score: int):
 # — player profiles via Supabase players table
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
-async def claim_username(data: ClaimUsername, request: Request):
-    """Claim a unique username. If username exists, verify visitor_id ownership."""
-    visitor_id = request.headers.get("x-visitor-id", "")
+async def claim_username(data: ClaimUsername):
+    """Claim a unique username. Local dev — no ownership verification."""
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -907,23 +902,16 @@ async def claim_username(data: ClaimUsername, request: Request):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id,username,visitor_id",
+                "players", select="id,username",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                p = existing[0]
-                stored_vid = p.get("visitor_id") or ""
-                # Allow sign-in if visitor_id matches, or if username was claimed before
-                # visitor_id tracking was added (stored_vid is empty)
-                if stored_vid and stored_vid != visitor_id:
-                    return {"success": False, "error": "Username already taken by another player"}
-                return {"success": True, "username": p["username"], "returning": True}
+                return {"success": True, "username": existing[0]["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
                 "username_lower": key,
                 "email": data.email,
-                "visitor_id": visitor_id or None,
                 "games_played": 0,
                 "best_score": 0,
                 "total_score": 0,

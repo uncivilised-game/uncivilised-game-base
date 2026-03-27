@@ -702,6 +702,7 @@ async function handleTokenVerification() {
     const data = await res.json();
     if (data.success && data.username) {
       safeStorage.setItem('uncivilised_username', data.username);
+      if (data.access_token) safeStorage.setItem('uncivilised_access_token', data.access_token);
       if (data.can_play) {
         showStatusMessage('Email verified! You\'re ready to play, ' + data.username + '.');
       } else {

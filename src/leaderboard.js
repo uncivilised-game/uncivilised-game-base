@@ -112,6 +112,7 @@ function submitToLeaderboard(playerName, victory) {
     factions_eliminated: game.factionsEliminated || 0,
     cities_count: game.cities.length,
     game_version: GAME_VERSION,
+    competition_id: currentCompetition ? currentCompetition.id : null,
   };
   // Route through /api/leaderboard so the server can validate the score
   fetch(API + '/api/leaderboard', {
@@ -233,10 +234,10 @@ function showUsernamePrompt() {
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) { feedback.innerHTML = '<span style="color:#d9534f">Letters, numbers, _ and - only</span>'; return; }
     feedback.innerHTML = '<span style="color:#888">Checking...</span>';
     try {
-      const visitorId = safeStorage.getItem('uncivilised_visitor_id') || '';
+      const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
       const res = await fetch(API + '/api/claim-username', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-visitor-id': visitorId },
+        headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
         body: JSON.stringify({ username: name, email: email.value.trim() || null }),
       });
       const data = await res.json();
