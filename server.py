@@ -689,6 +689,14 @@ DIPLOMACY DEPTH RULES:
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
 
+        # Fallback: if the player offered gold and the AI emitted an agreement
+        # without gold_cost, inject the amount from the player's message
+        AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
+        if action and action.get('type') in AGREEMENT_TYPES and not action.get('gold_cost'):
+            gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
+            if gold_match:
+                action['gold_cost'] = int(gold_match.group(1))
+
         # Log diplomacy interaction to Supabase
         visitor_id = request.headers.get("x-visitor-id", "anonymous")
         _log_diplomacy_interaction(
