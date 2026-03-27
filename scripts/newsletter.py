@@ -37,6 +37,8 @@ EMAIL_SUBJECT = os.environ.get("EMAIL_SUBJECT", "News from Uncivilized")
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 TEST_EMAIL = os.environ.get("TEST_EMAIL", "")
 TEMPLATE = os.environ.get("TEMPLATE", "newsletter")  # "newsletter" or "launch"
+INCLUDE_UNVERIFIED = os.environ.get("INCLUDE_UNVERIFIED", "false").lower() == "true"
+ONLY_UNVERIFIED = os.environ.get("ONLY_UNVERIFIED", "false").lower() == "true"
 
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
@@ -110,12 +112,13 @@ def gh_get(path):
 
 # ── Fetch all mailable players ────────────────────────────────────
 def fetch_mailable_players():
-    """Fetch all players with verified emails who haven't opted out."""
-    rows = sb_get(
-        "players",
-        "email_verified=eq.true&email=not.is.null&email_opt_out=not.eq.true"
-        "&status=eq.active&select=username,email"
-    )
+    """Fetch all active players with emails who haven't opted out."""
+    filters = "email=not.is.null&email_opt_out=not.eq.true&status=eq.active&select=username,email"
+    if ONLY_UNVERIFIED:
+        filters = "email_verified=eq.false&" + filters
+    elif not INCLUDE_UNVERIFIED:
+        filters = "email_verified=eq.true&" + filters
+    rows = sb_get("players", filters)
     return {row["username"]: row["email"] for row in rows if row.get("username") and row.get("email")}
 
 

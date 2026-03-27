@@ -22,6 +22,14 @@ on:
         description: 'Send preview to this single address instead of all players'
         required: false
         default: ''
+      include_unverified:
+        description: 'Also send to players with unverified emails (true/false)'
+        required: false
+        default: 'false'
+      only_unverified:
+        description: 'Send ONLY to unverified emails — use to catch up after a verified-only send (true/false)'
+        required: false
+        default: 'false'
 
 jobs:
   send:
@@ -50,4 +58,6 @@ jobs:
           EMAIL_SUBJECT: ${{ github.event.inputs.subject }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
           TEST_EMAIL: ${{ github.event.inputs.test_email }}
+          INCLUDE_UNVERIFIED: ${{ github.event.inputs.include_unverified }}
+          ONLY_UNVERIFIED: ${{ github.event.inputs.only_unverified }}
         run: python scripts/newsletter.py
