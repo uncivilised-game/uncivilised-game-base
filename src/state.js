@@ -143,3 +143,6 @@ export function setActiveGameRecord(v) { activeGameRecord = v; }
 
 export let animRunning = false;
 export function setAnimRunning(v) { animRunning = v; }
+
+// Death markers — skull emoji shown at unit death locations, fading out
+export const deathMarkers = [];
