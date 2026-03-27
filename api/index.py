@@ -811,7 +811,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "surprise_attack"}}] \u2014 launch a treacherous attack despite current peace/alliance
   [ACTION: {{"type": "marriage_offer", "member": "Princess Aurelia", "dowry_gold": 100, "duration": 20}}]
   [ACTION: {{"type": "trade_deal", "player_gives": "gold:30/turn", "player_receives": "military:5,science:3", "duration": 10}}]
-  [ACTION: {{"type": "mutual_defense", "duration": 15}}]
+  [ACTION: {{"type": "mutual_defense", "duration": 15}}] — or with gold cost: {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}
   [ACTION: {{"type": "open_borders", "duration": 10}}] \u2014 allow free passage through territories
   [ACTION: {{"type": "non_aggression", "duration": 20}}] \u2014 promise no hostilities for set turns
   [ACTION: {{"type": "send_gift", "amount": 25}}] \u2014 send gold as a gesture of goodwill
@@ -833,6 +833,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "introduce", "target_faction": "shadow_kael"}}] \u2014 introduce the player to another faction you know
   [ACTION: {{"type": "game_mod", "mod": {{...}}}}] \u2014 modify the game world through diplomacy (see GAME MODS below)
   [ACTION: {{"type": "none"}}]
+
+GOLD COST: Any agreement action (mutual_defense, offer_alliance, open_borders, non_aggression, ceasefire, tech_share) can include "gold_cost": N to require the player to pay gold for the deal. Use this when the player offers gold for an agreement, or when you want to charge for your cooperation. Example: player offers 100 gold for a defense pact → emit {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}. Do NOT use demand_tribute when the player is offering gold for a specific agreement — use the agreement action with gold_cost instead.
 
 GAME MODS \u2014 EMERGENT GAMEPLAY:
 When diplomacy leads to sharing knowledge, intelligence, or forging deep cooperation, you can modify the actual game by including a "game_mod" action. This creates emergent gameplay \u2014 the game evolves through player negotiation. Use these ONLY when it makes narrative sense (a trade of knowledge, a military alliance benefit, intelligence sharing, etc.).
@@ -935,6 +937,14 @@ DIPLOMACY DEPTH RULES:
         # Also strip partial ACTION tags that didn't fully close
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
+
+        # Fallback: if the player offered gold and the AI emitted an agreement
+        # without gold_cost, inject the amount from the player's message
+        AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
+        if action and action.get('type') in AGREEMENT_TYPES and not action.get('gold_cost'):
+            gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
+            if gold_match:
+                action['gold_cost'] = int(gold_match.group(1))
 
         # Log diplomacy interaction to Supabase (visitor_id already extracted above)
         _log_diplomacy_interaction(
