@@ -1177,6 +1177,7 @@ async def claim_username(data: ClaimUsername, request: Request):
                 "username": username,
                 "username_lower": key,
                 "email": data.email,
+                "access_token": access_token,
                 "games_played": 0,
                 "best_score": 0,
                 "total_score": 0,
