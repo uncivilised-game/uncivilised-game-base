@@ -30,7 +30,7 @@ function drawSettlementSprite(cx, sx, sy, population) {
   if (img && img.complete && img.naturalWidth > 0) {
     cx.save();
     cx.globalAlpha = 0.85;
-    const spriteSize = HEX_SIZE * 2.5;
+    const spriteSize = HEX_SIZE * 2.0;
     cx.drawImage(img, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
     cx.globalAlpha = 1.0;
     cx.restore();
@@ -62,8 +62,8 @@ function drawFactionRing(cx, sx, sy, color) {
 // Draw a capital star at the centre of a settlement
 function drawCapitalStar(cx, sx, sy, color) {
   const starY = sy;
-  const outerR = 7;
-  const innerR = 3;
+  const outerR = 14;
+  const innerR = 6;
   const spikes = 5;
 
   cx.save();
