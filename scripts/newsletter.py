@@ -256,6 +256,7 @@ def send_email(to_email, username, custom_message, subject, issues=None):
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                "User-Agent": "uncivilized-newsletter/1.0",
             },
             method="POST",
         )
