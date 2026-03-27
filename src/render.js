@@ -37,11 +37,19 @@ function drawSettlementSprite(cx, sx, sy, population) {
   }
 }
 
-// Draw a glowing faction ownership ring around a settlement
+// Draw a glowing faction ownership hexagon around a settlement
 function drawFactionRing(cx, sx, sy, color) {
+  const r = HEX_SIZE * 1.15;
   cx.save();
   cx.beginPath();
-  cx.arc(sx, sy, HEX_SIZE * 1.15, 0, Math.PI * 2);
+  for (let i = 0; i < 6; i++) {
+    const angle = Math.PI / 6 + (i * Math.PI) / 3; // flat-top hex
+    const px = sx + r * Math.cos(angle);
+    const py = sy + r * Math.sin(angle);
+    if (i === 0) cx.moveTo(px, py);
+    else cx.lineTo(px, py);
+  }
+  cx.closePath();
   cx.strokeStyle = color;
   cx.lineWidth = 2.5;
   cx.shadowColor = color;
@@ -51,9 +59,9 @@ function drawFactionRing(cx, sx, sy, color) {
   cx.restore();
 }
 
-// Draw a capital star above a settlement
+// Draw a capital star at the centre of a settlement
 function drawCapitalStar(cx, sx, sy, color) {
-  const starY = sy - HEX_SIZE * 0.9;
+  const starY = sy;
   const outerR = 7;
   const innerR = 3;
   const spikes = 5;
