@@ -30,7 +30,7 @@ function drawSettlementSprite(cx, sx, sy, population) {
   if (img && img.complete && img.naturalWidth > 0) {
     cx.save();
     cx.globalAlpha = 0.85;
-    const spriteSize = HEX_SIZE * 2.0;
+    const spriteSize = HEX_SIZE * 2.25;
     cx.drawImage(img, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
     cx.globalAlpha = 1.0;
     cx.restore();
