@@ -9,7 +9,7 @@ just get the newsletter content.
 Manual trigger only (workflow_dispatch).
 
 Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, GITHUB_TOKEN, CUSTOM_MESSAGE
-Optional: EMAIL_SUBJECT, DRY_RUN=true
+Optional: EMAIL_SUBJECT, DRY_RUN=true, TEST_EMAIL=you@example.com
 """
 
 import os
@@ -18,9 +18,12 @@ import json
 import re
 import time
 import html
+import hashlib
+import hmac
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+from urllib.parse import quote
 from collections import defaultdict
 
 # ── Config ──────────────────────────────────────────────────────────
@@ -32,15 +35,25 @@ GITHUB_REPO = os.environ.get("GITHUB_REPO", "uncivilised-game/uncivilised-game-b
 CUSTOM_MESSAGE = os.environ.get("CUSTOM_MESSAGE", "")
 EMAIL_SUBJECT = os.environ.get("EMAIL_SUBJECT", "News from Uncivilized")
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+TEST_EMAIL = os.environ.get("TEST_EMAIL", "")
+TEMPLATE = os.environ.get("TEMPLATE", "newsletter")  # "newsletter" or "launch"
 
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_URL = os.environ.get("BASE_URL", "https://uncivilized.fun")
+
+
+def make_unsubscribe_url(username):
+    """Generate a signed unsubscribe URL for a player."""
+    token = hmac.new(SUPABASE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{BASE_URL}/api/unsubscribe?u={quote(username)}&t={token}"
 
 
 def load_template():
-    """Load the HTML email template from newsletter.html."""
-    path = os.path.join(SCRIPT_DIR, "newsletter.html")
+    """Load the HTML email template."""
+    filename = "newsletter-launch.html" if TEMPLATE == "launch" else "newsletter.html"
+    path = os.path.join(SCRIPT_DIR, filename)
     with open(path, "r") as f:
         return f.read()
 
@@ -101,7 +114,7 @@ def fetch_mailable_players():
     rows = sb_get(
         "players",
         "email_verified=eq.true&email=not.is.null&email_opt_out=not.eq.true"
-        "&select=username,email"
+        "&status=eq.active&select=username,email"
     )
     return {row["username"]: row["email"] for row in rows if row.get("username") and row.get("email")}
 
@@ -194,15 +207,23 @@ def build_thank_section_text(issues):
 def send_email(to_email, username, custom_message, subject, issues=None):
     """Send a newsletter email. If issues is provided, include the thank-you section."""
     safe_username = html.escape(username)
-    safe_message = html.escape(custom_message)
-
-    thank_html = build_thank_section_html(issues) if issues else ""
-    greeting = f"Your reports made a difference, {safe_username}." if issues else f"Hey {safe_username},"
+    unsubscribe_url = make_unsubscribe_url(username)
 
     email_html = load_template()
-    email_html = email_html.replace("{{greeting}}", greeting)
-    email_html = email_html.replace("{{custom_message}}", safe_message)
-    email_html = email_html.replace("{{thank_section}}", thank_html)
+    email_html = email_html.replace("{{unsubscribe_url}}", html.escape(unsubscribe_url))
+    email_html = email_html.replace("{{username_raw}}", safe_username)
+    email_html = email_html.replace("{{username}}", safe_username)
+
+    if TEMPLATE == "launch":
+        # Launch template has baked-in content, no dynamic sections
+        pass
+    else:
+        safe_message = html.escape(custom_message).replace("\n", "<br>")
+        thank_html = build_thank_section_html(issues) if issues else ""
+        greeting = f"Your reports made a difference, {safe_username}." if issues else f"Hey {safe_username},"
+        email_html = email_html.replace("{{greeting}}", greeting)
+        email_html = email_html.replace("{{custom_message}}", safe_message)
+        email_html = email_html.replace("{{thank_section}}", thank_html)
 
     thank_text = build_thank_section_text(issues) if issues else ""
     text = (
@@ -212,7 +233,8 @@ def send_email(to_email, username, custom_message, subject, issues=None):
         f"Play now: https://uncivilized.fun\n"
         f"Discord: https://discord.gg/m8BzGbwmvM\n"
         f"GitHub: https://github.com/uncivilised-game/uncivilised-game-base\n\n"
-        f"To opt out of emails, reply with \"unsubscribe\"."
+        f"Unsubscribe: {unsubscribe_url}\n"
+        f"Data requests: hello@uncivilized.fun"
     )
 
     try:
@@ -223,7 +245,10 @@ def send_email(to_email, username, custom_message, subject, issues=None):
             "subject": subject,
             "html": email_html,
             "text": text,
-            "headers": {"List-Unsubscribe": f"<mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>"},
+            "headers": {
+                "List-Unsubscribe": f"<{unsubscribe_url}>, <mailto:{REPLY_TO_EMAIL}?subject=unsubscribe>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
         }).encode()
         req = urllib.request.Request(
             "https://api.resend.com/emails",
@@ -253,15 +278,38 @@ def run():
     if DRY_RUN:
         print("** DRY RUN — no emails will be sent, no rows updated **")
 
-    if not CUSTOM_MESSAGE:
-        print("ERROR: CUSTOM_MESSAGE is required.", file=sys.stderr)
+    is_launch = TEMPLATE == "launch"
+
+    if not is_launch and not CUSTOM_MESSAGE:
+        print("ERROR: CUSTOM_MESSAGE is required (unless TEMPLATE=launch).", file=sys.stderr)
         sys.exit(1)
 
+    print(f"Template: {TEMPLATE}")
     print(f"Subject: {EMAIL_SUBJECT}")
-    print(f"Message: {CUSTOM_MESSAGE}\n")
+    if not is_launch:
+        print(f"Message: {CUSTOM_MESSAGE}")
+    print()
+
+    # Test mode — send preview to a single address and exit
+    if TEST_EMAIL:
+        print(f"** TEST MODE — sending preview to {TEST_EMAIL} **\n")
+        if is_launch:
+            ok = send_email(TEST_EMAIL, "TestPlayer", "", f"[TEST] {EMAIL_SUBJECT}")
+            status = "OK" if ok else "FAILED"
+            print(f"\n=== Test done ({status}). Check {TEST_EMAIL}. ===")
+        else:
+            fake_issues = [
+                {"title": "Units disappear after loading a save", "number": 42},
+                {"title": "Research panel shows wrong cost", "number": 57},
+            ]
+            ok1 = send_email(TEST_EMAIL, "TestPlayer", CUSTOM_MESSAGE, f"[TEST] {EMAIL_SUBJECT}")
+            ok2 = send_email(TEST_EMAIL, "TestReporter", CUSTOM_MESSAGE, f"[TEST+thanks] {EMAIL_SUBJECT}", issues=fake_issues)
+            status = "OK" if (ok1 and ok2) else "SOME FAILED"
+            print(f"\n=== Test done ({status}). Check {TEST_EMAIL} for two emails. ===")
+        return
 
     # 1. Fetch all mailable players
-    print("1. Fetching mailable players...")
+    print("1. Fetching mailable players (active only, not waitlisted)...")
     players = fetch_mailable_players()
     print(f"   {len(players)} players with verified emails")
 
@@ -269,14 +317,19 @@ def run():
         print("\n   No mailable players found. Done.")
         return
 
-    # 2. Find unthanked feedback (for the thank-you section)
-    print("\n2. Checking for unthanked bug reports...")
-    reporter_issues, reporter_feedback_ids, anon_feedback_ids = find_unthanked_feedback()
-    reporters_count = sum(1 for name in reporter_issues if name in players)
-    print(f"   {reporters_count} mailable reporters with fixed issues")
+    # 2. Find unthanked feedback (skip for launch template)
+    reporter_issues = {}
+    reporter_feedback_ids = {}
+    anon_feedback_ids = []
+    if not is_launch:
+        print("\n2. Checking for unthanked bug reports...")
+        reporter_issues, reporter_feedback_ids, anon_feedback_ids = find_unthanked_feedback()
+        reporters_count = sum(1 for name in reporter_issues if name in players)
+        print(f"   {reporters_count} mailable reporters with fixed issues")
 
     # 3. Send emails
-    print(f"\n3. {'Previewing' if DRY_RUN else 'Sending'} emails...")
+    step = "2" if is_launch else "3"
+    print(f"\n{step}. {'Previewing' if DRY_RUN else 'Sending'} emails...")
     sent = 0
     failed = 0
     thanked_ids = []
@@ -301,7 +354,7 @@ def run():
 
     # 4. Mark thanked feedback
     if not DRY_RUN and thanked_ids:
-        print(f"\n4. Marking {len(thanked_ids)} feedback rows as thanked...")
+        print(f"\nMarking {len(thanked_ids)} feedback rows as thanked...")
         now = datetime.now(timezone.utc).isoformat()
         for fid in thanked_ids:
             sb_patch("feedback", {"thanked_at": now}, f"id=eq.{fid}")

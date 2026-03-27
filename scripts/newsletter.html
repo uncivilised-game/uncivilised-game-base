@@ -1,68 +1,122 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0d0f0e;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
-<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
+<table width="580" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%">
 
-<!-- Header: logo + social icons -->
-<tr><td style="padding:0 0 8px">
+<!-- ═══════════════════════════════════════ -->
+<!-- HEADER: logo left + socials right      -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="padding:0 0 10px">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td style="text-align:center">
-      <span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span>
+    <td style="text-align:left;vertical-align:middle">
+      <svg viewBox="0 0 400 60" width="260" height="39" aria-label="Uncivilised Beta" style="display:block">
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#c9a84c"/>
+            <stop offset="100%" stop-color="#8b6914"/>
+          </linearGradient>
+        </defs>
+        <text x="0" y="44" font-family="Cormorant Garamond, Georgia, serif" font-weight="700" font-size="48" fill="url(#lg)">UNCIVILISED</text>
+        <text x="318" y="18" font-family="Inter, sans-serif" font-weight="600" font-size="11" fill="#c9a84c" letter-spacing="1.5" opacity="0.85">BETA</text>
+        <line x1="0" y1="54" x2="360" y2="54" stroke="#c9a84c" stroke-width="0.5" opacity="0.6"/>
+      </svg>
     </td>
-    <td width="80" style="text-align:right;white-space:nowrap">
-      <a href="https://discord.gg/m8BzGbwmvM" style="text-decoration:none;margin-right:8px" title="Discord">
-        <img src="https://cdn.simpleicons.org/discord/c9a84c" alt="Discord" width="22" height="22" style="vertical-align:middle;border:0">
+    <td width="100" style="text-align:right;vertical-align:middle;white-space:nowrap">
+      <a href="https://discord.gg/m8BzGbwmvM" style="text-decoration:none;margin-right:6px;display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#1a1a1a;border-radius:8px;border:1px solid #2a2a28" title="Discord">
+        <img src="https://cdn.simpleicons.org/discord/c9a84c" alt="Discord" width="18" height="18" style="vertical-align:middle;border:0">
       </a>
-      <a href="https://github.com/uncivilised-game/uncivilised-game-base" style="text-decoration:none" title="GitHub">
-        <img src="https://cdn.simpleicons.org/github/c9a84c" alt="GitHub" width="22" height="22" style="vertical-align:middle;border:0">
+      <a href="https://github.com/uncivilised-game/uncivilised-game-base" style="text-decoration:none;display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#1a1a1a;border-radius:8px;border:1px solid #2a2a28" title="GitHub">
+        <img src="https://cdn.simpleicons.org/github/c9a84c" alt="GitHub" width="18" height="18" style="vertical-align:middle;border:0">
       </a>
     </td>
   </tr></table>
 </td></tr>
 
-<tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
+<!-- thin gold line -->
+<tr><td style="padding:0 0 28px"><div style="height:1px;background:linear-gradient(to right,#c9a84c50,transparent)"></div></td></tr>
 
-<!-- Greeting -->
-<tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">{{greeting}}</td></tr>
+<!-- ═══════════════════════════════════════ -->
+<!-- GREETING                               -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="color:#e8e0d0;font-family:'Cormorant Garamond',Georgia,serif;font-size:22px;line-height:30px;padding:0 0 18px;font-weight:600">{{greeting}}</td></tr>
 
-<!-- Custom message -->
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 20px">{{custom_message}}</td></tr>
+<!-- ═══════════════════════════════════════ -->
+<!-- CUSTOM MESSAGE                         -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:26px;padding:0 0 20px">{{custom_message}}</td></tr>
 
-<!-- Thank-you section (only for reporters, empty otherwise) -->
+<!-- ═══════════════════════════════════════ -->
+<!-- THANK-YOU SECTION (reporters only)     -->
+<!-- ═══════════════════════════════════════ -->
 {{thank_section}}
 
-<!-- CTA -->
-<tr><td style="text-align:center;padding:0 0 16px"><a href="https://uncivilized.fun" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#a08030);color:#1a1a0e;font-size:16px;font-weight:700;text-decoration:none;padding:14px 40px;border-radius:6px;letter-spacing:0.5px">Play Now</a></td></tr>
+<!-- ═══════════════════════════════════════ -->
+<!-- DISCORD — COMMUNITY                    -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="padding:0 0 24px">
+  <div style="background:#151715;border:1px solid #222220;border-radius:10px;padding:22px 24px;text-align:center">
+    <div style="font-size:28px;padding-bottom:6px">&#x1F4AC;</div>
+    <div style="color:#e8e0d0;font-family:'Cormorant Garamond',Georgia,serif;font-size:19px;font-weight:600;padding-bottom:8px">Join the Conversation</div>
+    <div style="color:#b8b0a0;font-size:14px;line-height:22px;padding-bottom:16px">
+      Our Discord is open for the early community. Discuss where we take the project next, share ideas, find collaborators, and help shape the roadmap.
+    </div>
+    <a href="https://discord.gg/m8BzGbwmvM" style="display:inline-block;background:#5865F2;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:11px 28px;border-radius:6px;letter-spacing:0.3px">
+      <img src="https://cdn.simpleicons.org/discord/ffffff" alt="" width="14" height="14" style="vertical-align:middle;border:0;margin-right:8px;position:relative;top:-1px">Join Our Discord
+    </a>
+  </div>
+</td></tr>
 
-<!-- Discord callout -->
-<tr><td style="text-align:center;padding:0 0 24px"><a href="https://discord.gg/m8BzGbwmvM" style="display:inline-block;background:#5865F2;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:10px 28px;border-radius:6px;letter-spacing:0.3px">Join our Discord</a></td></tr>
+<!-- ═══════════════════════════════════════ -->
+<!-- PLAY CTA                               -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="text-align:center;padding:0 0 8px">
+  <a href="https://uncivilized.fun" style="display:inline-block;background:linear-gradient(135deg,#c9a84c,#a08030);color:#1a1a0e;font-size:16px;font-weight:700;text-decoration:none;padding:14px 48px;border-radius:6px;letter-spacing:0.5px">Play the Latest Build</a>
+</td></tr>
 
-<tr><td style="color:#b8b0a0;font-size:14px;line-height:22px;padding:0 0 8px;text-align:center">Have ideas or found a bug? We love hearing from you &mdash; detailed reports are eligible for our <strong style="color:#c9a84c">bounty program</strong>.</td></tr>
+<tr><td style="color:#8a8578;font-size:13px;line-height:20px;padding:8px 0 0;text-align:center">
+  Detailed bug reports are eligible for our <strong style="color:#c9a84c">bounty program</strong>.
+</td></tr>
 
-<!-- Divider -->
-<tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
+<!-- ═══════════════════════════════════════ -->
+<!-- FOOTER                                 -->
+<!-- ═══════════════════════════════════════ -->
+<tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c15,transparent)"></div></td></tr>
 
-<!-- Footer -->
 <tr><td style="padding:16px 0 0">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td style="color:#5a5548;font-size:12px;line-height:18px;text-align:center">
-      Uncivilized &mdash; The Ancient Era<br>
+    <td style="color:#5a5548;font-size:12px;line-height:18px;text-align:left">
+      Uncivilised &mdash; The Ancient Era<br>
       <a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a>
     </td>
-    <td width="80" style="text-align:right;white-space:nowrap">
-      <a href="https://discord.gg/m8BzGbwmvM" style="text-decoration:none;margin-right:8px" title="Discord">
-        <img src="https://cdn.simpleicons.org/discord/5a5548" alt="Discord" width="18" height="18" style="vertical-align:middle;border:0">
+    <td width="80" style="text-align:right;white-space:nowrap;vertical-align:middle">
+      <a href="https://discord.gg/m8BzGbwmvM" style="text-decoration:none;margin-right:4px;display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;background:#1a1a1a;border-radius:6px;border:1px solid #2a2a28" title="Discord">
+        <img src="https://cdn.simpleicons.org/discord/5a5548" alt="Discord" width="14" height="14" style="vertical-align:middle;border:0">
       </a>
-      <a href="https://github.com/uncivilised-game/uncivilised-game-base" style="text-decoration:none" title="GitHub">
-        <img src="https://cdn.simpleicons.org/github/5a5548" alt="GitHub" width="18" height="18" style="vertical-align:middle;border:0">
+      <a href="https://github.com/uncivilised-game/uncivilised-game-base" style="text-decoration:none;display:inline-block;width:28px;height:28px;line-height:28px;text-align:center;background:#1a1a1a;border-radius:6px;border:1px solid #2a2a28" title="GitHub">
+        <img src="https://cdn.simpleicons.org/github/5a5548" alt="GitHub" width="14" height="14" style="vertical-align:middle;border:0">
       </a>
     </td>
   </tr></table>
 </td></tr>
 
-<!-- GDPR / opt-out -->
-<tr><td style="color:#3a3830;font-size:11px;line-height:16px;padding:12px 0 0;text-align:center;font-style:italic">
-  You received this email because you have an account at uncivilized.fun. To opt out of future emails, reply with &ldquo;unsubscribe&rdquo; or email <a href="mailto:hello@uncivilized.fun?subject=unsubscribe" style="color:#3a3830;text-decoration:underline">hello@uncivilized.fun</a>. Your data is stored securely and never shared with third parties.
+<!-- GDPR-compliant footer -->
+<tr><td style="color:#3a3830;font-size:11px;line-height:17px;padding:16px 0 0;text-align:center">
+  <div style="padding-bottom:10px">
+    You received this email because you registered as a beta player at <a href="https://uncivilized.fun" style="color:#4a4840;text-decoration:underline">uncivilized.fun</a>. We process your data (username, email, gameplay activity) under <strong style="color:#4a4840">legitimate interest</strong> to operate the game and communicate updates to our beta community.
+  </div>
+  <div style="padding-bottom:10px">
+    <strong style="color:#4a4840">Your rights under GDPR:</strong> You may request access to, correction of, or deletion of your personal data at any time. You also have the right to object to processing or request data portability.
+  </div>
+  <div style="padding-bottom:10px">
+    <a href="{{unsubscribe_url}}" style="color:#4a4840;text-decoration:underline;font-weight:600">Unsubscribe</a> &nbsp;&bull;&nbsp;
+    <a href="mailto:hello@uncivilized.fun?subject=Data%20deletion%20request&body=Username:%20{{username_raw}}" style="color:#4a4840;text-decoration:underline">Request data deletion</a> &nbsp;&bull;&nbsp;
+    <a href="mailto:hello@uncivilized.fun?subject=Data%20access%20request&body=Username:%20{{username_raw}}" style="color:#4a4840;text-decoration:underline">Request my data</a>
+  </div>
+  <div style="color:#2e2d28">
+    Your data is stored securely and is never sold or shared with third parties. If you believe your data rights have not been respected, you may lodge a complaint with the <a href="https://ico.org.uk" style="color:#3a3830;text-decoration:underline">UK Information Commissioner's Office</a>.
+  </div>
 </td></tr>
 
 </table></td></tr></table></body></html>
