@@ -99,6 +99,10 @@ export function processImprovements() {
         const imp = TILE_IMPROVEMENTS[builder.improvementId];
         if (!imp) { tile.improvementBuilder = null; continue; }
 
+        // Determine ownership of the builder
+        const worker = game.units.find(u => u.id === builder.unitId);
+        const isPlayer = worker && worker.owner === 'player';
+
         // Apply the improvement
         if (builder.improvementId === 'road') {
           tile.road = true;
@@ -106,61 +110,60 @@ export function processImprovements() {
           // Terraforming
           if (imp.terraform.removeFeature) {
             tile.feature = null;
-            if (imp.terraform.prodBonus) {
+            if (imp.terraform.prodBonus && isPlayer) {
               game.production += imp.terraform.prodBonus;
               addEvent(`Forest cleared! +${imp.terraform.prodBonus} production`, 'gold');
             }
           }
           if (imp.terraform.addFeature) {
             tile.feature = imp.terraform.addFeature;
-            addEvent(`${imp.name} complete!`, 'gold');
+            if (isPlayer) addEvent(`${imp.name} complete!`, 'gold');
           }
         } else {
           tile.improvement = builder.improvementId;
-          addEvent(`${imp.name} completed!`, 'gold');
-        logAction('build', 'Improvement completed: ' + imp.name + ' at (' + c + ',' + r + ')', { improvement: builder.improvementId, col: c, row: r });
+          if (isPlayer) {
+            addEvent(`${imp.name} completed!`, 'gold');
+            logAction('build', 'Improvement completed: ' + imp.name + ' at (' + c + ',' + r + ')', { improvement: builder.improvementId, col: c, row: r });
 
-          // --- Eureka/Inspiration triggers for improvements ---
-          // Track total improvements for craftsmanship inspiration
-          game.improvementCount = (game.improvementCount || 0) + 1;
-          if (game.improvementCount >= 3) triggerInspiration('craftsmanship');
+            // --- Eureka/Inspiration triggers (player only) ---
+            game.improvementCount = (game.improvementCount || 0) + 1;
+            if (game.improvementCount >= 3) triggerInspiration('craftsmanship');
 
-          if (builder.improvementId === 'quarry') {
-            triggerEureka('mining');
-            triggerEureka('masonry');
-          }
-          if (builder.improvementId === 'pasture') {
-            triggerEureka('animal_husbandry');
-            triggerEureka('wheel');
-          }
-          if (builder.improvementId === 'mine') {
-            game.mineCount = (game.mineCount || 0) + 1;
-            if (game.mineCount >= 3) triggerEureka('construction');
-          }
-          if (builder.improvementId === 'farm') {
-            // Check if adjacent to river
-            const farmTile = game.map[r][c];
-            if (farmTile && farmTile.hasRiver) {
-              triggerEureka('irrigation_tech');
+            if (builder.improvementId === 'quarry') {
+              triggerEureka('mining');
+              triggerEureka('masonry');
+            }
+            if (builder.improvementId === 'pasture') {
+              triggerEureka('animal_husbandry');
+              triggerEureka('wheel');
+            }
+            if (builder.improvementId === 'mine') {
+              game.mineCount = (game.mineCount || 0) + 1;
+              if (game.mineCount >= 3) triggerEureka('construction');
+            }
+            if (builder.improvementId === 'farm') {
+              const farmTile = game.map[r][c];
+              if (farmTile && farmTile.hasRiver) {
+                triggerEureka('irrigation_tech');
+              }
             }
           }
         }
 
         // Wake the worker and decrement build charges
-        const worker = game.units.find(u => u.id === builder.unitId);
         if (worker) {
           worker.sleeping = false;
           if (worker.buildCharges !== undefined) {
             worker.buildCharges--;
             if (worker.buildCharges <= 0) {
               game.units = game.units.filter(u => u.id !== worker.id);
-              addEvent('Worker has used all build charges and was consumed', 'warning');
+              if (isPlayer) addEvent('Worker has used all build charges and was consumed', 'warning');
             }
           }
         }
 
         tile.improvementBuilder = null;
-        showCompletionNotification('improvement', imp.name, imp.desc);
+        if (isPlayer) showCompletionNotification('improvement', imp.name, imp.desc);
       }
     }
   }
