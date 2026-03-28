@@ -818,25 +818,9 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
-    # ── Auth: verify the submitter owns this player_name ──
-    access_token = request.headers.get("x-access-token", "")
     player_name = entry.player_name.strip()[:20]
-    if not player_name or not access_token:
-        return {"success": False, "error": "Authentication required"}
-
-    if _sb_ok:
-        rows = _sb_select(
-            "players", select="username,access_token",
-            filters=f"username_lower=eq.{quote(player_name.lower())}",
-            limit=1,
-        )
-        if not rows:
-            return {"success": False, "error": "Player not registered"}
-        stored_token = rows[0].get("access_token") or ""
-        if not stored_token or stored_token != access_token:
-            return {"success": False, "error": "Invalid access token"}
-        # Use the canonical username from the DB
-        player_name = rows[0]["username"]
+    if not player_name:
+        return {"success": False, "error": "Player name required"}
 
     # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
     # 5000 gives plenty of headroom without relying on client-supplied inputs.
