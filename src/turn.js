@@ -137,7 +137,7 @@ function calculateCityAmenities(events) {
 let _processingTurn = false;
 
 function endTurn() {
-  if (!game || game.turn > MAX_TURNS) return;
+  if (!game || game.turn > MAX_TURNS || game.gameOver) return;
   if (_processingTurn) return; // prevent double-click / re-entrance
   _processingTurn = true;
   markVisibilityDirty();
@@ -978,6 +978,7 @@ document.getElementById('btn-dismiss-summary').addEventListener('click', () => {
 });
 
 function showGameOver(victory) {
+  game.gameOver = true;
   const body = document.getElementById('game-over-body');
   document.getElementById('btn-end-turn').disabled = true;
   document.getElementById('btn-end-turn').style.opacity = '0.4';
