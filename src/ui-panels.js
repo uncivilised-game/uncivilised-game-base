@@ -477,11 +477,12 @@ function renderUnitsPanel() {
     const techUnlocked = !requiredTech || game.techs.includes(requiredTech);
     const needsBarracks = !['scout', 'warrior', 'slinger', 'worker', 'settler'].includes(typeId);
     const needsPop = typeId === 'settler' && game.population < 2000;
-    const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
-    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
+    const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !prodBusy && !needsPop;
+    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : prodBusy ? 'Production busy' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    if (!canRecruit && reason) div.title = reason;
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
@@ -646,7 +647,7 @@ function getTechNameById(techId) {
   return td ? td.name : techId;
 }
 
-// Build reverse map: building/unit id -> tech name that unlocks it
+// Build reverse map: building id -> tech name that unlocks it
 function getBuildingUnlockTech(buildingId) {
   for (const tech of TECHNOLOGIES) {
     if (tech.unlocks && tech.unlocks.includes(buildingId)) return tech.name;
@@ -771,7 +772,8 @@ function renderBuildPanel() {
     let reason = '';
     if (!techOk) reason = 'Requires ' + getTechNameById(reqTech);
     else if (needsBarr && !hasBarracks) reason = 'Requires Barracks';
-    else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
+    else if (needsPop) reason = 'Requires population 2,000+ (have ' + game.population.toLocaleString() + ')';
+    else if (prodBusy && !canBuy) reason = 'Production busy';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
     const unitDisabled = !can && !canBuy;
@@ -808,10 +810,9 @@ function renderBuildPanel() {
     const techOk = !gov.unlockTech || game.techs.includes(gov.unlockTech);
     const div = document.createElement('div');
     div.className = 'build-item ' + (!techOk ? 'item-disabled' : '');
-    const govTechName = !techOk ? getTechNameById(gov.unlockTech) : '';
-    if (!techOk) div.title = 'Requires ' + govTechName;
+    if (!techOk) div.title = 'Requires ' + getTechNameById(gov.unlockTech);
     div.innerHTML = '<div class="item-info"><div class="item-name">' + (gov.icon || '') + ' ' + gov.name + '</div>'
-      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (Requires ' + govTechName + ')' : '') + '</div></div>'
+      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (Requires ' + getTechNameById(gov.unlockTech) + ')' : '') + '</div></div>'
       + '<div class="item-cost" style="color:#d4a0ff;font-size:11px">Switch</div>';
     if (techOk) {
       div.addEventListener('click', ((gidCopy) => () => {
@@ -854,7 +855,6 @@ function renderBuildPanel() {
     const canBuild = techOk && !alreadyBuiltByPlayer && !globallyBuilt;
     const turns = Math.ceil(w.cost / prodRate);
     const div = document.createElement('div');
-    div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
     let statusLabel = '';
     let wonderReason = '';
     if (globallyBuilt) {
@@ -866,7 +866,10 @@ function renderBuildPanel() {
       const wonderTechName = getTechNameById(w.requires);
       statusLabel = ' <span style="color:#888;font-size:10px">(Requires ' + wonderTechName + ')</span>';
       wonderReason = 'Requires ' + wonderTechName;
+    } else if (alreadyBuiltByPlayer) {
+      wonderReason = 'Already built';
     }
+    div.className = 'build-item ' + (!canBuild ? 'item-disabled' : '');
     if (!canBuild && wonderReason) div.title = wonderReason;
     div.innerHTML = '<div class="item-info"><div class="item-name">' + w.icon + ' ' + w.name + (alreadyBuiltByPlayer ? ' \u2713' : '') + statusLabel + '</div>'
       + '<div class="item-desc">' + w.desc + '</div></div>'
@@ -1063,7 +1066,7 @@ function renderCivicsPanel() {
       if (isCurrent) div.style.borderLeft = '3px solid #e8a0ff';
 
       const reqNames = (c.requires || []).map(r => { const rc = CIVICS.find(x => x.id === r); return rc ? rc.name : r; });
-      const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (needs: ' + reqNames.join(', ') + ')' : '';
+      const reqStr = reqNames.length > 0 && !hasPrereqs ? ' (Requires: ' + reqNames.join(', ') + ')' : '';
 
       const hasInspiration = c.inspiration;
       const inspirationTriggered = hasInspiration && game.inspirations && game.inspirations.includes(c.id);
