@@ -858,6 +858,7 @@ a:hover { text-decoration: underline; }
 #event-log-messages {
   display: flex;
   flex-direction: column-reverse;
+  overflow-anchor: none;
 }
 
 .event-msg {
