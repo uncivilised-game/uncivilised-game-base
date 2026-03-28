@@ -702,12 +702,13 @@ function getTileYields(tile) {
   prod += impYields.prod;
   gold += impYields.gold;
 
-  // Apply mod yield bonuses from diplomatic agreements
+  // Apply mod yield bonuses from diplomatic agreements, including synonyms
   if (game && game.yieldBonuses) {
     const modBonus = getModYieldBonus(tile);
-    food += modBonus.food;
-    prod += modBonus.prod;
-    gold += modBonus.gold;
+    const sumBonuses = (total, key) => total + (modBonus[key] || 0);
+    food += ['food', 'crop', 'fruit', 'grain', 'harvest'].reduce(sumBonuses, 0);
+    prod += ['prod', 'produce', 'product', 'production'].reduce(sumBonuses, 0);
+    gold += ['gold'].reduce(sumBonuses, 0);
   }
   return { food, prod, gold };
 }
