@@ -34,6 +34,7 @@ import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction } 
 import { updateRankingsHUD, toggleRankingsDropdown, renderRankingsDropdown } from './rankings.js';
 import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
+import { seedInterFactionRelations } from './inter-faction-relations.js';
 import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages, getHexDirection, hasRiverBetween, hasRoadBridge } from './map.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
@@ -320,6 +321,7 @@ async function startNewGame() {
 
   setNextUnitId(1);
   setGame(createInitialState());
+  seedInterFactionRelations(); // Initialize AI-to-AI relationship matrix
   const eventLog = document.getElementById('event-log-messages');
   if (eventLog) eventLog.innerHTML = '';
   closeAllPanels();

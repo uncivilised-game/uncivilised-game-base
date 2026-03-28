@@ -166,6 +166,12 @@ function migrateTiles(state) {
   if (!state.techProgress) state.techProgress = {};
   if (!state.civicProgressMap) state.civicProgressMap = {};
 
+  // --- Inter-faction relations migration ---
+  if (!state.interFactionRelations) state.interFactionRelations = null; // will be seeded on first turn
+  if (!state.interFactionWars) state.interFactionWars = [];
+  if (!state.interFactionAlliances) state.interFactionAlliances = [];
+  if (!state.interFactionEvents) state.interFactionEvents = [];
+
   // Re-inject any dynamically created content from mods
   restoreMods(state);
   return state;

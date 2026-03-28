@@ -375,6 +375,7 @@ class ChatMessage(BaseModel):
     reputation: dict | None = None
     diplomatic_ledger: list[dict] | None = None
     diplomatic_summary: str | None = None
+    inter_faction: dict | None = None
 
 
 class SaveData(BaseModel):
@@ -709,6 +710,61 @@ Broken Agreements: {broken_count}
 IMPORTANT: Let your disposition colour your tone, trust level, and willingness to deal. A player with low Honour should face suspicion. High Menace warrants caution. Adapt to what you KNOW from experience."""
 
 
+def _build_inter_faction_prompt(character_id: str, inter_faction: dict | None) -> str:
+    """Build prompt section describing this faction's relationships with other AI factions."""
+    if not inter_faction:
+        return ""
+    relations = inter_faction.get("relations", {})
+    if not relations:
+        return ""
+
+    lines = []
+    for fid, info in relations.items():
+        name = info.get("name", fid)
+        score = info.get("score", 0)
+        if info.get("atWar"):
+            status = "AT WAR"
+        elif info.get("allied"):
+            status = "ALLIED"
+        else:
+            status = info.get("label", "Neutral")
+        lines.append(f"- {name}: {status} ({score})")
+
+    recent_events = inter_faction.get("recentEvents", [])
+    event_lines = ""
+    if recent_events:
+        evts = list(reversed(recent_events[-5:]))
+        event_lines = "\n".join(f"  Turn {e.get('turn','?')}: {e.get('detail','?')}" for e in evts)
+
+    other_wars = inter_faction.get("otherWars", [])
+    war_lines = ""
+    if other_wars:
+        war_lines = "\n".join(f"  {w.get('nameA','?')} vs {w.get('nameB','?')} (since turn {w.get('since','?')})" for w in other_wars)
+
+    ctx = f"""
+
+YOUR RELATIONS WITH OTHER RULERS:
+{chr(10).join(lines)}"""
+
+    if event_lines:
+        ctx += f"""
+
+Recent diplomatic events involving you:
+{event_lines}"""
+
+    if war_lines:
+        ctx += f"""
+
+Wars between other factions (gossip material):
+{war_lines}"""
+
+    ctx += """
+
+IMPORTANT: Reference your relationships with other rulers naturally in conversation. If the player asks about another faction, share your genuine opinion. If you're at war with someone, mention it when relevant. If you have allies, leverage that. This political web is real — use it to make deals, warnings, and offers more compelling."""
+
+    return ctx
+
+
 # ═══════════════════════════════════════════════════
 # /api/chat — AI diplomacy (+ diplomacy logging)
 # ═══════════════════════════════════════════════════
@@ -789,9 +845,13 @@ if strong, you might be more respectful or threatened."""
         msg.game_state,
     )
 
+    # Build inter-faction relations context (gossip / political web)
+    inter_faction_context = _build_inter_faction_prompt(msg.character_id, msg.inter_faction)
+
     system_prompt = f"""{profile['personality']}
 {game_context}
 {reputation_context}
+{inter_faction_context}
 
 INTERACTION RULES:
 - Stay in character at all times
