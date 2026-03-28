@@ -58,7 +58,7 @@ _SB_HEADERS = {
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
-MAX_ACTIVE_PLAYERS = 1000  # first N signups get immediate access
+MAX_ACTIVE_PLAYERS = 10000  # first N signups get immediate access
 
 WELCOME_EMAIL_HTML = """
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -165,7 +165,7 @@ def _send_waitlisted_email(to_email: str, username: str, position: int):
 <tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
 <tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">You're on the list, {username}.</td></tr>
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 1,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 10,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">We'll email you the moment a spot opens up. In the meantime, the game is open source &mdash; you can follow development on GitHub or join the community.</td></tr>
 <tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
 <tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
@@ -1334,7 +1334,7 @@ async def get_waitlist_count():
 # ═══════════════════════════════════════════════════
 @app.post("/api/signup")
 async def player_signup(data: SignupRequest):
-    """Register a new player. First 1,000 get immediate access; rest are waitlisted."""
+    """Register a new player. First 10,000 get immediate access; rest are waitlisted."""
     username = data.username.strip()
     email = data.email.strip().lower()
 
@@ -1558,7 +1558,7 @@ async def verify_token(token: str):
 
 @app.get("/api/spots-remaining")
 async def spots_remaining():
-    """Return how many of the 1,000 spots are still open."""
+    """Return how many of the 10,000 spots are still open."""
     if not _sb_ok:
         return {"total": MAX_ACTIVE_PLAYERS, "active": 0, "remaining": MAX_ACTIVE_PLAYERS}
 
