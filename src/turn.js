@@ -136,8 +136,16 @@ function calculateCityAmenities(events) {
 
 let _processingTurn = false;
 
+function continueAfterVictory() {
+  game.gameOver = false;
+  game.postVictoryPlay = true;
+  document.getElementById('game-over').style.display = 'none';
+  const btn = document.getElementById('btn-end-turn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
+
 function endTurn() {
-  if (!game || game.turn > MAX_TURNS || game.gameOver) return;
+  if (!game || (game.turn > MAX_TURNS && !game.postVictoryPlay) || game.gameOver) return;
   if (_processingTurn) return; // prevent double-click / re-entrance
   _processingTurn = true;
   markVisibilityDirty();
@@ -1020,7 +1028,10 @@ function showGameOver(victory) {
     <div class="summary-stat"><span class="summary-label">Technologies</span><span class="summary-value">${game.techs.length}/${TECHNOLOGIES.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Buildings</span><span class="summary-value">${game.buildings.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Factions Eliminated</span><span class="summary-value">${game.factionsEliminated || 0}</span></div>
-    <div style="text-align:center;margin-top:12px"><button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button></div>
+    <div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center">
+      <button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button>
+      <button id="btn-continue-after-victory" class="btn btn-primary" style="font-size:12px;padding:6px 14px">\u25B6 Continue Playing</button>
+    </div>
   `;
   closeAllPanels();
   document.getElementById('game-over').style.display = 'block';
@@ -1031,6 +1042,7 @@ function showGameOver(victory) {
   submitToLeaderboard(playerName, victory);
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
+  document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
 }
 
-export { endTurn, showTurnSummary, showGameOver };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory };

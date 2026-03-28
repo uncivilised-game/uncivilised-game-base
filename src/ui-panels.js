@@ -551,7 +551,7 @@ function checkVictoryConditions() {
   const allTechs = TECHNOLOGIES.filter(t => !t.id.startsWith('mod_'));
   if (game.techs.length >= allTechs.length) return { type: 'science', desc: 'You achieved technological supremacy!', icon: '\u{1F52C}' };
   if (game.civics.length >= CIVICS.length) return { type: 'culture', desc: 'Your culture is legendary!', icon: '\u{1F3A8}' };
-  if (game.turn >= MAX_TURNS) return { type: 'score', desc: 'Your civilization endures!', icon: '\u{1F3C6}' };
+  if (game.turn >= MAX_TURNS && !game.postVictoryPlay) return { type: 'score', desc: 'Your civilization endures!', icon: '\u{1F3C6}' };
   return null;
 }
 
