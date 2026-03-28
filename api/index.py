@@ -1064,14 +1064,38 @@ async def load_game(request: Request):
 # /api/leaderboard — top 500 via Supabase leaderboard table
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
-async def submit_leaderboard(entry: LeaderboardEntry):
+async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
+    # ── Auth: verify the submitter owns this player_name ──
+    access_token = request.headers.get("x-access-token", "")
+    player_name = entry.player_name.strip()[:20]
+    if not player_name or not access_token:
+        return {"success": False, "error": "Authentication required"}
+
+    if _sb_ok:
+        rows = _sb_select(
+            "players", select="username,access_token",
+            filters=f"username_lower=eq.{quote(player_name.lower())}",
+            limit=1,
+        )
+        if not rows:
+            return {"success": False, "error": "Player not registered"}
+        stored_token = rows[0].get("access_token") or ""
+        if not stored_token or stored_token != access_token:
+            return {"success": False, "error": "Invalid access token"}
+        # Use the canonical username from the DB
+        player_name = rows[0]["username"]
+
     # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
     # 5000 gives plenty of headroom without relying on client-supplied inputs.
     if not (0 <= entry.score <= 5000):
         return {"success": False, "error": "Score rejected"}
 
+    # Minimum bar: don't pollute the board with empty/trivial submissions
+    if entry.score < 10 or entry.turns_played < 2:
+        return {"success": False, "error": "Score too low for leaderboard"}
+
     record = {
-        "player_name": entry.player_name[:20],
+        "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
@@ -1090,7 +1114,7 @@ async def submit_leaderboard(entry: LeaderboardEntry):
             rank = _sb_count("leaderboard", f"score=gte.{entry.score}")
 
             # Update player profile if they have a registered username
-            _update_player_stats(entry.player_name, entry.score)
+            _update_player_stats(player_name, entry.score)
 
             return {"success": True, "rank": rank}
         except Exception as e:
@@ -1293,13 +1317,12 @@ async def add_to_waitlist(entry: WaitlistEntry):
 
 @app.get("/api/waitlist/count")
 async def get_waitlist_count():
-    """Get the total number of people waiting (email signups + waitlisted players) and total players."""
+    """Get the number of active players (joined) and waitlisted players (waiting)."""
     if _sb_ok:
         try:
-            email_signups = _sb_count("waitlist")
+            active_players = _sb_count("players", filters="status=eq.active")
             waitlisted_players = _sb_count("players", filters="status=eq.waitlisted")
-            total_players = _sb_count("players")
-            return {"count": email_signups + waitlisted_players, "total_players": total_players}
+            return {"count": waitlisted_players, "total_players": active_players}
         except Exception:
             pass
 
