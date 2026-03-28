@@ -78,6 +78,7 @@ function discoverFaction(factionId, method) {
   if (!game.metFactions) game.metFactions = {};
   if (game.metFactions[factionId]) return;
   const faction = FACTIONS[factionId];
+  if (!faction) return; // skip non-FACTIONS owners (barbarians, minor factions)
   game.metFactions[factionId] = { turn: game.turn, method: method };
   const methodText = method === 'introduction'
     ? `introduced to you by an ally`
