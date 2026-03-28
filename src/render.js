@@ -905,7 +905,8 @@ function render() {
   }
 
   // Draw units
-  const pulseT = (Date.now() % 1500) / 1500;
+  const pulseFrameRate = 30;
+  const pulseT = floor(((Date.now() % 1500) / 1500) * pulseFrameRate) / pulseFrameRate;
   const pulseAlpha = 0.4 + 0.6 * Math.abs(Math.sin(pulseT * Math.PI));
   const pulseRadius = 13 + 3 * Math.abs(Math.sin(pulseT * Math.PI));
 
