@@ -154,9 +154,9 @@ function showSelectionPanel(unit) {
     // Gift Unit button — available if any factions discovered
     const discoveredFactions = Object.keys(game.relationships || {}).filter(fid => FACTIONS[fid]);
     if (discoveredFactions.length > 0 && unit.moveLeft > 0) {
-      html += `<button class="sel-btn" style="border-color:#9b59b6;background:rgba(155,89,182,0.1)" onclick="showGiftUnitPanel(${unit.id})"><span>\u{1F381} Gift Unit</span></button>`;
+      html += `<button class="sel-btn" style="border-color:#9b59b6;background:rgba(155,89,182,0.1)" onclick="showGiftUnitPanel(${unit.id})"><span>\u{1F381} Donate Unit</span></button>`;
     }
-    html += `<button class="sel-btn sel-btn-danger" onclick="unitAction('delete')"><span>Delete</span><span class="sel-key">Del</span></button>`;
+    html += `<button class="sel-btn sel-btn-danger" onclick="unitAction('delete')"><span>Disband</span><span class="sel-key">Del</span></button>`;
     html += `</div>`;
   } else {
     // FOREIGN UNIT PANEL
@@ -201,7 +201,7 @@ function showGiftUnitPanel(unitId) {
   let html = `<div class="sel-header">
     <div class="sel-icon" style="background:rgba(155,89,182,0.2);border-color:#9b59b6">\u{1F381}</div>
     <div class="sel-info">
-      <div class="sel-name">Gift ${ut.name}</div>
+      <div class="sel-name">Donate ${ut.name}</div>
       <div class="sel-sub">Choose a faction to receive this unit</div>
     </div>
   </div>`;
@@ -243,8 +243,8 @@ function giftUnit(unitId, factionId) {
   const relBoost = Math.floor(unitCost / 4) + 5; // 15 for warrior (cost 40), more for expensive units
   game.relationships[factionId] = (game.relationships[factionId] || 0) + relBoost;
 
-  addEvent(`Gifted ${ut.name} to ${faction.name} (+${relBoost} relations)`, 'diplomacy');
-  showToast('Unit Gifted', `${ut.icon} ${ut.name} gifted to ${faction.name}\n+${relBoost} relations`);
+  addEvent(`Donated ${ut.name} to ${faction.name} (+${relBoost} relations)`, 'diplomacy');
+  showToast('Unit Donated', `${ut.icon} ${ut.name} donated to ${faction.name}\n+${relBoost} relations`);
   logAction('diplomacy', 'gift_unit', { unitType: unit.type, faction: factionId, relBoost });
 
   // Deselect and close panel
@@ -390,10 +390,10 @@ function showDeleteConfirm(unit, ut) {
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = `
     <div class="confirm-box">
-      <p>Delete <strong>${ut.name}</strong>?<br>You will receive <strong style="color:var(--color-gold)">${goldRefund} gold</strong>.</p>
+      <p>Disband <strong>${ut.name}</strong>?<br>You will receive <strong style="color:var(--color-gold)">${goldRefund} gold</strong>.</p>
       <div class="confirm-btns">
         <button class="btn btn-secondary btn-small" id="confirm-cancel">Cancel</button>
-        <button class="btn btn-primary btn-small" id="confirm-delete" style="background:var(--color-red);color:#fff">Delete</button>
+        <button class="btn btn-primary btn-small" id="confirm-delete" style="background:var(--color-red);color:#fff">Disband</button>
       </div>
     </div>`;
   document.getElementById('game-main').appendChild(overlay);
