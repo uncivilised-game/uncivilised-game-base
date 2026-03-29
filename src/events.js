@@ -235,6 +235,7 @@ export function generateFactionIntelReports() {
         for (const rum of rumours) {
           addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
         }
+        persistRumours(rumours);
         onRumourRevealed(rumours.length);
         showIntelNotification([], rumours);
       }
@@ -249,6 +250,7 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      persistRumours(rumours);
       onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
@@ -300,7 +302,7 @@ export function generateFactionIntelReports() {
     for (const rum of rumours) {
       addEvent(`  \u{1F4AC} Rumour: ${rum.text}`, 'diplomacy');
     }
-    if (rumours.length > 0) onRumourRevealed(rumours.length);
+    if (rumours.length > 0) { persistRumours(rumours); onRumourRevealed(rumours.length); }
     showIntelNotification(reports, rumours);
   } else {
     // Even if no met factions have reports, still try rumours
@@ -310,9 +312,23 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      persistRumours(rumours);
       onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
+  }
+}
+
+// ---- Helper: persist rumours into game.rumourQueue for the Diplomacy Rumours tab ----
+function persistRumours(rumours) {
+  if (!game.rumourQueue) game.rumourQueue = [];
+  for (const rum of rumours) {
+    game.rumourQueue.push({
+      text: rum.text || rum,
+      fid: rum.fid || null,
+      revealTurn: game.turn,
+      type: 'rumour',
+    });
   }
 }
 
@@ -519,6 +535,7 @@ window.payForRumourInfo = function(factionId, rumourIdx) {
   ];
   const detail = details[Math.floor(Math.random() * details.length)];
   addEvent('\u{1F4B0} Paid 15g for intelligence: ' + detail, 'diplomacy');
+  persistRumours([{ fid: factionId, text: '\u{1F4B0} Paid informant: ' + detail }]);
   onRumourRevealed(1); // Paid intel feeds gossip network
   const banner = document.getElementById('intel-banner');
   if (banner) banner.style.display = 'none';
@@ -544,6 +561,7 @@ window.corroborateRumour = function(factionId, rumourIdx) {
   ];
   const confirmMsg = confirms[Math.floor(Math.random() * confirms.length)];
   addEvent('\u{1F91D} ' + confirmMsg, 'diplomacy');
+  persistRumours([{ fid: factionId, text: '\u{1F91D} ' + confirmMsg }]);
   onRumourRevealed(1); // Corroborated intel feeds gossip network
   game.relationships[bestAlly] = (game.relationships[bestAlly] || 0) + 2;
   const banner = document.getElementById('intel-banner');
