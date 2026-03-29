@@ -5,13 +5,16 @@ Uses direct HTTP calls to Supabase PostgREST API (no SDK — saves ~1.5GB).
 All Supabase operations use graceful degradation (try/except with fallback).
 Includes admin endpoints for email recovery (resend-missed-emails).
 """
+import hashlib
+import hmac as _hmac_mod
 import json
 import os
 import re
+import secrets
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from anthropic import Anthropic
@@ -363,6 +366,13 @@ client = Anthropic()
 
 GAME_VERSION = 5
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+
+# ═══════════════════════════════════════════════════
+# Discord OAuth2 config
+# ═══════════════════════════════════════════════════
+DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
+DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
+DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "https://uncivilized.fun/api/auth/discord/callback")
 
 # ═══════════════════════════════════════════════════
 # Pydantic models
@@ -1617,6 +1627,213 @@ async def verify_access(request: Request):
         return {"allowed": True, "reason": "ok", "role": role}
     except Exception:
         return {"allowed": True, "reason": "error_fail_open"}
+
+
+# ═══════════════════════════════════════════════════
+# /api/auth/discord — Discord account linking
+# ═══════════════════════════════════════════════════
+@app.get("/api/auth/discord")
+async def discord_auth_start(request: Request):
+    """Initiate Discord OAuth2 flow. Player must be logged in (x-player-name header or ?player= param)."""
+    if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
+        return {"success": False, "error": "Discord integration not configured"}
+
+    username = request.query_params.get("player", "").strip()
+    if not username:
+        return {"success": False, "error": "Missing player parameter"}
+
+    # Generate CSRF state token that embeds the username
+    # Format: {random_hex}:{hmac_of_random_hex+username}:{username}
+    nonce = secrets.token_hex(16)
+    mac = _hmac_mod.new(
+        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
+    ).hexdigest()[:16]
+    state = f"{nonce}:{mac}:{username}"
+
+    params = urlencode({
+        "client_id": DISCORD_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": DISCORD_REDIRECT_URI,
+        "scope": "identify",
+        "state": state,
+    })
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"https://discord.com/oauth2/authorize?{params}")
+
+
+@app.get("/api/auth/discord/callback")
+async def discord_auth_callback(request: Request):
+    """Handle Discord OAuth2 callback. Exchanges code for token, links account."""
+    from fastapi.responses import HTMLResponse
+
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(_discord_result_page("Discord authorization was cancelled.", success=False))
+
+    code = request.query_params.get("code", "")
+    state = request.query_params.get("state", "")
+
+    if not code or not state:
+        return HTMLResponse(_discord_result_page("Missing authorization code.", success=False), status_code=400)
+
+    # Validate state token and extract username
+    parts = state.split(":", 2)
+    if len(parts) != 3:
+        return HTMLResponse(_discord_result_page("Invalid state parameter.", success=False), status_code=400)
+
+    nonce, mac, username = parts
+    expected_mac = _hmac_mod.new(
+        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
+    ).hexdigest()[:16]
+    if not _hmac_mod.compare_digest(mac, expected_mac):
+        return HTMLResponse(_discord_result_page("Invalid state signature.", success=False), status_code=400)
+
+    # Exchange code for access token
+    try:
+        token_resp = httpx.post(
+            "https://discord.com/api/oauth2/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": DISCORD_REDIRECT_URI,
+                "client_id": DISCORD_CLIENT_ID,
+                "client_secret": DISCORD_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+        if token_resp.status_code != 200:
+            print(f"[DISCORD] Token exchange failed: {token_resp.status_code} {token_resp.text[:200]}")
+            return HTMLResponse(_discord_result_page("Failed to authenticate with Discord.", success=False))
+
+        token_data = token_resp.json()
+        access_token = token_data["access_token"]
+    except Exception as e:
+        print(f"[DISCORD] Token exchange error: {e}")
+        return HTMLResponse(_discord_result_page("Failed to connect to Discord.", success=False))
+
+    # Fetch Discord user info
+    try:
+        user_resp = httpx.get(
+            "https://discord.com/api/users/@me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        if user_resp.status_code != 200:
+            print(f"[DISCORD] User fetch failed: {user_resp.status_code}")
+            return HTMLResponse(_discord_result_page("Failed to fetch Discord profile.", success=False))
+
+        discord_user = user_resp.json()
+        discord_id = discord_user["id"]
+        discord_username = discord_user.get("username", "")
+    except Exception as e:
+        print(f"[DISCORD] User fetch error: {e}")
+        return HTMLResponse(_discord_result_page("Failed to fetch Discord profile.", success=False))
+
+    # Check if this Discord account is already linked to a different player
+    if _sb_ok:
+        try:
+            existing = _sb_select(
+                "players", select="username",
+                filters=f"discord_id=eq.{quote(discord_id)}",
+                limit=1,
+            )
+            if existing and existing[0]["username"].lower() != username.lower():
+                return HTMLResponse(_discord_result_page(
+                    f"This Discord account is already linked to player <strong>{existing[0]['username']}</strong>.",
+                    success=False,
+                ))
+        except Exception:
+            pass
+
+    # Link Discord to player
+    if _sb_ok:
+        try:
+            _sb_update(
+                "players",
+                {"discord_id": discord_id, "discord_username": discord_username},
+                f"username_lower=eq.{quote(username.lower())}",
+            )
+            print(f"[DISCORD] Linked {discord_username} ({discord_id}) to player {username}")
+        except Exception as e:
+            print(f"[DISCORD] DB update error: {e}")
+            return HTMLResponse(_discord_result_page("Failed to save Discord link. Please try again.", success=False))
+
+    return HTMLResponse(_discord_result_page(
+        f"Discord account <strong>{discord_username}</strong> linked successfully!",
+        success=True,
+    ))
+
+
+@app.get("/api/auth/discord/status")
+async def discord_link_status(request: Request):
+    """Check if a player has linked their Discord account."""
+    username = request.headers.get("x-player-name", "").strip()
+    if not username or not _sb_ok:
+        return {"linked": False}
+
+    try:
+        rows = _sb_select(
+            "players", select="discord_id,discord_username",
+            filters=f"username_lower=eq.{quote(username.lower())}",
+            limit=1,
+        )
+        if rows and rows[0].get("discord_id"):
+            return {"linked": True, "discord_username": rows[0]["discord_username"]}
+    except Exception:
+        pass
+
+    return {"linked": False}
+
+
+@app.post("/api/auth/discord/unlink")
+async def discord_unlink(request: Request):
+    """Unlink Discord account from a player."""
+    username = request.headers.get("x-player-name", "").strip()
+    access_token = request.headers.get("x-access-token", "")
+
+    if not username or not access_token:
+        return {"success": False, "error": "Not authenticated"}
+
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+
+    try:
+        # Verify the access token matches
+        rows = _sb_select(
+            "players", select="access_token",
+            filters=f"username_lower=eq.{quote(username.lower())}",
+            limit=1,
+        )
+        if not rows or rows[0].get("access_token") != access_token:
+            return {"success": False, "error": "Invalid credentials"}
+
+        _sb_update(
+            "players",
+            {"discord_id": None, "discord_username": None},
+            f"username_lower=eq.{quote(username.lower())}",
+        )
+        return {"success": True}
+    except Exception as e:
+        print(f"[DISCORD] Unlink error: {e}")
+        return {"success": False, "error": "Something went wrong"}
+
+
+def _discord_result_page(message: str, success: bool = True) -> str:
+    """Generate a styled HTML result page for Discord OAuth callback."""
+    icon = "\u2705" if success else "\u274c"
+    color = "#c9a84c" if success else "#e74c3c"
+    return (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '</head><body style="margin:0;padding:0;background:#0d0f0e;font-family:-apple-system,BlinkMacSystemFont,sans-serif">'
+        '<div style="max-width:480px;margin:80px auto;text-align:center;padding:20px">'
+        f'<div style="font-size:48px;margin-bottom:16px">{icon}</div>'
+        f'<h2 style="color:{color};font-family:Georgia,serif;margin-bottom:12px">{"Linked!" if success else "Oops"}</h2>'
+        f'<p style="color:#b8b0a0;font-size:16px;line-height:24px">{message}</p>'
+        '<p style="margin-top:24px"><a href="/" style="color:#c9a84c;text-decoration:none;font-size:14px">Return to game</a></p>'
+        '</div></body></html>'
+    )
 
 
 # ═══════════════════════════════════════════════════

@@ -639,6 +639,52 @@ function playerSignOut() {
   refreshAuthUI();
 }
 
+function linkDiscord() {
+  const username = safeStorage.getItem('uncivilised_username');
+  if (!username) return;
+  window.location.href = API + '/api/auth/discord?player=' + encodeURIComponent(username);
+}
+
+async function unlinkDiscord() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/unlink', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.success) refreshAuthUI();
+  } catch (_) {}
+}
+
+async function checkDiscordStatus() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const linkBtn = document.getElementById('btn-link-discord');
+  const linkedEl = document.getElementById('discord-linked');
+  if (!username || !linkBtn || !linkedEl) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/status', {
+      headers: { 'x-player-name': username },
+    });
+    const data = await res.json();
+    if (data.linked) {
+      linkBtn.style.display = 'none';
+      linkedEl.style.display = 'inline';
+      linkedEl.innerHTML = '\u{1F3AE} ' + data.discord_username + ' <button class="btn-username" onclick="unlinkDiscord()" style="font-size:11px;opacity:0.5;margin-left:4px">unlink</button>';
+    } else {
+      linkBtn.style.display = 'inline-block';
+      linkedEl.style.display = 'none';
+    }
+  } catch (_) {
+    linkBtn.style.display = 'inline-block';
+    linkedEl.style.display = 'none';
+  }
+}
+
 async function refreshAuthUI() {
   const username = safeStorage.getItem('uncivilised_username');
   const guestBtns = document.getElementById('auth-buttons-guest');
@@ -659,6 +705,7 @@ async function refreshAuthUI() {
   // Signed in — check access
   if (usernameBar) usernameBar.style.display = 'block';
   if (usernameDisplay) usernameDisplay.textContent = username;
+  checkDiscordStatus();
 
   try {
     const res = await fetch(API + '/api/verify-access', {
@@ -736,6 +783,8 @@ window.closeAuthModals = closeAuthModals;
 window.handleSignup = handleSignup;
 window.handleSignin = handleSignin;
 window.playerSignOut = playerSignOut;
+window.linkDiscord = linkDiscord;
+window.unlinkDiscord = unlinkDiscord;
 
 // --- Initialization ---
 (async function init() {
