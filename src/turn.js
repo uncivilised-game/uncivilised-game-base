@@ -15,6 +15,7 @@ import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
+import { processInterFactionTurn } from './inter-faction-relations.js';
 import { createUnit, selectUnit, autoSelectNext } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
@@ -939,6 +940,9 @@ function endTurn() {
   ensureReputationState();
   decayReputation();
   detectContradictions();
+
+  // --- Inter-faction diplomacy (AI-to-AI relationships, wars, alliances) ---
+  processInterFactionTurn();
 
   game.turn++;
   game.recentEvents = events.map(text => ({ text, turn: game.turn })).concat(game.recentEvents).slice(0, 20);
