@@ -639,10 +639,21 @@ function playerSignOut() {
   refreshAuthUI();
 }
 
-function linkDiscord() {
+async function linkDiscord() {
   const username = safeStorage.getItem('uncivilised_username');
-  if (!username) return;
-  window.location.href = API + '/api/auth/discord?player=' + encodeURIComponent(username);
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username || !accessToken) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/link', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.authorize_url) {
+      window.location.href = data.authorize_url;
+    }
+  } catch (_) {}
 }
 
 async function unlinkDiscord() {
@@ -662,19 +673,26 @@ async function unlinkDiscord() {
 
 async function checkDiscordStatus() {
   const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
   const linkBtn = document.getElementById('btn-link-discord');
   const linkedEl = document.getElementById('discord-linked');
   if (!username || !linkBtn || !linkedEl) return;
 
   try {
     const res = await fetch(API + '/api/auth/discord/status', {
-      headers: { 'x-player-name': username },
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
     });
     const data = await res.json();
     if (data.linked) {
       linkBtn.style.display = 'none';
       linkedEl.style.display = 'inline';
-      linkedEl.innerHTML = '\u{1F3AE} ' + data.discord_username + ' <button class="btn-username" onclick="unlinkDiscord()" style="font-size:11px;opacity:0.5;margin-left:4px">unlink</button>';
+      linkedEl.textContent = '\u{1F3AE} ' + (data.discord_username || '');
+      const unlinkBtn = document.createElement('button');
+      unlinkBtn.className = 'btn-username';
+      unlinkBtn.style.cssText = 'font-size:11px;opacity:0.5;margin-left:4px';
+      unlinkBtn.textContent = 'unlink';
+      unlinkBtn.addEventListener('click', unlinkDiscord);
+      linkedEl.appendChild(unlinkBtn);
     } else {
       linkBtn.style.display = 'inline-block';
       linkedEl.style.display = 'none';
