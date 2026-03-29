@@ -644,6 +644,8 @@ async function linkDiscord() {
   const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
   if (!username || !accessToken) return;
 
+  // Open tab synchronously (in click handler) to avoid popup blockers
+  const authTab = window.open('about:blank', '_blank');
   try {
     const res = await fetch(API + '/api/auth/discord/link', {
       method: 'POST',
@@ -651,9 +653,13 @@ async function linkDiscord() {
     });
     const data = await res.json();
     if (data.authorize_url && data.authorize_url.startsWith('https://discord.com/oauth2/authorize?')) {
-      window.open(data.authorize_url, '_blank');
+      authTab.location.href = data.authorize_url;
+    } else {
+      authTab.close();
     }
-  } catch (_) {}
+  } catch (_) {
+    if (authTab) authTab.close();
+  }
 }
 
 async function unlinkDiscord() {
