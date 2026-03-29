@@ -156,6 +156,7 @@ function endTurn() {
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
+    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
     unit.moveLeft = ut.movePoints;
     unit.hasAttackedThisTurn = false;
 
@@ -174,7 +175,7 @@ function endTurn() {
       } else if (unit.fortified) {
         // Fortified: +10 HP
         healAmount = 10;
-      } else if (unit.moveLeft === ut.movePoints) {
+      } else if (didIdleLastTurn) {
         // Didn't move last turn (full moves remaining means they were idle): +5 HP
         healAmount = 5;
       }
