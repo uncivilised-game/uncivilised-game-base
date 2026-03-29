@@ -65,12 +65,24 @@ export let UNIT_TYPES = {
   ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
   galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
   phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
+  general:   { name: 'Great General', cost: 0, combat: 5, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{2694}\u{FE0F}', class: 'commander', desc: 'Packs nearby units into an army. +5 combat to adjacent friendly units.' },
 };
+
+// ============================================
+// ARMY / COMMANDER SYSTEM
+// ============================================
+// Generals can pack up to ARMY_MAX_UNITS into a single stack.
+// Packed units move as one and deploy (unpack) onto adjacent hexes.
+// Units in an army get a combat bonus when deployed together.
+export const ARMY_MAX_UNITS = 4;        // Units a general can pack (upgradeable via promotions)
+export const ARMY_COMBAT_BONUS = 5;     // Flat combat bonus for units deployed from an army
+export const ARMY_ADJACENT_AURA = 5;    // Combat bonus to ALL friendly units within 2 hexes of a general
+export const ARMY_AURA_RANGE = 2;       // Range of the general's passive aura
 
 // ============================================
 // ZONE OF CONTROL — civilian units don't project ZOC (but are still affected by it)
 // ============================================
-export const ZOC_EXEMPT_CLASSES = ['civilian'];
+export const ZOC_EXEMPT_CLASSES = ['civilian', 'commander'];
 
 // ============================================
 // UNIT UPGRADE PATHS
@@ -207,6 +219,7 @@ export const UNIT_UNLOCKS = {
   ballista: 'wheel',
   galley: 'sailing',
   phalanx: 'bronze_working',
+  general: 'military_tradition',  // Unlocked by Military Tradition civic/tech
 };
 
 export const UNIT_PROMOTIONS = {
@@ -445,7 +458,7 @@ export function goldCost(prodCost) { return prodCost * GOLD_PER_PRODUCTION; }
 export const UNIT_MAINTENANCE = {
   warrior: 0, scout: 0, slinger: 0, worker: 0, settler: 0,
   archer: 1, spearman: 1, chariot: 2, horseman: 2,
-  phalanx: 2, ballista: 2, galley: 1,
+  phalanx: 2, ballista: 2, galley: 1, general: 3,
 };
 
 // Utility function for terrain rendering

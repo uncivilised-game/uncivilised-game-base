@@ -12,6 +12,7 @@ import { showToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
 import { panCameraTo } from './input.js';
 import { startAnimLoop } from './feedback.js';
+import { getGeneralAuraBonus } from './army.js';
 
 function addDeathMarker(col, row) {
   deathMarkers.push({ col, row, time: performance.now() });
@@ -80,6 +81,10 @@ function resolveCombat(attacker, defender) {
   // Mod combat bonuses (from diplomatic agreements)
   if (attacker.owner === 'player') atkPower += getModCombatBonus(attacker);
   if (defender.owner === 'player') defPower += getModCombatBonus(defender);
+
+  // General aura bonus (+5 if near a friendly general, +5 if recently deployed from army)
+  atkPower += getGeneralAuraBonus(attacker);
+  defPower += getGeneralAuraBonus(defender);
 
   // Promotion bonuses
   for (const pid of (attacker.promotions || [])) {
