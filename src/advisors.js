@@ -6,7 +6,7 @@
 // Advisors are queried via the same /api/chat backend but with
 // a different character_id that maps to advisor-specific system prompts.
 
-import { FACTIONS, FACTION_TRAITS, TECHNOLOGIES } from './constants.js';
+import { FACTIONS, FACTION_TRAITS, TECHNOLOGIES, CIVICS } from './constants.js';
 import { game, API } from './state.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { getComparisonData } from './map.js';
@@ -416,10 +416,12 @@ function unbindAdvisorChatFromPanel() {
 // ============================================
 
 async function callAdvisorAPI(advisor, userMessage) {
-  // Build game context for the advisor
-  const gameContext = buildGameContext(advisor);
-  const systemPrompt = buildAdvisorSystemPrompt(advisor, gameContext);
+  // Build DOMAIN-SPECIFIC context for this advisor
+  const advisorKey = Object.keys(ADVISORS).find(k => ADVISORS[k].id === advisor.id) || '';
+  const gameContext = buildDomainContext(advisorKey);
+  const systemPrompt = buildAdvisorSystemPrompt(advisor, advisorKey, gameContext);
 
+  // Use /api/advisor endpoint if available, else /api/chat with system_override
   const payload = {
     character_id: advisor.id,
     message: userMessage,
@@ -428,32 +430,40 @@ async function callAdvisorAPI(advisor, userMessage) {
       role: m.role,
       content: m.content,
     })),
-    reputation: null,
-    diplomatic_ledger: [],
-    diplomatic_summary: '',
-    // Pass extra advisor context via the diplomatic_summary field
-    // (backend will include this in the system prompt)
     system_override: systemPrompt,
+    is_advisor: true, // Signal to backend this is an advisor, not a faction leader
   };
 
-  // Use the existing /api/chat endpoint but with advisor character IDs
-  const resp = await fetch(`${API}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  try {
+    // Try advisor-specific endpoint first
+    let resp = await fetch(`${API}/api/advisor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
 
-  if (!resp.ok) {
-    // If the backend doesn't recognise advisor character IDs,
-    // fall back to a local response based on game state
-    return generateLocalAdvisorResponse(advisor, userMessage, gameContext);
+    // Fall back to /api/chat if /api/advisor doesn't exist
+    if (resp.status === 404) {
+      resp = await fetch(`${API}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    if (!resp.ok) {
+      return generateLocalAdvisorResponse(advisorKey, userMessage, gameContext);
+    }
+
+    const data = await resp.json();
+    let reply = data.reply || data.response || data.message || '';
+    // Strip faction-leader artifacts from the response
+    reply = reply.replace(/\[ACTION:.*?\]/gs, '').trim();
+    reply = reply.replace(/^\*.*?enters the room.*?\*\s*/i, ''); // Strip RP entrance
+    return reply || generateLocalAdvisorResponse(advisorKey, userMessage, gameContext);
+  } catch (err) {
+    return generateLocalAdvisorResponse(advisorKey, userMessage, gameContext);
   }
-
-  const data = await resp.json();
-  // Strip any [ACTION:...] tags from advisor responses (advisors give advice, not actions)
-  let reply = data.reply || data.response || data.message || '';
-  reply = reply.replace(/\[ACTION:.*?\]/gs, '').trim();
-  return reply || generateLocalAdvisorResponse(advisor, userMessage, gameContext);
 }
 
 // ============================================
@@ -462,9 +472,8 @@ async function callAdvisorAPI(advisor, userMessage) {
 // If the backend API is unavailable or doesn't handle advisor characters,
 // generate useful advice from game state alone.
 
-function generateLocalAdvisorResponse(advisor, question, context) {
+function generateLocalAdvisorResponse(key, question, context) {
   const q = question.toLowerCase();
-  const key = Object.keys(ADVISORS).find(k => ADVISORS[k].id === advisor.id) || '';
 
   switch (key) {
     case 'military': return generateMilitaryAdvice(q, context);
@@ -477,192 +486,496 @@ function generateLocalAdvisorResponse(advisor, question, context) {
 }
 
 function generateMilitaryAdvice(q, ctx) {
-  const units = game.units ? game.units.filter(u => u.owner === 'player') : [];
-  const militaryUnits = units.filter(u => u.class !== 'civilian' && u.class !== 'worker');
-  const threats = [];
+  // Marshal Ironhelm — blunt, strategic, speaks in short decisive sentences
+  const threats = (ctx.factionThreats || []).filter(t => t.military > (ctx.military || 0));
+  const dangerous = threats.filter(t => t.military > (ctx.military || 0) * 1.3);
+  const units = ctx.unitBreakdown || {};
+  const unitList = Object.entries(units).map(([t, n]) => `${n} ${t}${n > 1 ? 's' : ''}`).join(', ') || 'no combat units';
 
-  for (const [fid, stats] of Object.entries(game.factionStats || {})) {
-    if (stats.military > (game.military || 0) * 1.3) {
-      threats.push(FACTIONS[fid]?.name || fid);
+  // Parse question for targeted answers
+  if (q.includes('threat') || q.includes('danger') || q.includes('who')) {
+    if (dangerous.length > 0) {
+      return `Sire, we face ${dangerous.length} serious threat${dangerous.length > 1 ? 's' : ''}. ${dangerous.map(t => `**${t.name}** fields strength ${t.military} against our ${ctx.military} — relations sit at ${t.relation}`).join('. ')}. I'd fortify our borders and raise more troops immediately.`;
     }
+    return `My liege, no faction currently overpowers us. Our strength stands at ${ctx.military}. Stay vigilant — complacency kills more armies than swords.`;
   }
 
-  let response = `My liege, our forces stand at ${militaryUnits.length} combat units with total military strength ${game.military || 0}. `;
-  if (threats.length > 0) {
-    response += `I must warn you — ${threats.join(' and ')} ${threats.length > 1 ? 'pose' : 'poses'} a significant military threat to our realm. I recommend bolstering our defences. `;
-  } else {
-    response += 'Our position is strong — no faction currently outmatches us militarily. ';
+  if (q.includes('build') || q.includes('troops') || q.includes('recruit') || q.includes('army')) {
+    if (ctx.totalCombatUnits < 4) {
+      return `We're dangerously thin, sire — only ${ctx.totalCombatUnits} combat units. I need at least 6 before I'll sleep soundly. Prioritise warriors or archers from your strongest production city.`;
+    }
+    if (dangerous.length > 0) {
+      return `We have ${ctx.totalCombatUnits} combat units (${unitList}), but ${dangerous[0].name} outguns us. Build more ranged units — they're the difference between winning and bleeding.`;
+    }
+    return `${ctx.totalCombatUnits} combat units (${unitList}). Adequate for now, sire. I'd focus production elsewhere unless a new threat emerges.`;
   }
 
-  const wars = (game.aiWars || []);
-  if (wars.length > 0) {
-    response += `There are ${wars.length} active wars between other factions. This may present an opportunity to strike while our rivals are distracted.`;
+  if (q.includes('attack') || q.includes('strike') || q.includes('war')) {
+    const weak = (ctx.factionThreats || []).filter(t => t.military < (ctx.military || 0) * 0.7 && t.relation < 0);
+    if (weak.length > 0) {
+      return `If blood must be spilled, ${weak[0].name} is weakest — military ${weak[0].military} against our ${ctx.military}. Strike fast before they recover. But know this: war has costs beyond gold.`;
+    }
+    return `No easy targets, sire. All known factions are either too strong or too friendly. Build strength first. A wise commander chooses when to fight.`;
   }
-  return response;
+
+  if (q.includes('defen') || q.includes('fortif') || q.includes('protect')) {
+    return `Defense rating: ${ctx.defense}. We have ${ctx.fortifiedUnits} fortified units. ${ctx.woundedUnits > 0 ? `${ctx.woundedUnits} units need healing — pull them back.` : 'All units combat-ready.'} ${ctx.barbarianCamps > 0 ? `${ctx.barbarianCamps} barbarian camps threaten our borders — clearing them earns goodwill with nearby factions.` : 'No barbarian threats nearby.'}`;
+  }
+
+  // General overview
+  let r = `Sire, the military stands at strength ${ctx.military} with ${ctx.totalCombatUnits} combat units: ${unitList}. `;
+  if (ctx.woundedUnits > 0) r += `${ctx.woundedUnits} wounded — get them behind walls. `;
+  if (dangerous.length > 0) {
+    r += `**Warning**: ${dangerous.map(t => t.name).join(' and ')} ${dangerous.length > 1 ? 'outmatch' : 'outmatches'} us. `;
+  }
+  if (ctx.barbarianCamps > 0) r += `${ctx.barbarianCamps} barbarian camps active — easy targets for veteran troops. `;
+  if (ctx.activeWars.length > 0) r += `${ctx.activeWars.length} war${ctx.activeWars.length > 1 ? 's' : ''} rage between other factions — opportunity knocks.`;
+  return r;
 }
 
 function generateEconomicAdvice(q, ctx) {
-  const gold = game.gold || 0;
-  const gpt = game.goldPerTurn || 0;
-  const cities = game.cities || [];
+  // Chancellor Goldweave — sharp, efficiency-obsessed, dry humour about budgets
+  const gold = ctx.gold || 0;
+  const gpt = ctx.goldPerTurn || 0;
+  const cities = ctx.cityDetails || [];
+  const upkeep = ctx.militaryUpkeep || 0;
 
-  let response = `Our treasury holds ${gold} gold with income of ${gpt > 0 ? '+' : ''}${gpt} per turn. `;
-  if (gpt < 0) {
-    response += 'We are bleeding gold — I strongly recommend reducing our army size or establishing new trade routes. ';
-  } else if (gpt < 5) {
-    response += 'Income is modest. Building markets and establishing trade routes would improve our coffers. ';
-  } else {
-    response += 'Our economy is healthy. ';
+  if (q.includes('spend') || q.includes('too much') || q.includes('upkeep') || q.includes('expensive')) {
+    if (upkeep > gpt + 5) {
+      return `Your majesty, our military costs approximately ${upkeep}g per turn against income of ${gpt}g. We're funding an army with hopes and prayers. Either disband units or build markets — preferably both.`;
+    }
+    return `Military upkeep runs about ${upkeep}g against ${gpt}g income. The books balance, sire. For now. I always recommend a rainy-day fund — wars are expensive surprises.`;
   }
-  response += `We have ${cities.length} ${cities.length === 1 ? 'city' : 'cities'}. `;
-  if (cities.length < 3) {
-    response += 'I recommend founding more cities to expand our economic base — settlers are a sound investment.';
+
+  if (q.includes('build') || q.includes('next') || q.includes('produce') || q.includes('construct')) {
+    const idle = cities.filter(c => c.building === 'idle');
+    if (idle.length > 0) {
+      return `Sire! ${idle.map(c => c.name).join(' and ')} ${idle.length > 1 ? 'are' : 'is'} sitting idle — that's gold evaporating. Markets boost income, granaries boost growth. Every idle turn is wasted potential. I weep.`;
+    }
+    const lowest = [...cities].sort((a, b) => a.production - b.production)[0];
+    if (lowest) {
+      return `All cities are producing, good. ${lowest.name} has the weakest output at ${lowest.production}/turn — consider a workshop or more improvements around it. Efficiency, sire, efficiency.`;
+    }
+    return `All cities are busy. Focus improvements around your highest-population city for maximum return on investment.`;
   }
-  return response;
+
+  if (q.includes('gold') || q.includes('earn') || q.includes('income') || q.includes('money') || q.includes('trade')) {
+    let r = `Treasury: ${gold}g, income ${gpt > 0 ? '+' : ''}${gpt}g/turn. Trade routes active: ${ctx.totalTradeRoutes}. `;
+    if (ctx.totalTradeRoutes < cities.length) {
+      r += `We could run ${cities.length - ctx.totalTradeRoutes} more trade routes — free gold, sire. Every caravan is a moving mint.`;
+    } else {
+      r += `Trade is maxed. Focus on markets, harbours, and commercial buildings to grow the base.`;
+    }
+    return r;
+  }
+
+  // General overview
+  let r = `My liege, the ledger reads: ${gold}g in treasury, ${gpt > 0 ? '+' : ''}${gpt}g per turn. `;
+  if (gpt < 0) r += `We're haemorrhaging coin — military upkeep is ~${upkeep}g. Something must give. `;
+  else if (gpt < 5) r += 'Modest income. Markets and trade routes are the cure. ';
+  else r += 'The coffers are healthy. ';
+  r += `${cities.length} ${cities.length === 1 ? 'city' : 'cities'}, ${ctx.workers} worker${ctx.workers !== 1 ? 's' : ''}, ${ctx.improvements} improvements. `;
+  if (cities.length < 3) r += 'Founding more cities is the single best investment — settlers pay for themselves within 10 turns.';
+  return r;
 }
 
 function generateDiplomaticAdvice(q, ctx) {
-  const met = Object.keys(game.metFactions || {});
-  let response = `We have established contact with ${met.length} faction${met.length !== 1 ? 's' : ''}. `;
+  // Envoy Silvertongue — suave spymaster, allusions, "a friend heard something"
+  const rels = ctx.relationships || {};
+  const names = Object.keys(rels);
+  const friends = names.filter(n => rels[n].score > 20);
+  const enemies = names.filter(n => rels[n].score < -20);
+  const rumours = ctx.recentRumours || [];
 
-  const friends = met.filter(f => (game.relationships?.[f] || 0) > 20);
-  const enemies = met.filter(f => (game.relationships?.[f] || 0) < -20);
-
-  if (friends.length > 0) {
-    response += `Our friends: ${friends.map(f => FACTIONS[f]?.name || f).join(', ')}. `;
-  }
-  if (enemies.length > 0) {
-    response += `Those who view us with hostility: ${enemies.map(f => FACTIONS[f]?.name || f).join(', ')}. I suggest either strengthening our military posture or attempting reconciliation through gifts and trade. `;
-  }
-
-  const wars = game.aiWars || [];
-  const alliances = game.aiAlliances || [];
-  if (wars.length > 0 || alliances.length > 0) {
-    response += `In the wider world, there are ${wars.length} wars and ${alliances.length} alliances active. `;
-    response += 'These shifting allegiances create opportunities for the astute diplomat.';
+  if (q.includes('ally') || q.includes('alliance') || q.includes('friend')) {
+    if (friends.length > 0) {
+      const best = friends.sort((a, b) => rels[b].score - rels[a].score)[0];
+      return `A friend of mine suggests ${best} would be our most reliable partner — relations at ${rels[best].score}, ${rels[best].hasEmbassy ? 'embassy established' : 'no embassy yet'}. ${rels[best].hasAlliance ? 'We are already allied.' : 'An alliance would strengthen both our positions.'} ${friends.length > 1 ? `Other warm relations: ${friends.filter(f => f !== best).join(', ')}.` : ''}`;
+    }
+    return `Your majesty, I regret to say we have no strong friends yet. Diplomacy requires patience — send envoys, establish embassies, offer open borders. Trust is built turn by turn, not overnight.`;
   }
 
-  // Rumours
-  const rumours = (game.rumourQueue || []).filter(r => r.revealTurn <= game.turn);
-  if (rumours.length > 0) {
-    response += ` I have also heard ${rumours.length} confirmed rumour${rumours.length > 1 ? 's' : ''} from my network — check the Intelligence panel for details.`;
+  if (q.includes('gossip') || q.includes('rumour') || q.includes('intel') || q.includes('spy')) {
+    if (rumours.length > 0) {
+      return `*leans in* My network has picked up ${rumours.length} whisper${rumours.length > 1 ? 's' : ''}. The latest: "${rumours[rumours.length - 1]}". ${ctx.gossipPoints > 0 ? `We have ${ctx.gossipPoints} gossip points to spend on more intelligence.` : 'Our gossip reserves are depleted — establish more embassies to rebuild them.'}`;
+    }
+    return `My sources are quiet, sire. ${ctx.gossipPoints > 0 ? `We have ${ctx.gossipPoints} gossip points — visit the Intelligence panel to purchase rumours.` : 'No gossip points available. Embassies are the lifeblood of any spy network.'}`;
   }
 
-  return response;
+  if (q.includes('war') || q.includes('conflict') || q.includes('fight')) {
+    if (ctx.activeWars.length > 0) {
+      return `The world burns, sire. ${ctx.activeWars.join('; ')}. When two powers bleed each other, the wise third party prospers. Consider who you might approach with a trade deal while they're distracted.`;
+    }
+    return `Peace reigns — for now. No active wars between other factions. But peace is merely the pause between conflicts. Stay prepared.`;
+  }
+
+  if (q.includes('danger') || q.includes('enemy') || q.includes('hostile') || q.includes('threat')) {
+    if (enemies.length > 0) {
+      return `${enemies.join(' and ')} ${enemies.length > 1 ? 'view' : 'views'} us with hostility. ${enemies.map(e => `${e}: ${rels[e].status} (${rels[e].score}), military ${rels[e].military}`).join('. ')}. I recommend either charm offensives — gifts, open borders — or ensuring the Marshal has enough swords at the ready.`;
+    }
+    return `No outright enemies, your majesty. A rare luxury. Let us keep it that way through careful diplomacy and timely gifts.`;
+  }
+
+  // General overview
+  let r = `Your majesty, we've made contact with ${ctx.factionsDiscovered} of ${ctx.totalFactions} factions. `;
+  if (friends.length > 0) r += `Warm relations with ${friends.join(', ')}. `;
+  if (enemies.length > 0) r += `Tension with ${enemies.join(', ')}. `;
+  r += `Embassies: ${ctx.embassyCount}. `;
+  if (ctx.activeWars.length > 0) r += `${ctx.activeWars.length} war${ctx.activeWars.length > 1 ? 's' : ''} among other factions — opportunity for the astute. `;
+  if (rumours.length > 0) r += `I have ${rumours.length} fresh whisper${rumours.length > 1 ? 's' : ''} — check the Intelligence panel for details.`;
+  return r;
 }
 
 function generateScienceAdvice(q, ctx) {
-  const techs = game.techs || [];
-  const allTechs = TECHNOLOGIES || [];
-  const available = allTechs.filter(t => !techs.includes(t.id));
-  const current = game.currentResearch;
+  // Sage Brightmind — enthusiastic polymath, long-term thinker, tangent-prone
+  const progress = ctx.currentResearch;
+  const available = ctx.availableTechs || [];
+  const eurekas = ctx.eurekaHints || [];
 
-  let response = `We have discovered ${techs.length} of ${allTechs.length} technologies. `;
-  if (current) {
-    const tech = allTechs.find(t => t.id === current);
-    response += `Currently researching: ${tech?.name || current} (${Math.round((game.researchProgress || 0) / (tech?.cost || 1) * 100)}% complete). `;
+  if (q.includes('research') || q.includes('what should') || q.includes('next') || q.includes('recommend')) {
+    if (!ctx.hasWriting) {
+      return `Oh, your majesty — Writing! Writing must be our priority! It unlocks libraries, extra advisor consultations, and frankly it's embarrassing to run a civilisation without it. The pen truly is mightier than the sword. Well, almost.`;
+    }
+    if (!ctx.hasCurrency) {
+      return `Sire, Currency should be next — it unlocks markets and trade routes. Gold flows where knowledge leads, as I always say! ${progress ? `We're ${progress.pct}% through ${progress.name} first, though.` : ''}`;
+    }
+    if (available.length > 0) {
+      const top = available[0];
+      return `I'd suggest ${top.name} (cost ${top.cost}). ${available.length > 1 ? `Other options: ${available.slice(1, 3).map(t => t.name).join(', ')}.` : ''} ${eurekas.length > 0 ? `Fascinating aside — we could trigger a eureka for ${eurekas[0].tech}: ${eurekas[0].hint}!` : ''}`;
+    }
+    return `We're well advanced, sire! Continue the current path and the future belongs to us.`;
   }
 
-  // Suggest next tech based on what's missing
-  const hasWriting = techs.includes('writing');
-  const hasCurrency = techs.includes('currency');
-  if (!hasWriting) {
-    response += 'I strongly recommend researching Writing — it unlocks libraries and gives you an extra advisor consultation per turn. ';
-  } else if (!hasCurrency) {
-    response += 'Currency would be a wise next step — it enables markets and trade routes for economic growth. ';
+  if (q.includes('eureka') || q.includes('boost') || q.includes('shortcut') || q.includes('discover')) {
+    if (eurekas.length > 0) {
+      let r = `Oh, delightful — I've identified ${eurekas.length} eureka opportunit${eurekas.length > 1 ? 'ies' : 'y'}! `;
+      for (const e of eurekas) r += `**${e.tech}**: ${e.hint}. `;
+      r += 'Each eureka halves the research cost. Wonderful efficiency!';
+      return r;
+    }
+    return `No immediate eureka opportunities that I can see, sire. But keep exploring and building — discoveries often come when you least expect them!`;
   }
 
-  // Eureka hints
-  const eurekas = game.eurekas || [];
-  const availableEurekas = available.filter(t => t.eureka && !eurekas.includes(t.id));
-  if (availableEurekas.length > 0) {
-    const hint = availableEurekas[0];
-    response += `Interesting discovery: ${hint.eureka.description} — this could accelerate our research.`;
+  if (q.includes('behind') || q.includes('ahead') || q.includes('compare') || q.includes('how far')) {
+    return `We've researched ${ctx.techsResearched} of ${ctx.totalTechs} technologies at ${ctx.sciencePerTurn} science per turn. ${ctx.sciencePerTurn < 10 ? 'Frankly, sire, our science output is anaemic. Libraries and campuses would transform our progress.' : ctx.sciencePerTurn > 25 ? 'Excellent output! We\'re a beacon of knowledge.' : 'Solid output, but there\'s room to grow with more campus buildings.'}`;
   }
 
-  return response;
+  // General overview
+  let r = `Your majesty! ${ctx.techsResearched} of ${ctx.totalTechs} technologies mastered, producing ${ctx.sciencePerTurn} science per turn. `;
+  if (progress) r += `Currently researching ${progress.name} — ${progress.pct}% complete. `;
+  if (!ctx.hasWriting) r += '**Writing should be our top priority** — it unlocks so much! ';
+  else if (!ctx.hasPhilosophy) r += 'Philosophy would be a fine next goal — extra consultations and cultural depth. ';
+  if (eurekas.length > 0) r += `I've spotted ${eurekas.length} eureka shortcut${eurekas.length > 1 ? 's' : ''} — ask me about them!`;
+  return r;
 }
 
 function generateCulturalAdvice(q, ctx) {
-  const culture = game.culture || 0;
-  const wonders = game.wonders || [];
-  const builtWonders = game.builtWonders || {};
+  // Muse Starweaver — passionate, poetic but practical, believes culture outlasts armies
+  const cpt = ctx.culturePerTurn || 0;
+  const wonders = ctx.wonders || [];
 
-  let response = `Our cultural output stands at ${game.culturePerTurn || 0} per turn. `;
-  if (wonders.length > 0) {
-    response += `We have completed ${wonders.length} wonder${wonders.length > 1 ? 's' : ''}. `;
+  if (q.includes('wonder') || q.includes('monument') || q.includes('build')) {
+    if (wonders.length > 0) {
+      return `We have raised ${wonders.length} wonder${wonders.length > 1 ? 's' : ''} to the sky, sire — ${wonders.join(', ')}. Monuments to our greatness! ${ctx.builtWondersGlobal} wonders have been claimed worldwide. Every unclaimed wonder is a story waiting for us to write it.`;
+    }
+    return `No wonders yet, your majesty. This saddens me deeply. Wonders are the soul of a civilisation — they inspire your people and intimidate your rivals. Prioritise one when your production allows it.`;
   }
 
-  const availableWonders = Object.keys(builtWonders).length;
-  response += `${availableWonders} wonders have been claimed across the world. `;
+  if (q.includes('culture') || q.includes('how') || q.includes('output') || q.includes('progress')) {
+    let r = `Our cultural heartbeat: ${cpt} culture per turn. ${ctx.culture} accumulated. `;
+    if (cpt < 5) r += 'Sire, our culture is barely a whisper. Temples, amphitheatres, monuments — our people crave beauty and meaning. ';
+    else if (cpt > 15) r += 'A flourishing tapestry! Our influence radiates across the land. ';
+    else r += 'Growing steadily, but with investment we could become a cultural beacon. ';
+    r += `Civics adopted: ${ctx.civicsAdopted}. ${ctx.currentCivic ? `Studying: ${ctx.currentCivic}.` : 'No civic in progress — that must change!'}`;
+    return r;
+  }
 
-  const civics = game.civics || [];
-  response += `We have adopted ${civics.length} civic${civics.length !== 1 ? 's' : ''}. `;
-  response += 'Building temples and cultural buildings will strengthen our cultural influence. Great People are the key to cultural dominance.';
+  if (q.includes('great') || q.includes('people') || q.includes('person') || q.includes('artist')) {
+    return `We have attracted ${ctx.greatPeople} Great ${ctx.greatPeople === 1 ? 'Person' : 'People'}, sire. Each one is worth a hundred ordinary citizens — they create works that echo through the ages. Build cultural districts and wonders to attract more of these luminaries.`;
+  }
 
-  return response;
+  if (q.includes('victory') || q.includes('win') || q.includes('path') || q.includes('strategy')) {
+    return `The cultural victory path demands wonders, great works, and relentless cultural output. At ${cpt}/turn, ${cpt > 20 ? 'we are on a strong trajectory' : 'we need significantly more investment'}. Temples, amphitheatres, and above all — wonders. Let our rivals fight over scraps of land while we capture their hearts and minds.`;
+  }
+
+  // General overview
+  let r = `Your majesty, our civilisation's soul: ${cpt} culture per turn, ${ctx.civicsAdopted} civics adopted, ${wonders.length} wonder${wonders.length !== 1 ? 's' : ''} built. `;
+  if (ctx.greatPeople > 0) r += `${ctx.greatPeople} Great People grace our realm. `;
+  if (ctx.inspirations > 0) r += `${ctx.inspirations} inspiration${ctx.inspirations > 1 ? 's' : ''} await — these halve civic costs. `;
+  r += 'Culture is the legacy that outlasts every army, sire. Invest in beauty, and history will remember us.';
+  return r;
 }
 
 // ============================================
 // CONTEXT BUILDERS
 // ============================================
 
-function buildGameContext(advisor) {
-  return {
+// ============================================
+// DOMAIN-SPECIFIC CONTEXT BUILDERS
+// ============================================
+// Each advisor gets different game data relevant to their domain.
+
+function buildDomainContext(advisorKey) {
+  const base = {
     turn: game.turn,
     gold: game.gold,
     goldPerTurn: game.goldPerTurn,
-    science: game.science,
-    sciencePerTurn: game.sciencePerTurn,
-    culture: game.culture,
-    culturePerTurn: game.culturePerTurn,
-    military: game.military,
-    defense: game.defense,
     cities: (game.cities || []).length,
-    units: (game.units || []).filter(u => u.owner === 'player').length,
-    techs: (game.techs || []),
-    currentResearch: game.currentResearch,
-    researchProgress: game.researchProgress,
-    wonders: game.wonders || [],
-    relationships: game.relationships || {},
-    metFactions: Object.keys(game.metFactions || {}),
-    factionStats: game.factionStats || {},
-    aiWars: (game.aiWars || []).length,
-    aiAlliances: (game.aiAlliances || []).length,
   };
+
+  switch (advisorKey) {
+    case 'military': {
+      const units = game.units ? game.units.filter(u => u.owner === 'player') : [];
+      const combat = units.filter(u => u.class !== 'civilian' && u.class !== 'worker');
+      const unitBreakdown = {};
+      combat.forEach(u => { unitBreakdown[u.type] = (unitBreakdown[u.type] || 0) + 1; });
+      const threats = [];
+      for (const [fid, stats] of Object.entries(game.factionStats || {})) {
+        if ((game.metFactions || {})[fid]) {
+          const rel = game.relationships?.[fid] || 0;
+          threats.push({ name: FACTIONS[fid]?.name || fid, military: stats.military || 0, relation: rel });
+        }
+      }
+      threats.sort((a, b) => b.military - a.military);
+      return {
+        ...base,
+        military: game.military || 0,
+        defense: game.defense || 0,
+        totalCombatUnits: combat.length,
+        unitBreakdown,
+        woundedUnits: combat.filter(u => u.hp < 80).length,
+        fortifiedUnits: combat.filter(u => u.fortified).length,
+        factionThreats: threats,
+        activeWars: (game.aiWars || []).map(w => ({
+          attacker: FACTIONS[w.attacker]?.name || w.attacker,
+          defender: FACTIONS[w.defender]?.name || w.defender,
+          turns: w.turnsActive || 0,
+        })),
+        barbarianCamps: (game.minorFactions || []).filter(mf => mf.type === 'barbarian' && !mf.cleared).length,
+      };
+    }
+    case 'economic': {
+      const cities = game.cities || [];
+      const cityData = cities.map(c => ({
+        name: c.name,
+        population: c.population || 0,
+        production: c.productionPerTurn || 0,
+        building: c.currentBuild?.name || 'idle',
+        tradeRoutes: c.tradeRoutes?.length || 0,
+      }));
+      return {
+        ...base,
+        goldPerTurn: game.goldPerTurn || 0,
+        sciencePerTurn: game.sciencePerTurn || 0,
+        culturePerTurn: game.culturePerTurn || 0,
+        population: game.population || 0,
+        foodPerTurn: game.foodPerTurn || 0,
+        cityDetails: cityData,
+        totalTradeRoutes: cities.reduce((s, c) => s + (c.tradeRoutes?.length || 0), 0),
+        improvements: (game.improvements || []).length,
+        workers: (game.units || []).filter(u => u.owner === 'player' && u.type === 'worker').length,
+        militaryUpkeep: (game.units || []).filter(u => u.owner === 'player' && u.class !== 'civilian').length * 2,
+      };
+    }
+    case 'diplomatic': {
+      const met = Object.keys(game.metFactions || {});
+      const relationships = {};
+      for (const fid of met) {
+        const rel = game.relationships?.[fid] || 0;
+        const label = getRelationLabel(rel);
+        const stats = game.factionStats?.[fid] || {};
+        relationships[FACTIONS[fid]?.name || fid] = {
+          score: rel,
+          status: label.text,
+          type: FACTIONS[fid]?.type || 'unknown',
+          military: stats.military || '?',
+          hasAlliance: !!game.activeAlliances?.[fid],
+          hasOpenBorders: !!game.openBorders?.[fid],
+          hasEmbassy: !!game.embassies?.[fid],
+        };
+      }
+      const rumours = (game.rumourQueue || []).filter(r => r.revealTurn <= game.turn);
+      return {
+        ...base,
+        factionsDiscovered: met.length,
+        totalFactions: Object.keys(FACTIONS).length,
+        relationships,
+        activeWars: (game.aiWars || []).map(w => `${FACTIONS[w.attacker]?.name} vs ${FACTIONS[w.defender]?.name}`),
+        alliances: (game.aiAlliances || []).map(a => `${FACTIONS[a.factionA]?.name} & ${FACTIONS[a.factionB]?.name}`),
+        tradeDeals: (game.aiTradeDeals || []).length,
+        recentRumours: rumours.slice(-5).map(r => r.text),
+        gossipPoints: game.gossipPoints || 0,
+        embassyCount: Object.keys(game.embassies || {}).length,
+      };
+    }
+    case 'science': {
+      const techs = game.techs || [];
+      const allTechs = TECHNOLOGIES || [];
+      const available = allTechs.filter(t => !techs.includes(t.id));
+      const current = game.currentResearch;
+      let currentProgress = null;
+      if (current) {
+        const tech = allTechs.find(t => t.id === current);
+        if (tech) currentProgress = { name: tech.name, pct: Math.round((game.researchProgress || 0) / tech.cost * 100) };
+      }
+      const eurekas = game.eurekas || [];
+      const eurekaHints = available.filter(t => t.eureka && !eurekas.includes(t.id)).slice(0, 3).map(t => ({
+        tech: t.name, hint: t.eureka.description,
+      }));
+      // Suggest next techs based on what unlocks
+      const recommended = available.slice(0, 5).map(t => ({ name: t.name, cost: t.cost, era: t.era || 'ancient' }));
+      return {
+        ...base,
+        sciencePerTurn: game.sciencePerTurn || 0,
+        techsResearched: techs.length,
+        totalTechs: allTechs.length,
+        currentResearch: currentProgress,
+        researchedTechs: techs,
+        availableTechs: recommended,
+        eurekaHints,
+        hasWriting: techs.includes('writing'),
+        hasPhilosophy: techs.includes('philosophy'),
+        hasCurrency: techs.includes('currency'),
+      };
+    }
+    case 'cultural': {
+      const civics = game.civics || [];
+      const allCivics = CIVICS || [];
+      return {
+        ...base,
+        culture: game.culture || 0,
+        culturePerTurn: game.culturePerTurn || 0,
+        civicsAdopted: civics.length,
+        currentCivic: game.currentCivic || null,
+        civicProgress: game.civicProgress || 0,
+        wonders: game.wonders || [],
+        wonderCount: (game.wonders || []).length,
+        builtWondersGlobal: Object.keys(game.builtWonders || {}).length,
+        greatPeople: (game.greatPeople || []).length,
+        inspirations: (game.inspirations || []).length,
+        happiness: game.happiness || 0,
+        amenities: game.amenities || 0,
+      };
+    }
+    default:
+      return base;
+  }
 }
 
-function buildAdvisorSystemPrompt(advisor, context) {
-  let prompt = `You are ${advisor.name}, the ${advisor.title} to the ruler of a growing civilisation in the game Uncivilised. `;
-  prompt += `${advisor.personality}\n\n`;
-  prompt += `RULES:\n`;
-  prompt += `- Stay in character at ALL times. You are a royal advisor, not an AI.\n`;
-  prompt += `- Give specific, actionable advice based on the game state provided.\n`;
+// ============================================
+// ADVISOR SYSTEM PROMPTS — Unique Per Domain
+// ============================================
+
+function buildAdvisorSystemPrompt(advisor, advisorKey, context) {
+  let prompt = '';
+
+  // Core identity — unique per advisor
+  prompt += `You are ${advisor.name}, the ${advisor.title} to a civilisation ruler.\n`;
+  prompt += `PERSONALITY: ${advisor.personality}\n\n`;
+
+  // Strict rules to prevent faction-leader behaviour
+  prompt += `CRITICAL RULES:\n`;
+  prompt += `- You are a ROYAL ADVISOR loyal to the ruler. NOT a foreign leader or opponent.\n`;
+  prompt += `- You serve the ruler. Address them as "my liege", "sire", or "your majesty".\n`;
+  prompt += `- Give specific, actionable advice based ONLY on your domain of expertise.\n`;
   prompt += `- Be BRIEF — 2-4 sentences maximum. Rulers are busy.\n`;
-  prompt += `- Reference specific game numbers, faction names, and concrete recommendations.\n`;
-  prompt += `- Never break the fourth wall or mention "the game" — this IS real to you.\n`;
-  prompt += `- Never include [ACTION:...] tags — you advise, you don't act.\n\n`;
-  prompt += `CURRENT STATE:\n`;
-  prompt += `Turn: ${context.turn}\n`;
-  prompt += `Gold: ${context.gold} (${context.goldPerTurn > 0 ? '+' : ''}${context.goldPerTurn}/turn)\n`;
-  prompt += `Military: ${context.military}, Defense: ${context.defense}\n`;
-  prompt += `Cities: ${context.cities}, Units: ${context.units}\n`;
-  prompt += `Technologies: ${context.techs.length} researched${context.currentResearch ? `, currently researching ${context.currentResearch}` : ''}\n`;
-  prompt += `Wonders: ${context.wonders.length > 0 ? context.wonders.join(', ') : 'none'}\n`;
+  prompt += `- Reference specific numbers, names, and concrete recommendations.\n`;
+  prompt += `- NEVER negotiate, make demands, or propose treaties — you ADVISE, you don't negotiate.\n`;
+  prompt += `- NEVER roleplay as a foreign leader or diplomat from another faction.\n`;
+  prompt += `- NEVER include [ACTION:...] tags.\n`;
+  prompt += `- Stay in character as a medieval advisor. This world is real to you.\n\n`;
 
-  // Faction relationships
-  if (context.metFactions.length > 0) {
-    prompt += `\nKNOWN FACTIONS:\n`;
-    for (const fid of context.metFactions) {
-      const rel = context.relationships[fid] || 0;
-      const faction = FACTIONS[fid];
-      const stats = context.factionStats[fid];
-      const label = getRelationLabel(rel);
-      prompt += `- ${faction?.name || fid}: ${label.text} (${rel}), Military: ${stats?.military || '?'}\n`;
-    }
+  // Domain-specific context
+  prompt += `YOUR DOMAIN: ${advisor.desc}\n\n`;
+  prompt += `CURRENT STATE (Turn ${context.turn}):\n`;
+  prompt += `Gold: ${context.gold} (${(context.goldPerTurn||0) > 0 ? '+' : ''}${context.goldPerTurn||0}/turn), Cities: ${context.cities}\n`;
+
+  switch (advisorKey) {
+    case 'military':
+      prompt += `\nMILITARY BRIEFING:\n`;
+      prompt += `Our strength: ${context.military} (${context.totalCombatUnits} combat units)\n`;
+      prompt += `Defense rating: ${context.defense}\n`;
+      prompt += `Unit composition: ${Object.entries(context.unitBreakdown || {}).map(([t,n]) => `${n}x ${t}`).join(', ') || 'none'}\n`;
+      prompt += `Wounded: ${context.woundedUnits}, Fortified: ${context.fortifiedUnits}\n`;
+      prompt += `Barbarian camps active: ${context.barbarianCamps}\n`;
+      if (context.factionThreats.length > 0) {
+        prompt += `\nFACTION THREAT ASSESSMENT:\n`;
+        for (const t of context.factionThreats) {
+          const danger = t.military > context.military * 1.3 ? 'DANGEROUS' : t.military > context.military ? 'STRONG' : 'MANAGEABLE';
+          prompt += `- ${t.name}: Military ${t.military} (${danger}), Relations ${t.relation}\n`;
+        }
+      }
+      if (context.activeWars.length > 0) {
+        prompt += `\nWARS BETWEEN OTHER FACTIONS:\n`;
+        for (const w of context.activeWars) prompt += `- ${w.attacker} vs ${w.defender} (${w.turns} turns)\n`;
+      }
+      break;
+
+    case 'economic':
+      prompt += `\nECONOMIC REPORT:\n`;
+      prompt += `Treasury: ${context.gold}g, Income: ${context.goldPerTurn}/turn\n`;
+      prompt += `Population: ${context.population}, Food: ${context.foodPerTurn}/turn\n`;
+      prompt += `Science: ${context.sciencePerTurn}/turn, Culture: ${context.culturePerTurn}/turn\n`;
+      prompt += `Workers: ${context.workers}, Improvements built: ${context.improvements}\n`;
+      prompt += `Military upkeep (est): ~${context.militaryUpkeep}g/turn\n`;
+      prompt += `Trade routes: ${context.totalTradeRoutes}\n`;
+      if (context.cityDetails.length > 0) {
+        prompt += `\nCITY DETAILS:\n`;
+        for (const c of context.cityDetails) {
+          prompt += `- ${c.name}: Pop ${c.population}, Prod ${c.production}/turn, Building: ${c.building}\n`;
+        }
+      }
+      break;
+
+    case 'diplomatic':
+      prompt += `\nDIPLOMATIC INTELLIGENCE:\n`;
+      prompt += `Factions discovered: ${context.factionsDiscovered}/${context.totalFactions}\n`;
+      prompt += `Embassies: ${context.embassyCount}, Gossip depth: ${context.gossipPoints} points\n`;
+      if (Object.keys(context.relationships).length > 0) {
+        prompt += `\nRELATIONSHIPS:\n`;
+        for (const [name, data] of Object.entries(context.relationships)) {
+          let extras = [];
+          if (data.hasAlliance) extras.push('ALLIED');
+          if (data.hasOpenBorders) extras.push('open borders');
+          if (data.hasEmbassy) extras.push('embassy');
+          prompt += `- ${name}: ${data.status} (${data.score}), ${data.type} faction, mil ${data.military}${extras.length ? ' [' + extras.join(', ') + ']' : ''}\n`;
+        }
+      }
+      if (context.activeWars.length > 0) prompt += `\nACTIVE WARS: ${context.activeWars.join('; ')}\n`;
+      if (context.alliances.length > 0) prompt += `ALLIANCES: ${context.alliances.join('; ')}\n`;
+      if (context.recentRumours.length > 0) {
+        prompt += `\nRECENT INTELLIGENCE:\n`;
+        for (const r of context.recentRumours) prompt += `- ${r}\n`;
+      }
+      break;
+
+    case 'science':
+      prompt += `\nRESEARCH STATUS:\n`;
+      prompt += `Technologies: ${context.techsResearched}/${context.totalTechs} researched\n`;
+      prompt += `Science output: ${context.sciencePerTurn}/turn\n`;
+      if (context.currentResearch) {
+        prompt += `Currently researching: ${context.currentResearch.name} (${context.currentResearch.pct}% complete)\n`;
+      }
+      prompt += `Key techs: Writing ${context.hasWriting ? '✓' : '✗'}, Philosophy ${context.hasPhilosophy ? '✓' : '✗'}, Currency ${context.hasCurrency ? '✓' : '✗'}\n`;
+      if (context.availableTechs.length > 0) {
+        prompt += `\nAVAILABLE TECHNOLOGIES:\n`;
+        for (const t of context.availableTechs) prompt += `- ${t.name} (cost ${t.cost})\n`;
+      }
+      if (context.eurekaHints.length > 0) {
+        prompt += `\nEUREKA OPPORTUNITIES:\n`;
+        for (const e of context.eurekaHints) prompt += `- ${e.tech}: ${e.hint}\n`;
+      }
+      break;
+
+    case 'cultural':
+      prompt += `\nCULTURAL REPORT:\n`;
+      prompt += `Culture: ${context.culture} (${context.culturePerTurn}/turn)\n`;
+      prompt += `Civics adopted: ${context.civicsAdopted}\n`;
+      if (context.currentCivic) prompt += `Studying: ${context.currentCivic}\n`;
+      prompt += `Wonders built: ${context.wonderCount} (${context.builtWondersGlobal} claimed globally)\n`;
+      prompt += `Great People: ${context.greatPeople}, Inspirations: ${context.inspirations}\n`;
+      break;
   }
-
-  prompt += `\nActive wars in the world: ${context.aiWars}, Active alliances: ${context.aiAlliances}\n`;
 
   return prompt;
 }
