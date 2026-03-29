@@ -40,7 +40,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
 import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
-import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './advisors.js';
+import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './diplomacy-api.js';
 import { establishEmbassy, processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 
 // --- Log diplomacy module status ---

@@ -9,7 +9,7 @@ import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
 import { autoSave } from './save-load.js';
-import { isAdvisorChatActive, closeAdvisorChat } from './advisors.js';
+import { isAdvisorChatActive, closeAdvisorChat } from './diplomacy-api.js';
 
 // ============================================
 // CAMERA HELPERS

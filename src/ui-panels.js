@@ -14,7 +14,7 @@ import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
 import { renderDiplomacyWithIntel, switchDiploTab } from './intelligence.js';
-import { renderAdvisorPanel, isAdvisorChatActive, closeAdvisorChat } from './advisors.js';
+import { renderAdvisorPanel, isAdvisorChatActive, closeAdvisorChat } from './diplomacy-api.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
