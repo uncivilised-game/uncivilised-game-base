@@ -136,11 +136,11 @@ function calculateCityAmenities(events) {
 }
 
 let _processingTurn = false;
-let _lastReportedTurnError = 0; // rate-limit: one auto-report per game
+let _hasReportedTurnError = false; // rate-limit: one auto-report per game session
 
 function reportTurnError(section, turn, error) {
-  if (_lastReportedTurnError >= turn) return; // already reported this game
-  _lastReportedTurnError = turn;
+  if (_hasReportedTurnError) return;
+  _hasReportedTurnError = true;
   try {
     fetch(API + '/api/feedback', {
       method: 'POST',
