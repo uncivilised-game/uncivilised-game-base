@@ -1,5 +1,5 @@
 import { TERRAIN_TILE_MAP, FEATURE_TILE_MAP, PORTRAIT_MAP } from './constants.js';
-import { TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, setTilesLoaded, game } from './state.js';
+import { TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, setTilesLoaded, game } from './state.js';
 
 // render is imported lazily to avoid circular deps
 let _render = null;
@@ -46,7 +46,17 @@ export function preloadPortraits() {
   }
 }
 
+export function preloadSettlementImages() {
+  for (let stage = 1; stage <= 4; stage++) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = `./assets/hex/settlement_stage${stage}.png`;
+    SETTLEMENT_IMAGES[stage] = img;
+  }
+}
+
 // Start preloading immediately
 preloadImprovementImages();
 preloadTerrainTiles();
 preloadPortraits();
+preloadSettlementImages();

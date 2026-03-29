@@ -392,6 +392,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
+    competition_id: Optional[str] = None
 
 
 class ClaimUsername(BaseModel):
@@ -575,7 +576,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "surprise_attack"}}] — launch a treacherous attack despite current peace/alliance
   [ACTION: {{"type": "marriage_offer", "member": "Princess Aurelia", "dowry_gold": 100, "duration": 20}}]
   [ACTION: {{"type": "trade_deal", "player_gives": "gold:30/turn", "player_receives": "military:5,science:3", "duration": 10}}]
-  [ACTION: {{"type": "mutual_defense", "duration": 15}}]
+  [ACTION: {{"type": "mutual_defense", "duration": 15}}] — or with gold cost: {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}
   [ACTION: {{"type": "open_borders", "duration": 10}}] — allow free passage through territories
   [ACTION: {{"type": "non_aggression", "duration": 20}}] — promise no hostilities for set turns
   [ACTION: {{"type": "send_gift", "amount": 25}}] — send gold as a gesture of goodwill
@@ -597,6 +598,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "introduce", "target_faction": "shadow_kael"}}] — introduce the player to another faction you know
   [ACTION: {{"type": "game_mod", "mod": {{...}}}}] — modify the game world through diplomacy (see GAME MODS below)
   [ACTION: {{"type": "none"}}]
+
+GOLD COST: Any agreement action (mutual_defense, offer_alliance, open_borders, non_aggression, ceasefire, tech_share) can include "gold_cost": N to require the player to pay gold for the deal. Use this when the player offers gold for an agreement, or when you want to charge for your cooperation. Example: player offers 100 gold for a defense pact → emit {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}. Do NOT use demand_tribute when the player is offering gold for a specific agreement — use the agreement action with gold_cost instead.
 
 GAME MODS — EMERGENT GAMEPLAY:
 When diplomacy leads to sharing knowledge, intelligence, or forging deep cooperation, you can modify the actual game by including a "game_mod" action. This creates emergent gameplay — the game evolves through player negotiation. Use these ONLY when it makes narrative sense (a trade of knowledge, a military alliance benefit, intelligence sharing, etc.).
@@ -686,6 +689,14 @@ DIPLOMACY DEPTH RULES:
         # Also strip partial ACTION tags that didn't fully close
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
+
+        # Fallback: if the player offered gold and the AI emitted an agreement
+        # without gold_cost, inject the amount from the player's message
+        AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
+        if action and action.get('type') in AGREEMENT_TYPES and not action.get('gold_cost'):
+            gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
+            if gold_match:
+                action['gold_cost'] = int(gold_match.group(1))
 
         # Log diplomacy interaction to Supabase
         visitor_id = request.headers.get("x-visitor-id", "anonymous")
@@ -806,9 +817,22 @@ async def load_game(request: Request):
 # /api/leaderboard — top 500 via Supabase leaderboard table
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
-async def submit_leaderboard(entry: LeaderboardEntry):
+async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
+    player_name = entry.player_name.strip()[:20]
+    if not player_name:
+        return {"success": False, "error": "Player name required"}
+
+    # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
+    # 5000 gives plenty of headroom without relying on client-supplied inputs.
+    if not (0 <= entry.score <= 5000):
+        return {"success": False, "error": "Score rejected"}
+
+    # Minimum bar: don't pollute the board with empty/trivial submissions
+    if entry.score < 10 or entry.turns_played < 2:
+        return {"success": False, "error": "Score too low for leaderboard"}
+
     record = {
-        "player_name": entry.player_name[:20],
+        "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
@@ -816,6 +840,8 @@ async def submit_leaderboard(entry: LeaderboardEntry):
         "cities_count": entry.cities_count,
         "game_version": entry.game_version,
     }
+    if entry.competition_id:
+        record["competition_id"] = entry.competition_id
 
     if _sb_ok:
         try:
@@ -825,7 +851,7 @@ async def submit_leaderboard(entry: LeaderboardEntry):
             rank = _sb_count("leaderboard", f"score=gte.{entry.score}")
 
             # Update player profile if they have a registered username
-            _update_player_stats(entry.player_name, entry.score)
+            _update_player_stats(player_name, entry.score)
 
             return {"success": True, "rank": rank}
         except Exception as e:
@@ -882,7 +908,7 @@ def _update_player_stats(player_name: str, score: int):
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
 async def claim_username(data: ClaimUsername):
-    """Claim a unique username. Optionally associate an email."""
+    """Claim a unique username. Local dev — no ownership verification."""
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -894,11 +920,11 @@ async def claim_username(data: ClaimUsername):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id",
+                "players", select="id,username",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                return {"success": False, "error": "Username already taken"}
+                return {"success": True, "username": existing[0]["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
@@ -908,7 +934,7 @@ async def claim_username(data: ClaimUsername):
                 "best_score": 0,
                 "total_score": 0,
             }, return_data=False)
-            return {"success": True, "username": username}
+            return {"success": True, "username": username, "returning": False}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -1018,13 +1044,12 @@ async def add_to_waitlist(entry: WaitlistEntry):
 
 @app.get("/api/waitlist/count")
 async def get_waitlist_count():
-    """Get the total number of people waiting (email signups + waitlisted players) and total players."""
+    """Get the number of active players (joined) and waitlisted players (waiting)."""
     if _sb_ok:
         try:
-            email_signups = _sb_count("waitlist")
+            active_players = _sb_count("players", filters="status=eq.active")
             waitlisted_players = _sb_count("players", filters="status=eq.waitlisted")
-            total_players = _sb_count("players")
-            return {"count": email_signups + waitlisted_players, "total_players": total_players}
+            return {"count": waitlisted_players, "total_players": active_players}
         except Exception:
             pass
 
@@ -1360,6 +1385,39 @@ async def admin_analytics(secret: str = "", hours: int = 24):
 
 # /api/health — health check
 # ═══════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
+# Email unsubscribe (token-signed link from newsletters)
+# ═══════════════════════════════════════════════════
+@app.get("/api/unsubscribe")
+async def unsubscribe(request: Request):
+    """One-click email unsubscribe via signed token."""
+    import hashlib
+    import hmac
+    from fastapi.responses import HTMLResponse
+
+    username = request.query_params.get("u", "")
+    token = request.query_params.get("t", "")
+    if not username or not token or not SUPABASE_SERVICE_KEY:
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(token, expected):
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    try:
+        _sb_update("players", {"email_opt_out": True}, f"username=eq.{quote(username)}")
+    except Exception:
+        return HTMLResponse("<h2>Something went wrong. Please email hello@uncivilized.fun to unsubscribe.</h2>", status_code=500)
+
+    return HTMLResponse(
+        '<div style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center">'
+        '<h2 style="color:#c9a84c">Unsubscribed</h2>'
+        f'<p>You won\'t receive further emails from Uncivilized, {username}.</p>'
+        '<p style="color:#888">If this was a mistake, just reply to any previous email or contact hello@uncivilized.fun.</p>'
+        '</div>'
+    )
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint. Tests Supabase connectivity."""

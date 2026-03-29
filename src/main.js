@@ -12,7 +12,8 @@ import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin i
 import { SAVE_KEY, GAME_VERSION, RESOURCES } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
-  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS
+  currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS,
+  playerRole, setPlayerRole
 } from './state.js';
 import { setRenderCallback } from './assets.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
@@ -286,6 +287,7 @@ async function startNewGame() {
       headers: { 'x-player-name': playerName },
     });
     const gateData = await gateRes.json();
+    if (gateData.role) setPlayerRole(gateData.role);
     if (!gateData.allowed) {
       if (gateData.reason === 'waitlisted') {
         alert('You\'re on the waitlist. We\'ll email you when a spot opens.');
@@ -299,7 +301,7 @@ async function startNewGame() {
   } catch (_) {
     // Network error — fail open
   }
-  if (playerName && currentCompetition) {
+  if (playerName && currentCompetition && playerRole === 'user') {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
       alert(check.reason || 'Session limit reached for this competition.');
@@ -367,12 +369,13 @@ async function continueGame() {
       headers: { 'x-player-name': playerName },
     });
     const gateData = await gateRes.json();
+    if (gateData.role) setPlayerRole(gateData.role);
     if (!gateData.allowed) {
       alert('Access not available. Check your email or sign up.');
       return;
     }
   } catch (_) {}
-  if (playerName && currentCompetition) {
+  if (playerName && currentCompetition && playerRole === 'user') {
     const check = await checkSessionLimit(playerName);
     if (!check.allowed) {
       alert(check.reason || 'Session limit reached for this competition.');
@@ -478,7 +481,7 @@ async function fetchSpotsRemaining() {
     const res = await fetch(API + '/api/spots-remaining');
     if (res.ok) return await res.json();
   } catch (e) {}
-  return { total: 1000, active: 0, remaining: 1000 };
+  return { total: 10000, active: 0, remaining: 10000 };
 }
 
 async function updateSpotsCounter() {
@@ -579,15 +582,28 @@ async function handleSignin(e) {
   const username = document.getElementById('signin-username').value.trim();
 
   try {
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
     const res = await fetch(API + '/api/signin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
       body: JSON.stringify({ username }),
     });
     const data = await res.json();
     if (!data.success) {
       errEl.textContent = data.error || 'Sign in failed';
       errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      return;
+    }
+
+    if (data.status === 'needs_email') {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+      const feedbackEl = document.getElementById('signin-error');
+      feedbackEl.style.display = 'block';
+      feedbackEl.style.color = '#f0ad4e';
+      feedbackEl.textContent = 'New browser? We sent a sign-in link to your email.';
       btn.disabled = false;
       btn.textContent = 'Sign In';
       return;
@@ -649,6 +665,7 @@ async function refreshAuthUI() {
       headers: { 'x-player-name': username },
     });
     const data = await res.json();
+    if (data.role) setPlayerRole(data.role);
     if (data.allowed) {
       // Active + verified — show play buttons
       if (guestBtns) guestBtns.style.display = 'none';
@@ -702,6 +719,7 @@ async function handleTokenVerification() {
     const data = await res.json();
     if (data.success && data.username) {
       safeStorage.setItem('uncivilised_username', data.username);
+      if (data.access_token) safeStorage.setItem('uncivilised_access_token', data.access_token);
       if (data.can_play) {
         showStatusMessage('Email verified! You\'re ready to play, ' + data.username + '.');
       } else {

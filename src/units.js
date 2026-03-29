@@ -606,6 +606,20 @@ function handleHexClick(col, row) {
             if (!agreed) return;
             declareSurpriseWar(target.owner, factionName);
           }
+          // Civilian units (workers, settlers) are captured, not fought
+          const targetType = UNIT_TYPES[target.type];
+          if (targetType && targetType.class === 'civilian') {
+            const prevOwner = target.owner;
+            target.owner = 'player';
+            target.moveLeft = 0;
+            const ownerName = FACTIONS[prevOwner] ? FACTIONS[prevOwner].name : prevOwner;
+            addEvent(`Captured ${targetType.name} from ${ownerName}!`, 'combat');
+            showToast('Unit Captured', `${targetType.name} captured from ${ownerName}!`);
+            unit.moveLeft = Math.max(0, unit.moveLeft - 1);
+            showSelectionPanel(unit);
+            render();
+            return;
+          }
           // Show tactical battle panel for player attacks
           showBattlePanel(unit, target, (tactic) => {
             const tacticResult = applyTacticModifier(tactic, 0, 0, unit, target);

@@ -6,7 +6,7 @@ import { createUnit } from './units.js';
 import { addEvent, logAction, showToast } from './events.js';
 import { render } from './render.js';
 import { revealAround } from './discovery.js';
-import { getUnitAt } from './combat.js';
+import { getUnitAt, addDeathMarker } from './combat.js';
 import { updateUI } from './leaderboard.js';
 import { BARBARIAN_UNITS } from './constants.js';
 
@@ -355,6 +355,7 @@ window.barbCampAction = function(campId, action) {
         addEvent(`\u{2694}\u{FE0F} Attacked barbarian camp (${damage} dmg dealt, ${retaliation} taken). Camp strength: ${bc.strength}`, 'combat');
       }
       if (attacker.hp <= 0) {
+        addDeathMarker(attacker.col, attacker.row);
         game.units = game.units.filter(u => u !== attacker);
         addEvent(`Your ${attackerType.name} was killed attacking the camp!`, 'combat');
       }

@@ -58,7 +58,7 @@ _SB_HEADERS = {
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
-MAX_ACTIVE_PLAYERS = 1000  # first N signups get immediate access
+MAX_ACTIVE_PLAYERS = 10000  # first N signups get immediate access
 
 WELCOME_EMAIL_HTML = """
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -165,7 +165,7 @@ def _send_waitlisted_email(to_email: str, username: str, position: int):
 <tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
 <tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">You're on the list, {username}.</td></tr>
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 1,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 10,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">We'll email you the moment a spot opens up. In the meantime, the game is open source &mdash; you can follow development on GitHub or join the community.</td></tr>
 <tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
 <tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
@@ -389,6 +389,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
+    competition_id: str | None = None
 
 
 class ClaimUsername(BaseModel):
@@ -811,7 +812,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "surprise_attack"}}] \u2014 launch a treacherous attack despite current peace/alliance
   [ACTION: {{"type": "marriage_offer", "member": "Princess Aurelia", "dowry_gold": 100, "duration": 20}}]
   [ACTION: {{"type": "trade_deal", "player_gives": "gold:30/turn", "player_receives": "military:5,science:3", "duration": 10}}]
-  [ACTION: {{"type": "mutual_defense", "duration": 15}}]
+  [ACTION: {{"type": "mutual_defense", "duration": 15}}] — or with gold cost: {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}
   [ACTION: {{"type": "open_borders", "duration": 10}}] \u2014 allow free passage through territories
   [ACTION: {{"type": "non_aggression", "duration": 20}}] \u2014 promise no hostilities for set turns
   [ACTION: {{"type": "send_gift", "amount": 25}}] \u2014 send gold as a gesture of goodwill
@@ -833,6 +834,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "introduce", "target_faction": "shadow_kael"}}] \u2014 introduce the player to another faction you know
   [ACTION: {{"type": "game_mod", "mod": {{...}}}}] \u2014 modify the game world through diplomacy (see GAME MODS below)
   [ACTION: {{"type": "none"}}]
+
+GOLD COST: Any agreement action (mutual_defense, offer_alliance, open_borders, non_aggression, ceasefire, tech_share) can include "gold_cost": N to require the player to pay gold for the deal. Use this when the player offers gold for an agreement, or when you want to charge for your cooperation. Example: player offers 100 gold for a defense pact → emit {{"type": "mutual_defense", "duration": 15, "gold_cost": 100}}. Do NOT use demand_tribute when the player is offering gold for a specific agreement — use the agreement action with gold_cost instead.
 
 GAME MODS \u2014 EMERGENT GAMEPLAY:
 When diplomacy leads to sharing knowledge, intelligence, or forging deep cooperation, you can modify the actual game by including a "game_mod" action. This creates emergent gameplay \u2014 the game evolves through player negotiation. Use these ONLY when it makes narrative sense (a trade of knowledge, a military alliance benefit, intelligence sharing, etc.).
@@ -935,6 +938,14 @@ DIPLOMACY DEPTH RULES:
         # Also strip partial ACTION tags that didn't fully close
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
+
+        # Fallback: if the player offered gold and the AI emitted an agreement
+        # without gold_cost, inject the amount from the player's message
+        AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
+        if action and action.get('type') in AGREEMENT_TYPES and not action.get('gold_cost'):
+            gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
+            if gold_match:
+                action['gold_cost'] = int(gold_match.group(1))
 
         # Log diplomacy interaction to Supabase (visitor_id already extracted above)
         _log_diplomacy_interaction(
@@ -1053,9 +1064,38 @@ async def load_game(request: Request):
 # /api/leaderboard — top 500 via Supabase leaderboard table
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
-async def submit_leaderboard(entry: LeaderboardEntry):
+async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
+    # ── Auth: verify the submitter owns this player_name ──
+    access_token = request.headers.get("x-access-token", "")
+    player_name = entry.player_name.strip()[:20]
+    if not player_name or not access_token:
+        return {"success": False, "error": "Authentication required"}
+
+    if _sb_ok:
+        rows = _sb_select(
+            "players", select="username,access_token",
+            filters=f"username_lower=eq.{quote(player_name.lower())}",
+            limit=1,
+        )
+        if not rows:
+            return {"success": False, "error": "Player not registered"}
+        stored_token = rows[0].get("access_token") or ""
+        if not stored_token or stored_token != access_token:
+            return {"success": False, "error": "Invalid access token"}
+        # Use the canonical username from the DB
+        player_name = rows[0]["username"]
+
+    # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
+    # 5000 gives plenty of headroom without relying on client-supplied inputs.
+    if not (0 <= entry.score <= 5000):
+        return {"success": False, "error": "Score rejected"}
+
+    # Minimum bar: don't pollute the board with empty/trivial submissions
+    if entry.score < 10 or entry.turns_played < 2:
+        return {"success": False, "error": "Score too low for leaderboard"}
+
     record = {
-        "player_name": entry.player_name[:20],
+        "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
@@ -1063,6 +1103,8 @@ async def submit_leaderboard(entry: LeaderboardEntry):
         "cities_count": entry.cities_count,
         "game_version": entry.game_version,
     }
+    if entry.competition_id:
+        record["competition_id"] = entry.competition_id
 
     if _sb_ok:
         try:
@@ -1072,7 +1114,7 @@ async def submit_leaderboard(entry: LeaderboardEntry):
             rank = _sb_count("leaderboard", f"score=gte.{entry.score}")
 
             # Update player profile if they have a registered username
-            _update_player_stats(entry.player_name, entry.score)
+            _update_player_stats(player_name, entry.score)
 
             return {"success": True, "rank": rank}
         except Exception as e:
@@ -1128,8 +1170,9 @@ def _update_player_stats(player_name: str, score: int):
 # — player profiles via Supabase players table
 # ═══════════════════════════════════════════════════
 @app.post("/api/claim-username")
-async def claim_username(data: ClaimUsername):
-    """Claim a unique username. Optionally associate an email."""
+async def claim_username(data: ClaimUsername, request: Request):
+    """Claim a unique username. If username exists, verify ownership via access_token."""
+    access_token = request.headers.get("x-access-token", "")
     username = data.username.strip()
     if len(username) < 2 or len(username) > 20:
         return {"success": False, "error": "Username must be 2-20 characters"}
@@ -1141,21 +1184,29 @@ async def claim_username(data: ClaimUsername):
     if _sb_ok:
         try:
             existing = _sb_select(
-                "players", select="id",
+                "players", select="id,username,access_token",
                 filters=f"username_lower=eq.{quote(key)}", limit=1,
             )
             if existing:
-                return {"success": False, "error": "Username already taken"}
+                p = existing[0]
+                stored_token = p.get("access_token") or ""
+                if not stored_token or not access_token:
+                    # No token on record or no token provided — can't verify ownership
+                    return {"success": False, "error": "Username already taken"}
+                if stored_token != access_token:
+                    return {"success": False, "error": "Username already taken by another player"}
+                return {"success": True, "username": p["username"], "returning": True}
 
             _sb_insert("players", {
                 "username": username,
                 "username_lower": key,
                 "email": data.email,
+                "access_token": access_token,
                 "games_played": 0,
                 "best_score": 0,
                 "total_score": 0,
             }, return_data=False)
-            return {"success": True, "username": username}
+            return {"success": True, "username": username, "returning": False}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -1266,13 +1317,12 @@ async def add_to_waitlist(entry: WaitlistEntry):
 
 @app.get("/api/waitlist/count")
 async def get_waitlist_count():
-    """Get the total number of people waiting (email signups + waitlisted players) and total players."""
+    """Get the number of active players (joined) and waitlisted players (waiting)."""
     if _sb_ok:
         try:
-            email_signups = _sb_count("waitlist")
+            active_players = _sb_count("players", filters="status=eq.active")
             waitlisted_players = _sb_count("players", filters="status=eq.waitlisted")
-            total_players = _sb_count("players")
-            return {"count": email_signups + waitlisted_players, "total_players": total_players}
+            return {"count": waitlisted_players, "total_players": active_players}
         except Exception:
             pass
 
@@ -1284,7 +1334,7 @@ async def get_waitlist_count():
 # ═══════════════════════════════════════════════════
 @app.post("/api/signup")
 async def player_signup(data: SignupRequest):
-    """Register a new player. First 1,000 get immediate access; rest are waitlisted."""
+    """Register a new player. First 10,000 get immediate access; rest are waitlisted."""
     username = data.username.strip()
     email = data.email.strip().lower()
 
@@ -1377,14 +1427,16 @@ async def player_signup(data: SignupRequest):
 
 
 @app.post("/api/signin")
-async def player_signin(data: SigninRequest):
-    """Sign in a returning player by username."""
+async def player_signin(data: SigninRequest, request: Request):
+    """Sign in a returning player by username. Requires access_token match."""
     username = data.username.strip()
     if not username:
         return {"success": False, "error": "Username required"}
 
     if not _sb_ok:
         return {"success": False, "error": "Database unavailable"}
+
+    access_token = request.headers.get("x-access-token", "")
 
     try:
         # Try with new gating columns first
@@ -1428,7 +1480,6 @@ async def player_signin(data: SigninRequest):
             }
 
         if player.get("email_verified") is False:
-            # Resend the access email
             _send_access_email(player.get("email", ""), player["username"], player.get("access_token", ""))
             return {
                 "success": True,
@@ -1437,12 +1488,23 @@ async def player_signin(data: SigninRequest):
                 "message": "Please check your email and click the verification link to play.",
             }
 
-        # Active + verified — they can play
+        # Verified player — check access_token
+        stored_token = player.get("access_token") or ""
+        if stored_token and access_token == stored_token:
+            # Token matches — sign in
+            return {
+                "success": True,
+                "status": "active",
+                "username": player["username"],
+                "verified": True,
+            }
+
+        # No token or mismatch — send sign-in link via email
+        _send_access_email(player.get("email", ""), player["username"], stored_token)
         return {
             "success": True,
-            "status": "active",
-            "username": player["username"],
-            "verified": True,
+            "status": "needs_email",
+            "message": "New browser? We sent a sign-in link to your email.",
         }
     except Exception as e:
         print(f"[SIGNIN] Error: {e}")
@@ -1476,6 +1538,7 @@ async def verify_token(token: str):
                 "verified": True,
                 "status": player["status"],
                 "username": player["username"],
+                "access_token": token,
                 "can_play": False,
                 "message": "Email verified but you're on the waitlist.",
             }
@@ -1485,6 +1548,7 @@ async def verify_token(token: str):
             "verified": True,
             "status": "active",
             "username": player["username"],
+            "access_token": token,
             "can_play": True,
         }
     except Exception as e:
@@ -1494,7 +1558,7 @@ async def verify_token(token: str):
 
 @app.get("/api/spots-remaining")
 async def spots_remaining():
-    """Return how many of the 1,000 spots are still open."""
+    """Return how many of the 10,000 spots are still open."""
     if not _sb_ok:
         return {"total": MAX_ACTIVE_PLAYERS, "active": 0, "remaining": MAX_ACTIVE_PLAYERS}
 
@@ -1520,7 +1584,7 @@ async def verify_access(request: Request):
         try:
             rows = _sb_select(
                 "players",
-                select="status,email_verified",
+                select="status,email_verified,role",
                 filters=f"username_lower=eq.{quote(username.lower())}",
                 limit=1,
             )
@@ -1532,19 +1596,25 @@ async def verify_access(request: Request):
                 limit=1,
             )
             if rows:
-                return {"allowed": True, "reason": "migration_pending"}
+                return {"allowed": True, "reason": "migration_pending", "role": "user"}
             return {"allowed": False, "reason": "not_signed_up"}
 
         if not rows:
             return {"allowed": False, "reason": "not_signed_up"}
 
         player = rows[0]
+        role = player.get("role", "user") or "user"
+
+        # Admin/dev accounts always get access
+        if role in ("admin", "dev"):
+            return {"allowed": True, "reason": "ok", "role": role}
+
         if player.get("status") != "active":
             return {"allowed": False, "reason": "waitlisted"}
         if not player.get("email_verified", True):
             return {"allowed": False, "reason": "not_verified"}
 
-        return {"allowed": True, "reason": "ok"}
+        return {"allowed": True, "reason": "ok", "role": role}
     except Exception:
         return {"allowed": True, "reason": "error_fail_open"}
 
@@ -1693,8 +1763,10 @@ Respond with EXACTLY this JSON format (no other text):
 # Replaces direct Supabase anon key access from the browser
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
-_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players', 'feedback'}
-_DB_PROXY_WRITE = {'active_games', 'leaderboard', 'players'}
+_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard'}
+# leaderboard and players writes go through dedicated endpoints (/api/leaderboard, /api/claim-username)
+# so they can be validated server-side before touching the DB
+_DB_PROXY_WRITE = {'active_games'}
 
 
 @app.api_route("/api/db/{path:path}", methods=["GET", "POST", "PATCH"])
@@ -2153,6 +2225,39 @@ async def admin_analytics(secret: str = "", hours: int = 24):
 
 # /api/health — health check
 # ═══════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════
+# Email unsubscribe (token-signed link from newsletters)
+# ═══════════════════════════════════════════════════
+@app.get("/api/unsubscribe")
+async def unsubscribe(request: Request):
+    """One-click email unsubscribe via signed token."""
+    import hashlib
+    import hmac
+    from fastapi.responses import HTMLResponse
+
+    username = request.query_params.get("u", "")
+    token = request.query_params.get("t", "")
+    if not username or not token or not SUPABASE_SERVICE_KEY:
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(token, expected):
+        return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
+
+    try:
+        _sb_update("players", {"email_opt_out": True}, f"username=eq.{quote(username)}")
+    except Exception:
+        return HTMLResponse("<h2>Something went wrong. Please email hello@uncivilized.fun to unsubscribe.</h2>", status_code=500)
+
+    return HTMLResponse(
+        '<div style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center">'
+        '<h2 style="color:#c9a84c">Unsubscribed</h2>'
+        f'<p>You won\'t receive further emails from Uncivilized, {username}.</p>'
+        '<p style="color:#888">If this was a mistake, just reply to any previous email or contact hello@uncivilized.fun.</p>'
+        '</div>'
+    )
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint. Tests Supabase connectivity."""

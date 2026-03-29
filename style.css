@@ -423,6 +423,15 @@ a:hover { text-decoration: underline; }
   color: rgba(138, 133, 120, 0.4);
   font-size: 10px;
 }
+.social-link {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+}
+.social-link:hover {
+  opacity: 1;
+}
 .footer-count {
   opacity: 0.6;
 }
@@ -697,6 +706,7 @@ a:hover { text-decoration: underline; }
 
 /* ---- Chat Panel ---- */
 #chat-panel {
+  position: fixed; /* override .overlay-panel absolute to sit above fixed-position UI elements */
   top: 0;
   right: 0;
   left: auto;
@@ -849,6 +859,7 @@ a:hover { text-decoration: underline; }
 #event-log-messages {
   display: flex;
   flex-direction: column-reverse;
+  overflow-anchor: none;
 }
 
 .event-msg {

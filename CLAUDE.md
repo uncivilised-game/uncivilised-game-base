@@ -50,22 +50,33 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 
 | Module | Purpose |
 |--------|---------|
+| `src/main.js` | Entry point, wires modules, exposes window globals |
+| `src/state.js` | Shared mutable state (game, canvas, camera, drag) |
 | `src/constants.js` | Game data: terrain, units, buildings, techs, factions |
 | `src/render.js` | Canvas2D hex rendering, visibility, minimap |
 | `src/terrain-render.js` | Painterly terrain detail (noise, splotches, trees) |
-| `src/ui-panels.js` | Build, research, civics, victory, selection panels |
-| `src/diplomacy-api.js` | Plugin interface — stubs + registerDiplomacyPlugin() |
-| `src/turn.js` | End-of-turn processing, income, maintenance |
+| `src/hex.js` | Hex grid utilities, coordinate math, neighbor lookups |
 | `src/map.js` | Map generation (tectonic plates -> biomes -> rivers) |
-| `src/combat.js` | Combat resolution, promotions, city attacks |
-| `src/units.js` | Unit creation, selection, movement, pathfinding |
-| `src/state.js` | Shared mutable state (game, canvas, camera, drag) |
-| `src/main.js` | Entry point, wires modules, exposes window globals |
+| `src/assets.js` | Terrain tile preloading, portrait/icon asset management |
 | `src/input.js` | Mouse/touch/keyboard handlers, camera, zoom |
+| `src/ui-panels.js` | Build, research, civics, victory, selection panels |
+| `src/units.js` | Unit creation, selection, movement, pathfinding |
+| `src/combat.js` | Combat resolution, promotions, city attacks |
+| `src/buildings.js` | Building mechanics, great persons, pantheon |
 | `src/improvements.js` | Worker actions, tile improvements, settlers |
+| `src/turn.js` | End-of-turn processing, income, maintenance |
+| `src/housing.js` | City housing and population mechanics |
+| `src/minor-factions.js` | Barbarian and minor faction system |
+| `src/discovery.js` | Fog of war, faction discovery, first contact |
 | `src/events.js` | Event log, toasts, notifications, rumours |
 | `src/save-load.js` | Save/load (localStorage + API fallback) |
-| `src/discovery.js` | Fog of war, faction discovery, first contact |
+| `src/leaderboard.js` | Leaderboard UI and player ranking display |
+| `src/rankings.js` | Rankings and stats calculation |
+| `src/feedback.js` | In-game feedback UI |
+| `src/resource-icons.js` | Resource icon and display utilities |
+| `src/utils.js` | General utility functions |
+| `src/diplomacy-api.js` | Plugin interface — stubs + registerDiplomacyPlugin() |
+| `src/ai-diplomacy.js` | AI-to-AI diplomatic system |
 
 **Build:**
 - `npm run build` — one-shot build
@@ -74,7 +85,9 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 
 ## Backend (Python FastAPI)
 
-Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel production).
+Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel production). The production version has additional endpoints for auth, feedback, and admin.
+
+### Core Endpoints (both server.py and api/index.py)
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -86,16 +99,43 @@ Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel pr
 | `/api/claim-username` | POST | Register a unique username |
 | `/api/check-username/:name` | GET | Check username availability |
 | `/api/profile/:name` | GET | Player profile + recent games |
+| `/api/waitlist` | POST/GET | Join waitlist / get waitlist count |
 | `/api/session/start` | POST | Track game session start |
 | `/api/session/end` | POST | Track game session end |
-| `/api/feedback` | POST | In-game feedback with AI categorization |
+| `/api/unsubscribe` | GET | One-click email unsubscribe (HMAC-signed token) |
+| `/api/admin/manage-player` | GET | Admin player management (requires ADMIN_SECRET) |
+| `/api/admin/analytics` | GET | Admin analytics dashboard (requires ADMIN_SECRET) |
 | `/api/health` | GET | Health check |
+
+### Production-Only Endpoints (api/index.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/signup` | POST | Player registration with email verification |
+| `/api/signin` | POST | Player authentication |
+| `/api/verify-token/:token` | GET | Email/token verification |
+| `/api/spots-remaining` | GET | Available beta spots |
+| `/api/verify-access` | GET | Check player access status |
+| `/api/feedback` | POST | In-game feedback with AI categorization |
+| `/api/admin/resend-missed-emails` | GET | Resend failed welcome emails |
 
 Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live in server.py. The frontend handles them being unavailable gracefully (try/catch). These may move to the diplomacy repo in the future.
 
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/conviction-triage.py` | Auto-triages new GitHub issues with conviction scoring |
+| `scripts/newsletter.py` | Sends newsletter emails to active players via Resend API |
+| `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
+| `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
+| `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
+
+**Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
+
 ## Database (Supabase)
 
-Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `diplomacy_interactions`, `feedback`, `competitions`, `active_games`. Schema is not in the repo — inferred from code.
+Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `diplomacy_interactions`, `feedback`, `competitions`, `active_games`. Schema is not in the repo — inferred from code. Note: `competitions` and `active_games` are only used in production (api/index.py).
 
 ## Key Constants & Config
 
@@ -115,14 +155,6 @@ Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `di
 - **`logAction(category, detail, metadata)`** — logs to `game.gameLog[]` for analytics (`src/events.js`)
 - **`showToast(title, message)`** — ephemeral toast notifications (`src/events.js`)
 
-## Security Issues (Must Fix)
-
-- `server.py` line 29-30: Supabase service key as default
-- `server.py` line 42: Resend API key as default
-- `api/index.py` lines 24-28: Same keys duplicated
-
-The service key gives full database read/write access. These must be environment-only.
-
 ## Deployment
 
 Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disabled (`vercel.json` → `git.deploymentEnabled: false`) because builds require both repos (base + diplomacy). GitHub Actions handles all deployments.
@@ -138,6 +170,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
