@@ -6,6 +6,7 @@ import { processAITurns, processBarbarianTurns, processAICommitments } from './d
 import { processImprovements, getImprovementYields } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
 import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
+import { processAIUnitTurns, processEnhancedAIDiplomacy, processAITradeVisibleEffects } from './ai-units.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -234,6 +235,21 @@ function endTurn() {
     processAIDiplomacy();
     processAITradeIncome();
   } catch (e) { console.error('Error in AI diplomacy:', e); }
+
+  // --- AI unit spawning, movement & combat ---
+  try {
+    processAIUnitTurns();
+  } catch (e) { console.error('Error in AI unit turns:', e); }
+
+  // --- Enhanced AI diplomacy triggers (secret pact activation conditions) ---
+  try {
+    processEnhancedAIDiplomacy();
+  } catch (e) { console.error('Error in enhanced AI diplomacy:', e); }
+
+  // --- AI trade deal visible effects (growth, military investment) ---
+  try {
+    processAITradeVisibleEffects();
+  } catch (e) { console.error('Error in AI trade effects:', e); }
 
   // --- Unit maintenance costs ---
   let totalMaint = 0;
