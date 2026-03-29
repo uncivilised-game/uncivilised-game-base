@@ -52,7 +52,13 @@ FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 # ═══════════════════════════════════════════════════
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "http://localhost:8000/api/auth/discord/callback")
+
+
+def _discord_redirect_uri(request) -> str:
+    """Derive Discord OAuth2 callback URL from the request origin."""
+    host = request.headers.get("host", "localhost:8000")
+    scheme = request.headers.get("x-forwarded-proto", "http")
+    return f"{scheme}://{host}/api/auth/discord/callback"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
 
 WELCOME_EMAIL_HTML = open(os.path.join(os.path.dirname(__file__), "welcome_email.html")).read() if os.path.exists(os.path.join(os.path.dirname(__file__), "welcome_email.html")) else "<p>You're on the Uncivilized waitlist. Thanks for joining early.</p>"
@@ -1441,7 +1447,7 @@ async def discord_auth_start(request: Request):
     params = urlencode({
         "client_id": DISCORD_CLIENT_ID,
         "response_type": "code",
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": _discord_redirect_uri(request),
         "scope": "identify",
         "state": state,
     })
@@ -1501,7 +1507,7 @@ async def discord_auth_callback(request: Request):
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": DISCORD_REDIRECT_URI,
+                "redirect_uri": _discord_redirect_uri(request),
                 "client_id": DISCORD_CLIENT_ID,
                 "client_secret": DISCORD_CLIENT_SECRET,
             },

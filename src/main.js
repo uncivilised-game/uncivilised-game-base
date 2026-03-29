@@ -651,7 +651,7 @@ async function linkDiscord() {
     });
     const data = await res.json();
     if (data.authorize_url && data.authorize_url.startsWith('https://discord.com/oauth2/authorize?')) {
-      window.location.href = data.authorize_url;
+      window.open(data.authorize_url, '_blank');
     }
   } catch (_) {}
 }

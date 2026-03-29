@@ -372,7 +372,15 @@ ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
 # ═══════════════════════════════════════════════════
 DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID", "")
 DISCORD_CLIENT_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "")
-DISCORD_REDIRECT_URI = os.environ.get("DISCORD_REDIRECT_URI", "https://uncivilized.fun/api/auth/discord/callback")
+
+
+def _discord_redirect_uri(request: Request) -> str:
+    """Derive Discord OAuth2 callback URL from the request origin.
+    Works on production, staging, and preview deployments automatically.
+    Each domain must be registered in the Discord Developer Portal."""
+    host = request.headers.get("host", "uncivilized.fun")
+    scheme = request.headers.get("x-forwarded-proto", "https")
+    return f"{scheme}://{host}/api/auth/discord/callback"
 
 # ═══════════════════════════════════════════════════
 # Pydantic models
@@ -1677,7 +1685,7 @@ async def discord_auth_start(request: Request):
     params = urlencode({
         "client_id": DISCORD_CLIENT_ID,
         "response_type": "code",
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": _discord_redirect_uri(request),
         "scope": "identify",
         "state": state,
     })
@@ -1738,7 +1746,7 @@ async def discord_auth_callback(request: Request):
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": DISCORD_REDIRECT_URI,
+                "redirect_uri": _discord_redirect_uri(request),
                 "client_id": DISCORD_CLIENT_ID,
                 "client_secret": DISCORD_CLIENT_SECRET,
             },
