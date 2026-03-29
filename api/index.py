@@ -1649,20 +1649,21 @@ async def discord_auth_start(request: Request):
         return {"success": False, "error": "Not authenticated"}
 
     # Verify the caller owns this account
-    if _sb_ok:
-        try:
-            rows = _sb_select(
-                "players", select="access_token",
-                filters=f"username_lower=eq.{quote(username.lower())}",
-                limit=1,
-            )
-            if not rows:
-                return {"success": False, "error": "Player not found"}
-            stored_token = str(rows[0].get("access_token") or "")
-            if not _hmac_mod.compare_digest(stored_token, str(access_token)):
-                return {"success": False, "error": "Invalid credentials"}
-        except Exception:
-            return {"success": False, "error": "Database error"}
+    if not _sb_ok:
+        return {"success": False, "error": "Database unavailable"}
+    try:
+        rows = _sb_select(
+            "players", select="access_token",
+            filters=f"username_lower=eq.{quote(username.lower())}",
+            limit=1,
+        )
+        if not rows:
+            return {"success": False, "error": "Player not found"}
+        stored_token = str(rows[0].get("access_token") or "")
+        if not _hmac_mod.compare_digest(stored_token, str(access_token)):
+            return {"success": False, "error": "Invalid credentials"}
+    except Exception:
+        return {"success": False, "error": "Database error"}
 
     # Generate CSRF state token that embeds the username
     # Format: {random_hex}:{hmac_of_random_hex+username}:{username}

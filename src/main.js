@@ -650,7 +650,7 @@ async function linkDiscord() {
       headers: { 'x-player-name': username, 'x-access-token': accessToken },
     });
     const data = await res.json();
-    if (data.authorize_url) {
+    if (data.authorize_url && data.authorize_url.startsWith('https://discord.com/oauth2/authorize?')) {
       window.location.href = data.authorize_url;
     }
   } catch (_) {}
