@@ -201,6 +201,10 @@
           <span class="action-label">Victory</span>
           <span class="action-key">V</span>
         </button>
+        <button class="action-btn" id="btn-intel">
+          <span class="action-label">Intel</span>
+          <span class="action-key">I</span>
+        </button>
       </div>
 
       <!-- Tile Info Panel -->
@@ -279,6 +283,24 @@
           <button class="panel-close" onclick="this.closest('.panel').style.display='none'">&times;</button>
         </div>
         <div id="units-options" class="panel-body"></div>
+      </div>
+
+      <!-- Intelligence Panel -->
+      <div id="intel-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3>&#x1F575;&#xFE0F; Intelligence</h3>
+          <button class="panel-close" onclick="this.closest('.panel').style.display='none'">&times;</button>
+        </div>
+        <div id="intel-body" class="panel-body"></div>
+      </div>
+
+      <!-- Advisor Chat Panel -->
+      <div id="advisor-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3 id="advisor-title">&#x1F4AC; Royal Advisor</h3>
+          <button class="panel-close" onclick="this.closest('.panel').style.display='none'">&times;</button>
+        </div>
+        <div id="advisor-body" class="panel-body"></div>
       </div>
 
       <!-- Turn Summary -->
