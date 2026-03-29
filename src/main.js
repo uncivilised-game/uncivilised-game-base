@@ -678,6 +678,11 @@ async function checkDiscordStatus() {
   const linkedEl = document.getElementById('discord-linked');
   if (!username || !linkBtn || !linkedEl) return;
 
+  // Reset DOM state before async fetch to prevent duplicate buttons
+  linkBtn.style.display = 'none';
+  linkedEl.style.display = 'none';
+  linkedEl.textContent = '';
+
   try {
     const res = await fetch(API + '/api/auth/discord/status', {
       headers: { 'x-player-name': username, 'x-access-token': accessToken },
