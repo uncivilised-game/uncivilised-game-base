@@ -9,6 +9,7 @@ import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
 import { autoSave } from './save-load.js';
+import { isAdvisorChatActive, closeAdvisorChat } from './advisors.js';
 
 // ============================================
 // CAMERA HELPERS
@@ -158,6 +159,7 @@ export function initInputHandlers() {
     }
     // Escape key closes any open panel or overlay
     if (e.key === 'Escape') {
+      if (isAdvisorChatActive()) closeAdvisorChat();
       const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'];
       let closed = false;
       for (const id of panels) {
@@ -311,8 +313,9 @@ export function initInputHandlers() {
 
   // ---- Button event handlers ----
 
-  // Close chat panel (diplomacy conversation)
+  // Close chat panel (diplomacy or advisor conversation)
   document.getElementById('chat-close').addEventListener('click', () => {
+    if (isAdvisorChatActive()) closeAdvisorChat();
     document.getElementById('chat-panel').style.display = 'none';
   });
 

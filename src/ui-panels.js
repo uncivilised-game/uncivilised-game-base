@@ -14,7 +14,7 @@ import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
 import { renderDiplomacyWithIntel, switchDiploTab } from './intelligence.js';
-import { renderAdvisorPanel } from './advisors.js';
+import { renderAdvisorPanel, isAdvisorChatActive, closeAdvisorChat } from './advisors.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
@@ -429,6 +429,7 @@ function togglePanel(id) {
 }
 
 function closeAllPanels() {
+  if (isAdvisorChatActive()) closeAdvisorChat();
   ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';

@@ -87,41 +87,86 @@ export function resetAdvisorConsultations() {
 // PUBLIC API
 // ============================================
 
+// ── Track whether #chat-panel is in advisor mode ──
+let _advisorChatActive = false;
+let _advisorInputHandler = null;
+let _advisorSendHandler = null;
+
 /**
- * Render the advisor panel — shows either advisor selection or active chat.
+ * Check if chat-panel is currently showing an advisor conversation.
+ */
+export function isAdvisorChatActive() { return _advisorChatActive; }
+
+/**
+ * Render the advisor panel — shows the advisor selection grid.
+ * Clicking a card opens the RIGHT-SIDE #chat-panel (same as diplomacy chat).
  */
 export function renderAdvisorPanel() {
   const container = document.getElementById('advisor-body');
   if (!container) return;
   resetAdvisorConsultations();
-
-  if (currentAdvisor && conversationHistory.length > 0) {
-    container.innerHTML = renderAdvisorChat();
-    bindAdvisorChatEvents();
-  } else {
-    container.innerHTML = renderAdvisorSelection();
-    bindAdvisorSelectionEvents();
-  }
+  container.innerHTML = renderAdvisorSelection();
+  bindAdvisorSelectionEvents();
 }
 
 /**
- * Open a specific advisor's chat.
+ * Open a specific advisor's chat in the RIGHT-SIDE #chat-panel.
+ * This mirrors how openChat() works for faction leaders.
  */
 export function openAdvisor(advisorKey) {
   if (!ADVISORS[advisorKey]) return;
   currentAdvisor = advisorKey;
   conversationHistory = [];
-  // Update panel title
-  const titleEl = document.getElementById('advisor-title');
-  if (titleEl) {
-    const adv = ADVISORS[advisorKey];
-    titleEl.innerHTML = `${adv.icon} ${adv.name} — ${adv.title}`;
+  _advisorChatActive = true;
+
+  const adv = ADVISORS[advisorKey];
+
+  // Populate the shared chat panel header
+  const portrait = document.getElementById('chat-portrait');
+  const name = document.getElementById('chat-name');
+  const title = document.getElementById('chat-title');
+  if (portrait) portrait.textContent = adv.icon;
+  if (name) { name.textContent = adv.name; name.style.color = adv.color; }
+  if (title) title.textContent = adv.title;
+
+  // Hide diplo actions (not relevant for advisors)
+  const diploActions = document.getElementById('diplo-actions');
+  if (diploActions) diploActions.innerHTML = '';
+
+  // Update input placeholder
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.placeholder = `Ask ${adv.name}...`;
+    chatInput.value = '';
+    chatInput.disabled = false;
   }
-  renderAdvisorPanel();
+
+  // Render initial messages (greeting + quick suggestions)
+  renderAdvisorChatMessages();
+
+  // Bind send events to advisor handler (replacing diplomacy handlers)
+  bindAdvisorChatToPanel();
+
+  // Show the chat panel on the right (same as diplomacy)
+  const chatPanel = document.getElementById('chat-panel');
+  if (chatPanel) chatPanel.style.display = 'flex';
+
+  // Focus the input
+  if (chatInput) setTimeout(() => chatInput.focus(), 100);
 }
 
 /**
- * Send a message to the current advisor.
+ * Close the advisor chat (called when chat-panel is closed).
+ */
+export function closeAdvisorChat() {
+  _advisorChatActive = false;
+  currentAdvisor = null;
+  conversationHistory = [];
+  unbindAdvisorChatFromPanel();
+}
+
+/**
+ * Send a message to the current advisor (uses the shared #chat-panel).
  */
 export async function sendAdvisorMessage(message) {
   if (!currentAdvisor || isWaitingForResponse) return;
@@ -136,13 +181,15 @@ export async function sendAdvisorMessage(message) {
   const adv = ADVISORS[currentAdvisor];
   const userMsg = message.trim();
 
-  // Add user message to history
+  // Add user message to history and render
   conversationHistory.push({ role: 'user', content: userMsg });
-  renderAdvisorPanel();
+  renderAdvisorChatMessages();
 
-  // Call the LLM
+  // Show typing indicator
   isWaitingForResponse = true;
-  renderAdvisorPanel();
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) chatInput.disabled = true;
+  renderAdvisorChatMessages();
 
   try {
     const response = await callAdvisorAPI(adv, userMsg);
@@ -156,7 +203,11 @@ export async function sendAdvisorMessage(message) {
   }
 
   isWaitingForResponse = false;
-  renderAdvisorPanel();
+  if (chatInput) chatInput.disabled = false;
+  renderAdvisorChatMessages();
+
+  // Update remaining count + re-focus input
+  if (chatInput) chatInput.focus();
 }
 
 // ============================================
@@ -225,122 +276,139 @@ function bindAdvisorSelectionEvents() {
 }
 
 // ============================================
-// ADVISOR CHAT VIEW
+// ADVISOR CHAT — renders into the shared #chat-panel
 // ============================================
 
-function renderAdvisorChat() {
+/**
+ * Render advisor conversation messages into #chat-messages
+ * Uses the same .chat-msg CSS classes as diplomacy chat for consistency.
+ */
+function renderAdvisorChatMessages() {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
   const adv = ADVISORS[currentAdvisor];
-  if (!adv) return '';
+  if (!adv) return;
+
   const remaining = consultationsPerTurn - consultationsUsed;
-
   let html = '';
-  html += `<div style="padding:8px 14px;">`;
 
-  // Back button + status
-  html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">`;
-  html += `<span id="advisor-back-btn" style="cursor:pointer;color:#ffd700;font-size:12px;">\u2190 Back to Council</span>`;
-  html += `<span style="color:#888;font-size:10px;">Consultations: ${remaining}/${consultationsPerTurn}</span>`;
+  // Status bar at top
+  html += `<div style="text-align:center;padding:4px 0;margin-bottom:8px;font-size:10px;color:#888;border-bottom:1px solid rgba(201,168,76,0.15);">`;
+  html += `Consultations: <span style="color:${remaining > 0 ? '#ffd700' : '#f44'};">${remaining}/${consultationsPerTurn}</span>`;
+  if (consultationsPerTurn < 3) {
+    html += ` · Research ${consultationsPerTurn < 2 ? 'Writing' : 'Philosophy'} for more`;
+  }
   html += '</div>';
 
-  // Conversation messages
-  html += `<div id="advisor-messages" style="max-height:280px;overflow-y:auto;margin-bottom:8px;">`;
-
+  // Opening greeting
   if (conversationHistory.length === 0) {
-    // Opening greeting
-    html += `<div style="background:rgba(${hexToRgb(adv.color)},0.1);border-left:3px solid ${adv.color};padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px;">`;
-    html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:2px;">${adv.icon} ${adv.name}</div>`;
-    html += `<div style="color:#ddd;font-size:12px;">My liege, I am at your service. What would you have me counsel you on?</div>`;
+    html += `<div class="chat-msg" style="align-self:flex-start;background:rgba(${hexToRgb(adv.color)},0.12);border-left:3px solid ${adv.color};">`;
+    html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:4px;">${adv.icon} ${adv.name}</div>`;
+    html += `<div style="color:#ddd;">My liege, I am at your service. What would you have me counsel you on?</div>`;
+    html += '</div>';
+
+    // Quick suggestions
+    const suggestions = getQuickSuggestions(currentAdvisor);
+    html += `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;">`;
+    for (const s of suggestions) {
+      html += `<span class="advisor-suggestion" data-msg="${escapeHtml(s)}" style="padding:4px 10px;border-radius:14px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.25);color:#c9a84c;font-size:11px;cursor:pointer;transition:all 0.15s;">${s}</span>`;
+    }
     html += '</div>';
   }
 
+  // Conversation messages
   for (const msg of conversationHistory) {
     if (msg.role === 'user') {
-      html += `<div style="background:rgba(201,168,76,0.1);border-left:3px solid #ffd700;padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px;">`;
-      html += `<div style="color:#ffd700;font-size:11px;font-weight:bold;margin-bottom:2px;">\uD83D\uDC51 You</div>`;
-      html += `<div style="color:#ddd;font-size:12px;">${escapeHtml(msg.content)}</div>`;
+      html += `<div class="chat-msg" style="align-self:flex-end;background:rgba(201,168,76,0.12);border-right:3px solid #ffd700;">`;
+      html += `<div style="color:#ddd;">${escapeHtml(msg.content)}</div>`;
       html += '</div>';
     } else {
-      html += `<div style="background:rgba(${hexToRgb(adv.color)},0.1);border-left:3px solid ${adv.color};padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px;">`;
-      html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:2px;">${adv.icon} ${adv.name}</div>`;
-      html += `<div style="color:#ddd;font-size:12px;">${formatAdvisorResponse(msg.content)}</div>`;
+      html += `<div class="chat-msg" style="align-self:flex-start;background:rgba(${hexToRgb(adv.color)},0.12);border-left:3px solid ${adv.color};">`;
+      html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:4px;">${adv.icon} ${adv.name}</div>`;
+      html += `<div style="color:#ddd;">${formatAdvisorResponse(msg.content)}</div>`;
       html += '</div>';
     }
   }
 
   // Typing indicator
   if (isWaitingForResponse) {
-    html += `<div style="background:rgba(${hexToRgb(adv.color)},0.1);border-left:3px solid ${adv.color};padding:8px 10px;border-radius:0 6px 6px 0;margin-bottom:6px;">`;
-    html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:2px;">${adv.icon} ${adv.name}</div>`;
-    html += `<div style="color:#888;font-size:12px;font-style:italic;">\u2328\uFE0F Thinking...</div>`;
+    html += `<div class="chat-msg" style="align-self:flex-start;background:rgba(${hexToRgb(adv.color)},0.12);border-left:3px solid ${adv.color};">`;
+    html += `<div style="color:${adv.color};font-size:11px;font-weight:bold;margin-bottom:4px;">${adv.icon} ${adv.name}</div>`;
+    html += `<div style="color:#888;font-style:italic;">Thinking...</div>`;
     html += '</div>';
   }
 
-  html += '</div>';
+  container.innerHTML = html;
 
-  // Input area
-  html += `<div style="display:flex;gap:6px;">`;
-  html += `<input type="text" id="advisor-input" placeholder="Ask ${adv.name}..." `;
-  html += `style="flex:1;background:rgba(30,30,40,0.9);border:1px solid rgba(201,168,76,0.3);border-radius:6px;padding:8px 10px;color:#f0e8d0;font-size:12px;outline:none;" `;
-  html += `${isWaitingForResponse || remaining <= 0 ? 'disabled' : ''}>`;
-  html += `<button id="advisor-send-btn" style="padding:8px 14px;border-radius:6px;border:1px solid rgba(201,168,76,0.4);background:rgba(201,168,76,0.2);color:#ffd700;cursor:pointer;font-size:12px;" `;
-  html += `${isWaitingForResponse || remaining <= 0 ? 'disabled' : ''}>\u27A4</button>`;
-  html += '</div>';
-
-  // Quick question suggestions
-  if (conversationHistory.length === 0) {
-    const suggestions = getQuickSuggestions(currentAdvisor);
-    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;">`;
-    for (const s of suggestions) {
-      html += `<span class="advisor-suggestion" data-msg="${escapeHtml(s)}" style="padding:3px 8px;border-radius:12px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);color:#aaa;font-size:10px;cursor:pointer;">${s}</span>`;
-    }
-    html += '</div>';
-  }
-
-  html += '</div>';
-  return html;
-}
-
-function bindAdvisorChatEvents() {
-  // Back button
-  const backBtn = document.getElementById('advisor-back-btn');
-  if (backBtn) {
-    backBtn.onclick = () => {
-      currentAdvisor = null;
-      conversationHistory = [];
-      const titleEl = document.getElementById('advisor-title');
-      if (titleEl) titleEl.innerHTML = '\uD83D\uDCAC Royal Advisor';
-      renderAdvisorPanel();
-    };
-  }
-  // Send button
-  const sendBtn = document.getElementById('advisor-send-btn');
-  const input = document.getElementById('advisor-input');
-  if (sendBtn && input) {
-    sendBtn.onclick = () => {
-      sendAdvisorMessage(input.value);
-      input.value = '';
-    };
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation(); // Prevent end-turn hotkey
-        sendAdvisorMessage(input.value);
-        input.value = '';
-      }
-    });
-  }
-  // Quick suggestions
-  document.querySelectorAll('.advisor-suggestion').forEach(el => {
+  // Bind quick suggestion clicks
+  container.querySelectorAll('.advisor-suggestion').forEach(el => {
     el.onclick = () => {
       const msg = el.dataset.msg;
-      if (input) input.value = msg;
+      const chatInput = document.getElementById('chat-input');
+      if (chatInput) chatInput.value = '';
       sendAdvisorMessage(msg);
-      if (input) input.value = '';
     };
+    el.addEventListener('mouseenter', () => { el.style.background = 'rgba(201,168,76,0.25)'; el.style.color = '#ffd700'; });
+    el.addEventListener('mouseleave', () => { el.style.background = 'rgba(201,168,76,0.1)'; el.style.color = '#c9a84c'; });
   });
+
   // Scroll to bottom
-  const msgContainer = document.getElementById('advisor-messages');
-  if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
+  container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Bind the shared #chat-input and #chat-send to advisor message handling.
+ * We store references so we can unbind later when the panel closes.
+ */
+function bindAdvisorChatToPanel() {
+  unbindAdvisorChatFromPanel(); // clean up any prior bindings
+
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+
+  _advisorInputHandler = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const val = chatInput.value;
+      chatInput.value = '';
+      sendAdvisorMessage(val);
+    }
+  };
+
+  _advisorSendHandler = () => {
+    const val = chatInput.value;
+    chatInput.value = '';
+    sendAdvisorMessage(val);
+  };
+
+  if (chatInput) chatInput.addEventListener('keydown', _advisorInputHandler);
+  if (chatSend) chatSend.addEventListener('click', _advisorSendHandler);
+
+  // Update char count on input
+  const charCount = document.getElementById('chat-char-count');
+  if (chatInput && charCount) {
+    chatInput.addEventListener('input', () => {
+      charCount.textContent = `${chatInput.value.length}/500`;
+    });
+  }
+}
+
+/**
+ * Unbind advisor handlers from the shared chat panel.
+ */
+function unbindAdvisorChatFromPanel() {
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+
+  if (_advisorInputHandler && chatInput) {
+    chatInput.removeEventListener('keydown', _advisorInputHandler);
+  }
+  if (_advisorSendHandler && chatSend) {
+    chatSend.removeEventListener('click', _advisorSendHandler);
+  }
+  _advisorInputHandler = null;
+  _advisorSendHandler = null;
 }
 
 // ============================================
