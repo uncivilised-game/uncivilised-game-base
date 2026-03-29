@@ -706,6 +706,7 @@ a:hover { text-decoration: underline; }
 
 /* ---- Chat Panel ---- */
 #chat-panel {
+  position: fixed; /* override .overlay-panel absolute to sit above fixed-position UI elements */
   top: 0;
   right: 0;
   left: auto;

@@ -6,6 +6,11 @@ If a player reported bugs that have since been fixed, the email includes a
 thank-you section listing those issues (with green ticks). Otherwise they
 just get the newsletter content.
 
+Templates:
+  - newsletter: Reusable newsletter with custom message + bug-fix thank-yous
+  - launch: Open-source announcement (baked-in content)
+  - waitlist-approved: Promotes waitlisted players to active and sends approval email
+
 Manual trigger only (workflow_dispatch).
 
 Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, GITHUB_TOKEN, CUSTOM_MESSAGE
@@ -36,7 +41,7 @@ CUSTOM_MESSAGE = os.environ.get("CUSTOM_MESSAGE", "")
 EMAIL_SUBJECT = os.environ.get("EMAIL_SUBJECT", "News from Uncivilized")
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 TEST_EMAIL = os.environ.get("TEST_EMAIL", "")
-TEMPLATE = os.environ.get("TEMPLATE", "newsletter")  # "newsletter" or "launch"
+TEMPLATE = os.environ.get("TEMPLATE", "newsletter")  # "newsletter", "launch", or "waitlist-approved"
 INCLUDE_UNVERIFIED = os.environ.get("INCLUDE_UNVERIFIED", "false").lower() == "true"
 ONLY_UNVERIFIED = os.environ.get("ONLY_UNVERIFIED", "false").lower() == "true"
 
@@ -54,7 +59,12 @@ def make_unsubscribe_url(username):
 
 def load_template():
     """Load the HTML email template."""
-    filename = "newsletter-launch.html" if TEMPLATE == "launch" else "newsletter.html"
+    if TEMPLATE == "launch":
+        filename = "newsletter-launch.html"
+    elif TEMPLATE == "waitlist-approved":
+        filename = "newsletter-waitlist-approved.html"
+    else:
+        filename = "newsletter.html"
     path = os.path.join(SCRIPT_DIR, filename)
     with open(path, "r") as f:
         return f.read()
@@ -120,6 +130,19 @@ def fetch_mailable_players():
         filters = "email_verified=eq.true&" + filters
     rows = sb_get("players", filters)
     return {row["username"]: row["email"] for row in rows if row.get("username") and row.get("email")}
+
+
+# ── Fetch waitlisted players ──────────────────────────────────────
+def fetch_waitlisted_players():
+    """Fetch all waitlisted players with emails who haven't opted out."""
+    filters = "email=not.is.null&email_opt_out=not.eq.true&status=eq.waitlisted&select=username,email"
+    rows = sb_get("players", filters)
+    return {row["username"]: row["email"] for row in rows if row.get("username") and row.get("email")}
+
+
+def promote_player(username):
+    """Flip a player's status from waitlisted to active."""
+    sb_patch("players", {"status": "active"}, f"username=eq.{username}")
 
 
 # ── Find fixed issues with unthanked reporters ────────────────────
@@ -217,8 +240,8 @@ def send_email(to_email, username, custom_message, subject, issues=None):
     email_html = email_html.replace("{{username_raw}}", safe_username)
     email_html = email_html.replace("{{username}}", safe_username)
 
-    if TEMPLATE == "launch":
-        # Launch template has baked-in content, no dynamic sections
+    if TEMPLATE in ("launch", "waitlist-approved"):
+        # These templates have baked-in content, no dynamic sections
         pass
     else:
         safe_message = html.escape(custom_message).replace("\n", "<br>")
@@ -287,21 +310,22 @@ def run():
         print("** DRY RUN — no emails will be sent, no rows updated **")
 
     is_launch = TEMPLATE == "launch"
+    is_waitlist_approved = TEMPLATE == "waitlist-approved"
 
-    if not is_launch and not CUSTOM_MESSAGE:
-        print("ERROR: CUSTOM_MESSAGE is required (unless TEMPLATE=launch).", file=sys.stderr)
+    if not is_launch and not is_waitlist_approved and not CUSTOM_MESSAGE:
+        print("ERROR: CUSTOM_MESSAGE is required (unless TEMPLATE=launch or waitlist-approved).", file=sys.stderr)
         sys.exit(1)
 
     print(f"Template: {TEMPLATE}")
     print(f"Subject: {EMAIL_SUBJECT}")
-    if not is_launch:
+    if not is_launch and not is_waitlist_approved:
         print(f"Message: {CUSTOM_MESSAGE}")
     print()
 
     # Test mode — send preview to a single address and exit
     if TEST_EMAIL:
         print(f"** TEST MODE — sending preview to {TEST_EMAIL} **\n")
-        if is_launch:
+        if is_launch or is_waitlist_approved:
             ok = send_email(TEST_EMAIL, "TestPlayer", "", f"[TEST] {EMAIL_SUBJECT}")
             status = "OK" if ok else "FAILED"
             print(f"\n=== Test done ({status}). Check {TEST_EMAIL}. ===")
@@ -315,6 +339,41 @@ def run():
             status = "OK" if (ok1 and ok2) else "SOME FAILED"
             print(f"\n=== Test done ({status}). Check {TEST_EMAIL} for two emails. ===")
         return
+
+    # ── Waitlist-approved flow ────────────────────────────────────
+    if is_waitlist_approved:
+        print("1. Fetching waitlisted players...")
+        players = fetch_waitlisted_players()
+        print(f"   {len(players)} waitlisted players with emails")
+
+        if not players:
+            print("\n   No waitlisted players found. Done.")
+            return
+
+        print(f"\n2. {'Previewing' if DRY_RUN else 'Sending approval emails + promoting'}...")
+        sent = 0
+        failed = 0
+        promoted = 0
+
+        for username, email in sorted(players.items()):
+            if DRY_RUN:
+                print(f"   {username} -> {email} (would promote to active)")
+                continue
+
+            if send_email(email, username, "", EMAIL_SUBJECT):
+                sent += 1
+                try:
+                    promote_player(username)
+                    promoted += 1
+                except Exception as e:
+                    print(f"  [PROMOTE] Failed to promote {username}: {e}")
+            else:
+                failed += 1
+
+        print(f"\n=== Done. Sent {sent}, promoted {promoted}, failed {failed}, total waitlisted {len(players)}. ===")
+        return
+
+    # ── Standard newsletter / launch flow ─────────────────────────
 
     # 1. Fetch all mailable players
     print("1. Fetching mailable players (active only, not waitlisted)...")

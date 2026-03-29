@@ -137,7 +137,7 @@ function calculateCityAmenities(events) {
 let _processingTurn = false;
 
 function endTurn() {
-  if (!game || game.turn > MAX_TURNS) return;
+  if (!game || game.turn > MAX_TURNS || game.gameOver) return;
   if (_processingTurn) return; // prevent double-click / re-entrance
   _processingTurn = true;
   markVisibilityDirty();
@@ -614,11 +614,24 @@ function endTurn() {
     // Parse and apply trade effects per turn
     const receives = String(deal.playerReceives || '');
     if (receives.includes('gold')) { const m = receives.match(/(\d+)/); if (m) game.gold += parseInt(m[1]) || 0; }
-    if (receives.includes('science')) { game.science += (parseInt(receives.match(/(\d+)/)?.[1]) || 2); }
+    if (receives.includes('science')) { const sciAmt = parseInt(receives.match(/(\d+)/)?.[1]) || 2; game.researchProgress = (game.researchProgress || 0) + sciAmt; }
     if (receives.includes('military')) { game.military += 1; }
+    // One-time technology grant (safe to check every turn — tech already owned is skipped)
+    if (receives.includes('tech')) {
+      const techMatch = receives.match(/tech(?:nology)?[:\s]+(\w+)/i);
+      if (techMatch) {
+        const techId = techMatch[1];
+        if (!game.techs.includes(techId)) {
+          game.techs.push(techId);
+          const tdata = TECHNOLOGIES.find(t => t.id === techId);
+          addEvent(`Received technology: ${tdata?.name || techId} from trade agreement`, 'science');
+        }
+      }
+    }
     // Deduct what player gives
     const gives = String(deal.playerGives || '');
     if (gives.includes('gold')) { const m = gives.match(/(\d+)/); if (m) game.gold -= Math.min(game.gold, parseInt(m[1]) || 0); }
+    if (gives.includes('science')) { const sciAmt = parseInt(gives.match(/(\d+)/)?.[1]) || 2; game.researchProgress = Math.max(0, (game.researchProgress || 0) - sciAmt); }
   }
 
   // --- Defense pact upkeep ---
@@ -978,6 +991,7 @@ document.getElementById('btn-dismiss-summary').addEventListener('click', () => {
 });
 
 function showGameOver(victory) {
+  game.gameOver = true;
   const body = document.getElementById('game-over-body');
   document.getElementById('btn-end-turn').disabled = true;
   document.getElementById('btn-end-turn').style.opacity = '0.4';

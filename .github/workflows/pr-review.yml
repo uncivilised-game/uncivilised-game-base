@@ -1,0 +1,159 @@
+name: PR Code Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/review') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: React to comment
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=eyes
+
+      - name: Get PR info
+        id: pr
+        run: |
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
+          echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
+          echo "base=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout base repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.ref }}
+          fetch-depth: 0
+          path: uncivilised-game-base
+
+      - name: Checkout diplomacy repo
+        uses: actions/checkout@v4
+        with:
+          repository: uncivilised-game/uncivilised-diplomacy
+          token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
+          path: uncivilised-diplomacy
+
+      - name: Check auth method
+        id: auth
+        run: |
+          if [ -n "$OAUTH_TOKEN" ]; then
+            echo "method=oauth" >> "$GITHUB_OUTPUT"
+          else
+            echo "method=apikey" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Code Review with Claude Code (OAuth)
+        if: steps.auth.outputs.method == 'oauth'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          work_dir: uncivilised-game-base
+          prompt: |
+            You are reviewing PR #${{ steps.pr.outputs.number }} in the Uncivilised game repo.
+            Base branch: ${{ steps.pr.outputs.base }}
+
+            REPO LAYOUT:
+            - Base game (this repo): ./  (you are here)
+            - Diplomacy plugin (private): ../uncivilised-diplomacy/
+              Contains: src/diplomacy.js, src/game-mods.js, src/ai.js, src/plugin.js
+
+            INSTRUCTIONS:
+            1. Read CLAUDE.md for codebase context and conventions
+            2. Run `git diff ${{ steps.pr.outputs.base }}...HEAD` to see all changes in this PR
+            3. Read the full content of every changed file to understand context
+            4. If the PR touches diplomacy-api.js or modules imported by the diplomacy repo
+               (constants, state, hex, events, render, map, units, discovery, leaderboard, combat),
+               also read the relevant files in ../uncivilised-diplomacy/src/ to check for breakage
+            5. Perform a thorough code review covering:
+               - Correctness: logic errors, off-by-one, missing edge cases
+               - Security: XSS, injection, exposed secrets, OWASP top 10
+               - Performance: unnecessary allocations, expensive loops, missing early returns
+               - Game-specific: state mutations, save/load compatibility, render correctness
+               - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
+               - Style: consistency with existing codebase patterns
+            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+               - Grep the codebase for every function/variable/export touched by the PR
+               - List all callers and dependents of changed code (in both repos)
+               - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
+               - For each changed module, list which other modules import from it
+               - Rate the overall blast radius: LOW (isolated change), MEDIUM (touches shared code),
+                 or HIGH (modifies core state/constants/render pipeline used everywhere)
+               - If HIGH, list the specific areas most likely to break
+            7. Post your review as a single PR comment with a summary, blast radius rating, and findings
+            8. For specific line-level issues, use inline comments on the relevant lines
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game (ES modules bundled by esbuild)
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy repo imports base-game modules via @game/ aliases — flag any removed/renamed exports
+            - Do NOT make any changes, commits, or pushes — this is a read-only review
+            - Be constructive and specific — cite file paths and line numbers
+            - If the PR looks good, say so — don't invent issues
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Read,Glob,Grep"'
+
+      - name: Code Review with Claude Code (API key)
+        if: steps.auth.outputs.method == 'apikey'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          work_dir: uncivilised-game-base
+          prompt: |
+            You are reviewing PR #${{ steps.pr.outputs.number }} in the Uncivilised game repo.
+            Base branch: ${{ steps.pr.outputs.base }}
+
+            REPO LAYOUT:
+            - Base game (this repo): ./  (you are here)
+            - Diplomacy plugin (private): ../uncivilised-diplomacy/
+              Contains: src/diplomacy.js, src/game-mods.js, src/ai.js, src/plugin.js
+
+            INSTRUCTIONS:
+            1. Read CLAUDE.md for codebase context and conventions
+            2. Run `git diff ${{ steps.pr.outputs.base }}...HEAD` to see all changes in this PR
+            3. Read the full content of every changed file to understand context
+            4. If the PR touches diplomacy-api.js or modules imported by the diplomacy repo
+               (constants, state, hex, events, render, map, units, discovery, leaderboard, combat),
+               also read the relevant files in ../uncivilised-diplomacy/src/ to check for breakage
+            5. Perform a thorough code review covering:
+               - Correctness: logic errors, off-by-one, missing edge cases
+               - Security: XSS, injection, exposed secrets, OWASP top 10
+               - Performance: unnecessary allocations, expensive loops, missing early returns
+               - Game-specific: state mutations, save/load compatibility, render correctness
+               - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
+               - Style: consistency with existing codebase patterns
+            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+               - Grep the codebase for every function/variable/export touched by the PR
+               - List all callers and dependents of changed code (in both repos)
+               - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
+               - For each changed module, list which other modules import from it
+               - Rate the overall blast radius: LOW (isolated change), MEDIUM (touches shared code),
+                 or HIGH (modifies core state/constants/render pipeline used everywhere)
+               - If HIGH, list the specific areas most likely to break
+            7. Post your review as a single PR comment with a summary, blast radius rating, and findings
+            8. For specific line-level issues, use inline comments on the relevant lines
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game (ES modules bundled by esbuild)
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - The diplomacy repo imports base-game modules via @game/ aliases — flag any removed/renamed exports
+            - Do NOT make any changes, commits, or pushes — this is a read-only review
+            - Be constructive and specific — cite file paths and line numbers
+            - If the PR looks good, say so — don't invent issues
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Read,Glob,Grep"'

@@ -481,7 +481,7 @@ async function fetchSpotsRemaining() {
     const res = await fetch(API + '/api/spots-remaining');
     if (res.ok) return await res.json();
   } catch (e) {}
-  return { total: 1000, active: 0, remaining: 1000 };
+  return { total: 10000, active: 0, remaining: 10000 };
 }
 
 async function updateSpotsCounter() {

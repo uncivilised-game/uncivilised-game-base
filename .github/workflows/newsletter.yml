@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       template:
-        description: 'Template to use: "newsletter" (reusable) or "launch" (open-source announcement)'
+        description: 'Template: "newsletter" (reusable), "launch" (open-source announcement), or "waitlist-approved" (promote waitlisted players)'
         required: false
         default: 'newsletter'
       message:

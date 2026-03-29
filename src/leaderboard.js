@@ -115,9 +115,10 @@ function submitToLeaderboard(playerName, victory) {
     competition_id: currentCompetition ? currentCompetition.id : null,
   };
   // Route through /api/leaderboard so the server can validate the score
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
   fetch(API + '/api/leaderboard', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
     body: JSON.stringify(payload),
   }).catch(() => {});
   finishActiveGame();

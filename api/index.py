@@ -58,7 +58,7 @@ _SB_HEADERS = {
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 REPLY_TO_EMAIL = "hello@uncivilized.fun"
-MAX_ACTIVE_PLAYERS = 1000  # first N signups get immediate access
+MAX_ACTIVE_PLAYERS = 10000  # first N signups get immediate access
 
 WELCOME_EMAIL_HTML = """
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -165,7 +165,7 @@ def _send_waitlisted_email(to_email: str, username: str, position: int):
 <tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
 <tr><td style="color:#e8e0d0;font-size:20px;line-height:30px;padding:0 0 16px;font-weight:600">You're on the list, {username}.</td></tr>
-<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 1,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
+<tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 12px">All 10,000 spots in our first wave are taken. You're <strong style="color:#c9a84c">#{position}</strong> on the waitlist.</td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">We'll email you the moment a spot opens up. In the meantime, the game is open source &mdash; you can follow development on GitHub or join the community.</td></tr>
 <tr><td style="padding:32px 0 0"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c20,transparent)"></div></td></tr>
 <tr><td style="color:#5a5548;font-size:12px;line-height:18px;padding:16px 0 0;text-align:center">Uncivilized &mdash; The Ancient Era<br><a href="https://uncivilized.fun" style="color:#8a8578;text-decoration:none">uncivilized.fun</a></td></tr>
@@ -1064,14 +1064,38 @@ async def load_game(request: Request):
 # /api/leaderboard — top 500 via Supabase leaderboard table
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
-async def submit_leaderboard(entry: LeaderboardEntry):
+async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
+    # ── Auth: verify the submitter owns this player_name ──
+    access_token = request.headers.get("x-access-token", "")
+    player_name = entry.player_name.strip()[:20]
+    if not player_name or not access_token:
+        return {"success": False, "error": "Authentication required"}
+
+    if _sb_ok:
+        rows = _sb_select(
+            "players", select="username,access_token",
+            filters=f"username_lower=eq.{quote(player_name.lower())}",
+            limit=1,
+        )
+        if not rows:
+            return {"success": False, "error": "Player not registered"}
+        stored_token = rows[0].get("access_token") or ""
+        if not stored_token or stored_token != access_token:
+            return {"success": False, "error": "Invalid access token"}
+        # Use the canonical username from the DB
+        player_name = rows[0]["username"]
+
     # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
     # 5000 gives plenty of headroom without relying on client-supplied inputs.
     if not (0 <= entry.score <= 5000):
         return {"success": False, "error": "Score rejected"}
 
+    # Minimum bar: don't pollute the board with empty/trivial submissions
+    if entry.score < 10 or entry.turns_played < 2:
+        return {"success": False, "error": "Score too low for leaderboard"}
+
     record = {
-        "player_name": entry.player_name[:20],
+        "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
@@ -1090,7 +1114,7 @@ async def submit_leaderboard(entry: LeaderboardEntry):
             rank = _sb_count("leaderboard", f"score=gte.{entry.score}")
 
             # Update player profile if they have a registered username
-            _update_player_stats(entry.player_name, entry.score)
+            _update_player_stats(player_name, entry.score)
 
             return {"success": True, "rank": rank}
         except Exception as e:
@@ -1293,13 +1317,12 @@ async def add_to_waitlist(entry: WaitlistEntry):
 
 @app.get("/api/waitlist/count")
 async def get_waitlist_count():
-    """Get the total number of people waiting (email signups + waitlisted players) and total players."""
+    """Get the number of active players (joined) and waitlisted players (waiting)."""
     if _sb_ok:
         try:
-            email_signups = _sb_count("waitlist")
+            active_players = _sb_count("players", filters="status=eq.active")
             waitlisted_players = _sb_count("players", filters="status=eq.waitlisted")
-            total_players = _sb_count("players")
-            return {"count": email_signups + waitlisted_players, "total_players": total_players}
+            return {"count": waitlisted_players, "total_players": active_players}
         except Exception:
             pass
 
@@ -1311,7 +1334,7 @@ async def get_waitlist_count():
 # ═══════════════════════════════════════════════════
 @app.post("/api/signup")
 async def player_signup(data: SignupRequest):
-    """Register a new player. First 1,000 get immediate access; rest are waitlisted."""
+    """Register a new player. First 10,000 get immediate access; rest are waitlisted."""
     username = data.username.strip()
     email = data.email.strip().lower()
 
@@ -1535,7 +1558,7 @@ async def verify_token(token: str):
 
 @app.get("/api/spots-remaining")
 async def spots_remaining():
-    """Return how many of the 1,000 spots are still open."""
+    """Return how many of the 10,000 spots are still open."""
     if not _sb_ok:
         return {"total": MAX_ACTIVE_PLAYERS, "active": 0, "remaining": MAX_ACTIVE_PLAYERS}
 
@@ -1740,7 +1763,7 @@ Respond with EXACTLY this JSON format (no other text):
 # Replaces direct Supabase anon key access from the browser
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
-_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard', 'players', 'feedback'}
+_DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard'}
 # leaderboard and players writes go through dedicated endpoints (/api/leaderboard, /api/claim-username)
 # so they can be validated server-side before touching the DB
 _DB_PROXY_WRITE = {'active_games'}
