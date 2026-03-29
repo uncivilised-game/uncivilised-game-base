@@ -13,7 +13,7 @@ import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
-import { renderDiplomacyWithIntel } from './intelligence.js';
+import { renderDiplomacyWithIntel, switchDiploTab } from './intelligence.js';
 import { renderAdvisorPanel } from './advisors.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
@@ -417,7 +417,7 @@ function togglePanel(id) {
   if (panel.style.display === 'none' || !panel.style.display) {
     closeAllPanels();
     panel.style.display = 'block';
-    if (id === 'diplomacy-panel') renderDiplomacyWithIntel();
+    if (id === 'diplomacy-panel') { switchDiploTab('leaders'); }
     if (id === 'build-panel') renderBuildPanel();
     if (id === 'research-panel') renderResearchPanel();
     if (id === 'units-panel') renderUnitsPanel();
