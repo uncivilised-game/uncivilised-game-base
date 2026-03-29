@@ -17,10 +17,11 @@ jobs:
         with:
           path: uncivilised-game-base
 
-      - name: Checkout diplomacy repo
+      - name: Checkout diplomacy repo (matching branch)
         uses: actions/checkout@v4
         with:
           repository: uncivilised-game/uncivilised-diplomacy
+          ref: ${{ github.ref_name }}
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
           path: uncivilised-diplomacy
 

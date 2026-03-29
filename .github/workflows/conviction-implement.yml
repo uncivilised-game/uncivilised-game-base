@@ -41,9 +41,9 @@ jobs:
           fetch-depth: 0
           ref: devel
 
-      - name: Checkout diplomacy repo
+      - name: Checkout diplomacy repo (devel branch)
         run: |
-          git clone --depth 1 \
+          git clone --depth 1 --branch devel \
             "https://x-access-token:${DIPLOMACY_REPO_TOKEN}@github.com/uncivilised-game/uncivilised-diplomacy.git" \
             ../uncivilised-diplomacy
 

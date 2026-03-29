@@ -46,10 +46,11 @@ jobs:
           ref: refs/pull/${{ steps.pr.outputs.number }}/head
           fetch-depth: 0
 
-      - name: Checkout diplomacy repo
+      - name: Checkout diplomacy repo (matching base branch)
         uses: actions/checkout@v4
         with:
           repository: uncivilised-game/uncivilised-diplomacy
+          ref: ${{ steps.pr.outputs.base }}
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
           path: uncivilised-diplomacy
 
