@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS players (
   best_score    INTEGER NOT NULL DEFAULT 0,
   total_score   INTEGER NOT NULL DEFAULT 0,
   email_opt_out BOOLEAN NOT NULL DEFAULT false,
+  discord_id    TEXT UNIQUE,
+  discord_username TEXT,
   last_active   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

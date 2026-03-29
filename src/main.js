@@ -639,6 +639,76 @@ function playerSignOut() {
   refreshAuthUI();
 }
 
+async function linkDiscord() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username || !accessToken) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/link', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.authorize_url && data.authorize_url.startsWith('https://discord.com/oauth2/authorize?')) {
+      window.location.href = data.authorize_url;
+    }
+  } catch (_) {}
+}
+
+async function unlinkDiscord() {
+  if (!confirm('Unlink your Discord account? You can re-link it later.')) return;
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username || !accessToken) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/unlink', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.success) refreshAuthUI();
+  } catch (_) {}
+}
+
+async function checkDiscordStatus() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  const linkBtn = document.getElementById('btn-link-discord');
+  const linkedEl = document.getElementById('discord-linked');
+  if (!username || !linkBtn || !linkedEl) return;
+
+  // Reset DOM state before async fetch to prevent duplicate buttons
+  linkBtn.style.display = 'none';
+  linkedEl.style.display = 'none';
+  linkedEl.textContent = '';
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/status', {
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.linked) {
+      linkBtn.style.display = 'none';
+      linkedEl.style.display = 'inline';
+      linkedEl.textContent = '\u{1F3AE} ' + (data.discord_username || '');
+      const unlinkBtn = document.createElement('button');
+      unlinkBtn.className = 'btn-username';
+      unlinkBtn.style.cssText = 'font-size:11px;opacity:0.5;margin-left:4px';
+      unlinkBtn.textContent = 'unlink';
+      unlinkBtn.addEventListener('click', unlinkDiscord);
+      linkedEl.appendChild(unlinkBtn);
+    } else {
+      linkBtn.style.display = 'inline-block';
+      linkedEl.style.display = 'none';
+    }
+  } catch (_) {
+    linkBtn.style.display = 'inline-block';
+    linkedEl.style.display = 'none';
+  }
+}
+
 async function refreshAuthUI() {
   const username = safeStorage.getItem('uncivilised_username');
   const guestBtns = document.getElementById('auth-buttons-guest');
@@ -659,6 +729,7 @@ async function refreshAuthUI() {
   // Signed in — check access
   if (usernameBar) usernameBar.style.display = 'block';
   if (usernameDisplay) usernameDisplay.textContent = username;
+  checkDiscordStatus();
 
   try {
     const res = await fetch(API + '/api/verify-access', {
@@ -736,6 +807,7 @@ window.closeAuthModals = closeAuthModals;
 window.handleSignup = handleSignup;
 window.handleSignin = handleSignin;
 window.playerSignOut = playerSignOut;
+window.linkDiscord = linkDiscord;
 
 // --- Initialization ---
 (async function init() {
