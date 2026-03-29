@@ -625,7 +625,30 @@ function endTurn() {
       updateReputation(cid, 'trade_deal_honoured', `Trade deal with ${FACTIONS[cid].name} honoured to completion`);
       continue;
     }
-    // Parse and apply trade effects per turn
+
+    // --- FIX #120/#121: Process one-time lump-sum transfers on the first turn ---
+    if (!deal._lumpSumApplied && deal.startTurn === game.turn - 1) {
+      deal._lumpSumApplied = true;
+      // Lump-sum gold the player RECEIVES (offered by the AI to the player)
+      if (deal.playerReceivesLump) {
+        const lumpAmt = parseInt(deal.playerReceivesLump) || 0;
+        if (lumpAmt > 0) {
+          game.gold += lumpAmt;
+          addEvent(`Received ${lumpAmt} gold from ${FACTIONS[cid].name} (trade deal)`, 'gold');
+        }
+      }
+      // Lump-sum gold the player GIVES (player offered gold to the AI)
+      if (deal.playerGivesLump) {
+        const lumpAmt = parseInt(deal.playerGivesLump) || 0;
+        if (lumpAmt > 0) {
+          game.gold -= Math.min(game.gold, lumpAmt);
+          addEvent(`Sent ${lumpAmt} gold to ${FACTIONS[cid].name} (trade deal)`, 'gold');
+        }
+      }
+    }
+
+    // Parse and apply per-turn trade effects
+    // FIX #121: Ensure playerReceives = what the PLAYER gets, playerGives = what the PLAYER pays
     const receives = String(deal.playerReceives || '');
     if (receives.includes('gold')) { const m = receives.match(/(\d+)/); if (m) game.gold += parseInt(m[1]) || 0; }
     if (receives.includes('science')) { const sciAmt = parseInt(receives.match(/(\d+)/)?.[1]) || 2; game.researchProgress = (game.researchProgress || 0) + sciAmt; }
@@ -642,7 +665,7 @@ function endTurn() {
         }
       }
     }
-    // Deduct what player gives
+    // Deduct what player gives per turn
     const gives = String(deal.playerGives || '');
     if (gives.includes('gold')) { const m = gives.match(/(\d+)/); if (m) game.gold -= Math.min(game.gold, parseInt(m[1]) || 0); }
     if (gives.includes('science')) { const sciAmt = parseInt(gives.match(/(\d+)/)?.[1]) || 2; game.researchProgress = Math.max(0, (game.researchProgress || 0) - sciAmt); }
