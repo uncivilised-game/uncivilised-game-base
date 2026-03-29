@@ -6,6 +6,7 @@ import { processAITurns, processBarbarianTurns, processAICommitments } from './d
 import { processImprovements, getImprovementYields } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
 import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
+import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -733,6 +734,10 @@ function endTurn() {
 
   // --- Update faction AI economies ---
   updateFactionStats();
+
+  // --- Embassy turn processing (gossip accumulation) ---
+  ensureEmbassyState();
+  processEmbassyTurn();
 
   // --- Faction intelligence reports (every 10 turns) ---
   generateFactionIntelReports();

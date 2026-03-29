@@ -9,6 +9,7 @@ import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
 import { autoSave } from './save-load.js';
+import { isAdvisorChatActive, closeAdvisorChat } from './advisors.js';
 
 // ============================================
 // CAMERA HELPERS
@@ -148,6 +149,7 @@ export function initInputHandlers() {
         else if (key === 'u') { e.preventDefault(); togglePanel('units-panel'); }
         else if (key === 't') { e.preventDefault(); toggleCivicsPanel(); }
         else if (key === 'v') { e.preventDefault(); toggleVictoryPanel(); }
+        else if (key === 'a') { e.preventDefault(); togglePanel('advisor-panel'); }
         else if (key === 'c') {
           e.preventDefault();
           const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
@@ -157,6 +159,7 @@ export function initInputHandlers() {
     }
     // Escape key closes any open panel or overlay
     if (e.key === 'Escape') {
+      if (isAdvisorChatActive()) closeAdvisorChat();
       const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'];
       let closed = false;
       for (const id of panels) {
@@ -310,8 +313,9 @@ export function initInputHandlers() {
 
   // ---- Button event handlers ----
 
-  // Close chat panel (diplomacy conversation)
+  // Close chat panel (diplomacy or advisor conversation)
   document.getElementById('chat-close').addEventListener('click', () => {
+    if (isAdvisorChatActive()) closeAdvisorChat();
     document.getElementById('chat-panel').style.display = 'none';
   });
 
@@ -324,6 +328,8 @@ export function initInputHandlers() {
   document.getElementById('btn-units').addEventListener('click', () => togglePanel('units-panel'));
   document.getElementById('btn-civics').addEventListener('click', () => { if (typeof toggleCivicsPanel === 'function') toggleCivicsPanel(); });
   document.getElementById('btn-victory').addEventListener('click', () => { if (typeof toggleVictoryPanel === 'function') toggleVictoryPanel(); });
+  const btnAdvisor = document.getElementById('btn-advisor');
+  if (btnAdvisor) btnAdvisor.addEventListener('click', () => togglePanel('advisor-panel'));
   document.getElementById('btn-menu').addEventListener('click', async () => {
     closeAllPanels();
     // Save current state so "Continue" returns to this exact turn
