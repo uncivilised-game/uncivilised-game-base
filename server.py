@@ -1428,7 +1428,7 @@ async def discord_auth_start(request: Request):
     nonce = secrets.token_hex(16)
     mac = _hmac_mod.new(
         DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
-    ).hexdigest()[:16]
+    ).hexdigest()[:32]
     state = f"{nonce}:{mac}:{username}"
 
     params = urlencode({
@@ -1445,6 +1445,9 @@ async def discord_auth_start(request: Request):
 async def discord_auth_callback(request: Request):
     """Handle Discord OAuth2 callback. Exchanges code for token, links account."""
     from fastapi.responses import HTMLResponse
+
+    if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
+        return HTMLResponse(_discord_result_page("Discord integration not configured.", success=False), status_code=500)
 
     error = request.query_params.get("error")
     if error:
@@ -1463,7 +1466,7 @@ async def discord_auth_callback(request: Request):
     nonce, mac, username = parts
     expected_mac = _hmac_mod.new(
         DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
-    ).hexdigest()[:16]
+    ).hexdigest()[:32]
     if not _hmac_mod.compare_digest(mac, expected_mac):
         return HTMLResponse(_discord_result_page("Invalid state signature.", success=False), status_code=400)
 
@@ -1594,11 +1597,13 @@ async def discord_unlink(request: Request):
         if not stored_token or not _hmac_mod.compare_digest(stored_token, str(access_token)):
             return {"success": False, "error": "Invalid credentials"}
 
-        _sb_update(
+        updated = _sb_update(
             "players",
             {"discord_id": None, "discord_username": None},
             f"username_lower=eq.{quote(username.lower())}",
         )
+        if not updated:
+            return {"success": False, "error": "Player not found"}
         return {"success": True}
     except Exception as e:
         print(f"[DISCORD] Unlink error: {e}")
@@ -1641,7 +1646,7 @@ async def unsubscribe(request: Request):
     if not username or not token or not SUPABASE_SERVICE_KEY:
         return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
 
-    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:32]
     if not hmac.compare_digest(token, expected):
         return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
 

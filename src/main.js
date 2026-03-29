@@ -659,7 +659,7 @@ async function linkDiscord() {
 async function unlinkDiscord() {
   const username = safeStorage.getItem('uncivilised_username');
   const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
-  if (!username) return;
+  if (!username || !accessToken) return;
 
   try {
     const res = await fetch(API + '/api/auth/discord/unlink', {
@@ -807,7 +807,6 @@ window.handleSignup = handleSignup;
 window.handleSignin = handleSignin;
 window.playerSignOut = playerSignOut;
 window.linkDiscord = linkDiscord;
-window.unlinkDiscord = unlinkDiscord;
 
 // --- Initialization ---
 (async function init() {
