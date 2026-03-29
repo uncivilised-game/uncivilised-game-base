@@ -164,7 +164,7 @@ function endTurn() {
   // Done BEFORE AI processing so an AI error can't block player movement reset
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
-    const ut = UNIT_TYPES[unit.type];
+    const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
     const didIdleLastTurn = unit.moveLeft === ut.movePoints;
     unit.moveLeft = ut.movePoints;
     unit.hasAttackedThisTurn = false;

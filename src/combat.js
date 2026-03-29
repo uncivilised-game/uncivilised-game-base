@@ -833,7 +833,7 @@ function processZOCCaptures() {
   const captured = [];
   for (let i = game.units.length - 1; i >= 0; i--) {
     const unit = game.units[i];
-    const ut = UNIT_TYPES[unit.type];
+    const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
     if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only civilians
 
     if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;

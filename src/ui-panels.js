@@ -34,7 +34,7 @@ function showSelectionPanel(unit) {
     return;
   }
   const panel = document.getElementById('selection-panel');
-  const ut = UNIT_TYPES[unit.type];
+  const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
   const tile = game.map[unit.row][unit.col];
   const isPlayer = unit.owner === 'player';
 
@@ -196,7 +196,7 @@ function showSelectionPanel(unit) {
 function showGiftUnitPanel(unitId) {
   const unit = game.units.find(u => u.id === unitId);
   if (!unit) return;
-  const ut = UNIT_TYPES[unit.type];
+  const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
   const panel = document.getElementById('selection-panel');
   const discoveredFactions = Object.keys(game.relationships || {}).filter(fid => FACTIONS[fid]);
 
@@ -229,7 +229,7 @@ function giftUnit(unitId, factionId) {
   const unitIdx = game.units.findIndex(u => u.id === unitId);
   if (unitIdx === -1) return;
   const unit = game.units[unitIdx];
-  const ut = UNIT_TYPES[unit.type];
+  const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
   const faction = FACTIONS[factionId];
   if (!faction) return;
 
@@ -451,7 +451,7 @@ function renderUnitsPanel() {
     container.appendChild(header);
 
     for (const unit of playerUnits) {
-      const ut = UNIT_TYPES[unit.type];
+      const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
       const div = document.createElement('div');
       div.className = 'build-item';
       div.innerHTML = `
@@ -1348,7 +1348,7 @@ export {
 window.unitAction = function(action) {
   const unit = game.units.find(u => u.id === game.selectedUnitId);
   if (!unit || unit.owner !== 'player') return;
-  const ut = UNIT_TYPES[unit.type];
+  const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
 
   switch (action) {
     case 'skip':
