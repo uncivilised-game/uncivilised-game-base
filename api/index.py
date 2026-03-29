@@ -1666,12 +1666,13 @@ async def discord_auth_start(request: Request):
         return {"success": False, "error": "Database error"}
 
     # Generate CSRF state token that embeds the username
-    # Format: {random_hex}:{hmac_of_random_hex+username}:{username}
+    # Format: {random_hex}:{timestamp}:{hmac_of_random_hex+timestamp+username}:{username}
     nonce = secrets.token_hex(16)
+    timestamp = str(int(time.time()))
     mac = _hmac_mod.new(
-        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
+        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{timestamp}:{username}".encode(), hashlib.sha256
     ).hexdigest()[:32]
-    state = f"{nonce}:{mac}:{username}"
+    state = f"{nonce}:{timestamp}:{mac}:{username}"
 
     params = urlencode({
         "client_id": DISCORD_CLIENT_ID,
@@ -1680,7 +1681,10 @@ async def discord_auth_start(request: Request):
         "scope": "identify",
         "state": state,
     })
-    return {"success": True, "authorize_url": f"https://discord.com/oauth2/authorize?{params}"}
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse({"success": True, "authorize_url": f"https://discord.com/oauth2/authorize?{params}"})
+    resp.set_cookie("discord_state_nonce", nonce, max_age=600, httponly=True, samesite="lax", secure=True)
+    return resp
 
 
 @app.get("/api/auth/discord/callback")
@@ -1702,13 +1706,27 @@ async def discord_auth_callback(request: Request):
         return HTMLResponse(_discord_result_page("Missing authorization code.", success=False), status_code=400)
 
     # Validate state token and extract username
-    parts = state.split(":", 2)
-    if len(parts) != 3:
+    # Format: {nonce}:{timestamp}:{mac}:{username}
+    parts = state.split(":", 3)
+    if len(parts) != 4:
         return HTMLResponse(_discord_result_page("Invalid state parameter.", success=False), status_code=400)
 
-    nonce, mac, username = parts
+    nonce, timestamp, mac, username = parts
+
+    # Verify session binding — nonce must match cookie set during link initiation
+    cookie_nonce = request.cookies.get("discord_state_nonce", "")
+    if not cookie_nonce or not _hmac_mod.compare_digest(nonce, cookie_nonce):
+        return HTMLResponse(_discord_result_page("Session mismatch — please try linking again.", success=False), status_code=400)
+
+    # Reject expired state tokens (10 minute window)
+    try:
+        if abs(int(time.time()) - int(timestamp)) > 600:
+            return HTMLResponse(_discord_result_page("Link expired — please try again.", success=False), status_code=400)
+    except ValueError:
+        return HTMLResponse(_discord_result_page("Invalid state parameter.", success=False), status_code=400)
+
     expected_mac = _hmac_mod.new(
-        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{username}".encode(), hashlib.sha256
+        DISCORD_CLIENT_SECRET.encode(), f"{nonce}:{timestamp}:{username}".encode(), hashlib.sha256
     ).hexdigest()[:32]
     if not _hmac_mod.compare_digest(mac, expected_mac):
         return HTMLResponse(_discord_result_page("Invalid state signature.", success=False), status_code=400)
@@ -2497,8 +2515,9 @@ async def unsubscribe(request: Request):
     if not username or not token or not SUPABASE_SERVICE_KEY:
         return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
 
-    expected = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:32]
-    if not hmac.compare_digest(token, expected):
+    full_hex = hmac.new(SUPABASE_SERVICE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()
+    expected = full_hex[:len(token)] if len(token) in (16, 32) else ""
+    if not expected or not hmac.compare_digest(token, expected):
         return HTMLResponse("<h2>Invalid unsubscribe link.</h2>", status_code=400)
 
     try:

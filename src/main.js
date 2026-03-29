@@ -657,6 +657,7 @@ async function linkDiscord() {
 }
 
 async function unlinkDiscord() {
+  if (!confirm('Unlink your Discord account? You can re-link it later.')) return;
   const username = safeStorage.getItem('uncivilised_username');
   const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
   if (!username || !accessToken) return;

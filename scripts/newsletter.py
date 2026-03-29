@@ -53,7 +53,7 @@ BASE_URL = os.environ.get("BASE_URL", "https://uncivilized.fun")
 
 def make_unsubscribe_url(username):
     """Generate a signed unsubscribe URL for a player."""
-    token = hmac.new(SUPABASE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:16]
+    token = hmac.new(SUPABASE_KEY.encode(), username.encode(), hashlib.sha256).hexdigest()[:32]
     return f"{BASE_URL}/api/unsubscribe?u={quote(username)}&t={token}"
 
 
