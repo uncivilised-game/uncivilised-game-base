@@ -160,7 +160,7 @@ export function initInputHandlers() {
     // Escape key closes any open panel or overlay
     if (e.key === 'Escape') {
       if (isAdvisorChatActive()) closeAdvisorChat();
-      const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'];
+      const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'];
       let closed = false;
       for (const id of panels) {
         const el = document.getElementById(id);

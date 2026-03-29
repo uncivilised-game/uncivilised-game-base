@@ -57,7 +57,7 @@ export function renderDiplomacyWithIntel() {
   html += `<div style="${S.tabs}">`;
   for (const t of tabs) {
     const on = currentDiploTab === t.id;
-    html += `<div class="diplo-tab" data-tab="${t.id}" style="${S.tab}${on ? S.tabOn : S.tabOff}">${t.label}</div>`;
+    html += `<div class="intel-tab" data-tab="${t.id}" style="${S.tab}${on ? S.tabOn : S.tabOff}">${t.label}</div>`;
   }
   html += '</div>';
 
@@ -79,20 +79,20 @@ export function renderDiplomacyWithIntel() {
   if (currentDiploTab === 'leaders') {
     const slot = document.getElementById('diplo-leaders-slot');
     if (slot) {
-      // Temporarily redirect the plugin to render into the slot
-      const origContainer = document.getElementById('diplomacy-characters');
-      // We need to call the plugin's render and capture its output
-      // Since the plugin writes to #diplomacy-characters, we swap IDs briefly
+      // Temporarily swap IDs so the plugin renders into the slot
       slot.id = 'diplomacy-characters';
       container.id = '_diplo-wrapper-tmp';
-      pluginRenderDiplomacy();
-      slot.id = 'diplo-leaders-slot';
-      container.id = 'diplomacy-characters';
+      try {
+        pluginRenderDiplomacy();
+      } finally {
+        slot.id = 'diplo-leaders-slot';
+        container.id = 'diplomacy-characters';
+      }
     }
   }
 
   // Bind tab clicks
-  container.querySelectorAll('.diplo-tab').forEach(el => {
+  container.querySelectorAll('.intel-tab').forEach(el => {
     el.onclick = () => {
       currentDiploTab = el.dataset.tab;
       renderDiplomacyWithIntel();
@@ -133,7 +133,7 @@ export function getIntelSummary() {
   if (wars.length > 0) items.push(`\u2694\uFE0F ${wars.length} war${wars.length > 1 ? 's' : ''}`);
   const alliances = game.aiAlliances || [];
   if (alliances.length > 0) items.push(`\uD83E\uDD1D ${alliances.length} alliance${alliances.length > 1 ? 's' : ''}`);
-  const rumours = (game.rumourQueue || []).filter(r => r.revealTurn > game.turn);
+  const rumours = (game.rumourQueue || []).filter(r => r.revealTurn >= game.turn);
   if (rumours.length > 0) items.push(`\uD83D\uDCAC ${rumours.length} unconfirmed rumour${rumours.length > 1 ? 's' : ''}`);
   const topThreat = getTopThreat();
   if (topThreat) items.push(`\u26A0\uFE0F Threat: ${FACTIONS[topThreat.fid]?.name || topThreat.fid}`);
@@ -368,8 +368,8 @@ function renderRelationsMap() {
 function renderRumoursTab() {
   let html = '';
   const rumours = game.rumourQueue || [];
-  const revealed = rumours.filter(r => r.revealTurn <= game.turn);
-  const pending = rumours.filter(r => r.revealTurn > game.turn);
+  const revealed = rumours.filter(r => r.revealTurn < game.turn);
+  const pending = rumours.filter(r => r.revealTurn >= game.turn);
 
   if (revealed.length > 0) {
     html += `<div style="${S.card}">`;
