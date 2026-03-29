@@ -704,6 +704,7 @@ export function discoverVillage(col, row, unit) {
   addEvent('\u{1F3D8} Tribal Village: ' + message, 'event');
   showToast('Tribal Village', message);
   logAction('event', 'Discovered tribal village at (' + col + ',' + row + ')', { reward: reward.type, message });
+  updateUI(); // refresh HUD to show gold/science/culture changes immediately
 
   return { reward, message };
 }
