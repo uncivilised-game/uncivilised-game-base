@@ -916,7 +916,7 @@ function render() {
     const pos = hexToPixel(unit.col, unit.row);
     const sx = pos.x - camX;
     const sy = pos.y - camY;
-    const ut = Object.apply({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
+    const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
     if (!ut) continue;
     const isSelected = game.selectedUnitId === unit.id;
     const isPlayer = unit.owner === 'player';
@@ -1277,7 +1277,7 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   const tileVisible = game.visibleTiles && game.visibleTiles[row] && game.visibleTiles[row][col];
   if (unitHere && (unitHere.owner === 'player' || tileVisible)) {
     lines.push({ text: '', color: '' }); // spacer
-    const ut = Object.apply({}, UNIT_TYPES[unitHere.type], unitHere.barbSpecial ? BARBARIAN_UNITS[unitHere.barbSpecial] : {});
+    const ut = Object.assign({}, UNIT_TYPES[unitHere.type], unitHere.barbSpecial ? BARBARIAN_UNITS[unitHere.barbSpecial] : {});
     const isPlayer = unitHere.owner === 'player';
     if (isPlayer) {
       lines.push({ text: `${ut.icon} ${ut.name} (Yours)`, bold: true, color: '#c9a84c' });
