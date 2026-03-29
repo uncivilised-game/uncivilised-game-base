@@ -151,27 +151,12 @@ function endTurn() {
 
   const events = [];
 
-  // --- Auto-discover factions whose cities/units are in revealed tiles ---
-  discoverVisibleFactions();
-
-  // --- Process AI first ---
-  processAITurns();
-
-  // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
-  processZOCCaptures();
-
-  // --- AI Wonder Race production ---
-  processAIWonderTurns();
-
-  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
-  resetTurnActions();
-  processAIDiplomacy();
-  processAITradeIncome();
-
   // --- Reset player unit move points and process waypoints ---
+  // Done BEFORE AI processing so an AI error can't block player movement reset
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
+    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
     unit.moveLeft = ut.movePoints;
     unit.hasAttackedThisTurn = false;
 
@@ -190,7 +175,7 @@ function endTurn() {
       } else if (unit.fortified) {
         // Fortified: +10 HP
         healAmount = 10;
-      } else if (unit.moveLeft === ut.movePoints) {
+      } else if (didIdleLastTurn) {
         // Didn't move last turn (full moves remaining means they were idle): +5 HP
         healAmount = 5;
       }
@@ -220,6 +205,27 @@ function endTurn() {
       }
     }
   }
+
+  // --- Auto-discover factions whose cities/units are in revealed tiles ---
+  discoverVisibleFactions();
+
+  // --- Process AI (wrapped so failures don't block player turn) ---
+  try {
+    processAITurns();
+  } catch (e) { console.error('Error in processAITurns:', e); }
+  try {
+    processZOCCaptures();
+  } catch (e) { console.error('Error in processZOCCaptures:', e); }
+  try {
+    processAIWonderTurns();
+  } catch (e) { console.error('Error in processAIWonderTurns:', e); }
+
+  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
+  resetTurnActions();
+  try {
+    processAIDiplomacy();
+    processAITradeIncome();
+  } catch (e) { console.error('Error in AI diplomacy:', e); }
 
   // --- Unit maintenance costs ---
   let totalMaint = 0;
