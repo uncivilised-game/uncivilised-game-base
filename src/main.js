@@ -39,6 +39,8 @@ import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFo
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
+import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
+import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage } from './advisors.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
@@ -59,6 +61,10 @@ window.showLeaderboard = showLeaderboard;
 window.showUsernamePrompt = showUsernamePrompt;
 window.sendFeedback = sendFeedback;
 window.toggleFeedbackChat = toggleFeedbackChat;
+window.switchDiploTab = switchDiploTab;
+window.getIntelSummary = getIntelSummary;
+window.openAdvisor = openAdvisor;
+window.sendAdvisorMessage = sendAdvisorMessage;
 window.toggleRankingsDropdown = toggleRankingsDropdown;
 window.togglePanel = togglePanel;
 window.openChat = openChat;

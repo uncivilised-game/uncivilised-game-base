@@ -148,6 +148,7 @@ export function initInputHandlers() {
         else if (key === 'u') { e.preventDefault(); togglePanel('units-panel'); }
         else if (key === 't') { e.preventDefault(); toggleCivicsPanel(); }
         else if (key === 'v') { e.preventDefault(); toggleVictoryPanel(); }
+        else if (key === 'a') { e.preventDefault(); togglePanel('advisor-panel'); }
         else if (key === 'c') {
           e.preventDefault();
           const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
@@ -324,6 +325,8 @@ export function initInputHandlers() {
   document.getElementById('btn-units').addEventListener('click', () => togglePanel('units-panel'));
   document.getElementById('btn-civics').addEventListener('click', () => { if (typeof toggleCivicsPanel === 'function') toggleCivicsPanel(); });
   document.getElementById('btn-victory').addEventListener('click', () => { if (typeof toggleVictoryPanel === 'function') toggleVictoryPanel(); });
+  const btnAdvisor = document.getElementById('btn-advisor');
+  if (btnAdvisor) btnAdvisor.addEventListener('click', () => togglePanel('advisor-panel'));
   document.getElementById('btn-menu').addEventListener('click', async () => {
     closeAllPanels();
     // Save current state so "Continue" returns to this exact turn

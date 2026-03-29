@@ -13,6 +13,8 @@ import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
+import { renderDiplomacyWithIntel } from './intelligence.js';
+import { renderAdvisorPanel } from './advisors.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
@@ -415,18 +417,19 @@ function togglePanel(id) {
   if (panel.style.display === 'none' || !panel.style.display) {
     closeAllPanels();
     panel.style.display = 'block';
-    if (id === 'diplomacy-panel') renderDiplomacyPanel();
+    if (id === 'diplomacy-panel') renderDiplomacyWithIntel();
     if (id === 'build-panel') renderBuildPanel();
     if (id === 'research-panel') renderResearchPanel();
     if (id === 'units-panel') renderUnitsPanel();
     if (id === 'civics-panel') renderCivicsPanel();
+    if (id === 'advisor-panel') renderAdvisorPanel();
   } else {
     panel.style.display = 'none';
   }
 }
 
 function closeAllPanels() {
-  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'].forEach(id => {
+  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
