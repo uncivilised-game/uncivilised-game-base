@@ -4,6 +4,7 @@ import { hexDistance, getHexNeighbors } from './hex.js';
 import { initFactionStats } from './map.js';
 import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
+import { onRumourRevealed, getEffectiveIntelLevel } from './embassy.js';
 
 export function addEvent(text, type = '') {
   if (!game) return;
@@ -234,6 +235,7 @@ export function generateFactionIntelReports() {
         for (const rum of rumours) {
           addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
         }
+        onRumourRevealed(rumours.length);
         showIntelNotification([], rumours);
       }
     }
@@ -247,6 +249,7 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
     return;
@@ -259,13 +262,9 @@ export function generateFactionIntelReports() {
     const stats = game.factionStats[fid];
     if (!stats || !faction) continue;
 
-    // Detail level depends on relationship
-    let detail = 'minimal'; // hostile: vague info
-    if (rel >= 50) detail = 'full';        // allied: full intel
-    else if (rel >= 20) detail = 'good';   // friendly: detailed
-    else if (rel >= 0) detail = 'basic';   // neutral: basic
-    // Check for intel-sharing agreements
-    if (game.activeAlliances[fid]) detail = 'full';
+    // Detail level: combines relationship, embassies, gossip, and agreements
+    let detail = getEffectiveIntelLevel(fid);
+    // Open borders still provides a small boost
     if (game.openBorders && game.openBorders[fid]) {
       if (detail === 'basic') detail = 'good';
     }
@@ -301,6 +300,7 @@ export function generateFactionIntelReports() {
     for (const rum of rumours) {
       addEvent(`  \u{1F4AC} Rumour: ${rum.text}`, 'diplomacy');
     }
+    if (rumours.length > 0) onRumourRevealed(rumours.length);
     showIntelNotification(reports, rumours);
   } else {
     // Even if no met factions have reports, still try rumours
@@ -310,6 +310,7 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
   }
@@ -518,6 +519,7 @@ window.payForRumourInfo = function(factionId, rumourIdx) {
   ];
   const detail = details[Math.floor(Math.random() * details.length)];
   addEvent('\u{1F4B0} Paid 15g for intelligence: ' + detail, 'diplomacy');
+  onRumourRevealed(1); // Paid intel feeds gossip network
   const banner = document.getElementById('intel-banner');
   if (banner) banner.style.display = 'none';
   showModBanner('\u{1F50D}', detail, 'Paid informant');
@@ -542,6 +544,7 @@ window.corroborateRumour = function(factionId, rumourIdx) {
   ];
   const confirmMsg = confirms[Math.floor(Math.random() * confirms.length)];
   addEvent('\u{1F91D} ' + confirmMsg, 'diplomacy');
+  onRumourRevealed(1); // Corroborated intel feeds gossip network
   game.relationships[bestAlly] = (game.relationships[bestAlly] || 0) + 2;
   const banner = document.getElementById('intel-banner');
   if (banner) banner.style.display = 'none';

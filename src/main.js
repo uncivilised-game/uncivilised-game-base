@@ -41,6 +41,7 @@ import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
 import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
 import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage } from './advisors.js';
+import { establishEmbassy, processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
@@ -62,6 +63,7 @@ window.showUsernamePrompt = showUsernamePrompt;
 window.sendFeedback = sendFeedback;
 window.toggleFeedbackChat = toggleFeedbackChat;
 window.switchDiploTab = switchDiploTab;
+window.establishEmbassy = establishEmbassy;
 window.getIntelSummary = getIntelSummary;
 window.openAdvisor = openAdvisor;
 window.sendAdvisorMessage = sendAdvisorMessage;

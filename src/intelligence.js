@@ -10,6 +10,7 @@ import { FACTIONS, FACTION_TRAITS } from './constants.js';
 import { game } from './state.js';
 import { getAIRelation, getAIWars, getAIAlliances, getAITradeDeals } from './ai-diplomacy.js';
 import { getRelationLabel, openChat, renderDiplomacyPanel as pluginRenderDiplomacy } from './diplomacy-api.js';
+import { getEffectiveIntelLevel, getEmbassyInfo, establishEmbassy, EMBASSY_UNLOCK_TECH, EMBASSY_COST, GOSSIP_THRESHOLDS, ensureEmbassyState } from './embassy.js';
 import { getComparisonData } from './map.js';
 
 // ── Tab state ──
@@ -102,6 +103,17 @@ export function renderDiplomacyWithIntel() {
   container.querySelectorAll('.intel-faction-link').forEach(el => {
     el.onclick = () => openChat(el.dataset.fid);
   });
+
+  // Bind embassy buttons
+  container.querySelectorAll('.embassy-btn').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const fid = el.dataset.fid;
+      if (establishEmbassy(fid)) {
+        renderDiplomacyWithIntel(); // re-render to show updated state
+      }
+    };
+  });
 }
 
 /**
@@ -133,23 +145,49 @@ export function getIntelSummary() {
 // ============================================
 
 function renderOverview() {
+  ensureEmbassyState();
   let html = '';
   const metCount = Object.keys(game.metFactions || {}).length;
   const totalFactions = Object.keys(FACTIONS).length;
   const wars = game.aiWars || [];
   const alliances = game.aiAlliances || [];
   const trades = game.aiTradeDeals || [];
+  const embassyCount = Object.keys(game.embassies || {}).length;
+  const gp = game.gossipPoints || 0;
 
-  // World status
+  // World status + gossip network
   html += `<div style="${S.card}">`;
   html += `<div style="${S.cardHd}"><strong>\uD83C\uDF0D World Status — Turn ${game.turn}</strong></div>`;
   html += `<div style="${S.stat}">Discovered: ${metCount}/${totalFactions}</div>`;
   html += `<div style="${S.stat}">Wars: ${wars.length}</div>`;
   html += `<div style="${S.stat}">Alliances: ${alliances.length}</div>`;
-  html += `<div style="${S.stat}">Trade deals: ${trades.length}</div>`;
+  html += `<div style="${S.stat}">Trades: ${trades.length}</div>`;
+  html += `<div style="${S.stat}">\uD83C\uDFDB\uFE0F Embassies: ${embassyCount}</div>`;
   html += '</div>';
 
-  // Your standing with each faction
+  // Gossip network card
+  html += `<div style="${S.card}">`;
+  html += `<div style="${S.cardHd}"><strong>\uD83D\uDCAC Gossip Network</strong></div>`;
+  const nextThreshold = gp < GOSSIP_THRESHOLDS.good ? GOSSIP_THRESHOLDS.good
+    : gp < GOSSIP_THRESHOLDS.full ? GOSSIP_THRESHOLDS.full
+    : gp < GOSSIP_THRESHOLDS.master ? GOSSIP_THRESHOLDS.master : null;
+  const depthLabel = gp >= GOSSIP_THRESHOLDS.master ? 'Master' : gp >= GOSSIP_THRESHOLDS.full ? 'Deep' : gp >= GOSSIP_THRESHOLDS.good ? 'Growing' : 'Shallow';
+  const depthColor = gp >= GOSSIP_THRESHOLDS.master ? '#ffd700' : gp >= GOSSIP_THRESHOLDS.full ? '#4f4' : gp >= GOSSIP_THRESHOLDS.good ? '#ff0' : '#888';
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;">`;
+  html += `<span style="font-size:12px;">Gossip Points: <strong style="color:${depthColor};">${gp}</strong></span>`;
+  html += `<span style="${S.badge}background:rgba(${depthColor === '#ffd700' ? '255,215,0' : depthColor === '#4f4' ? '68,255,68' : depthColor === '#ff0' ? '255,255,0' : '136,136,136'},0.2);color:${depthColor};">${depthLabel} Intel</span>`;
+  html += '</div>';
+  if (nextThreshold) {
+    const pct = Math.min(100, Math.round((gp / nextThreshold) * 100));
+    html += `<div style="margin-top:4px;"><div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">`;
+    html += `<div style="width:${pct}%;height:100%;background:${depthColor};border-radius:2px;transition:width 0.3s;"></div></div>`;
+    html += `<div style="font-size:10px;color:#666;margin-top:2px;">Next level at ${nextThreshold} points — rumours and embassies increase gossip</div></div>`;
+  } else {
+    html += `<div style="font-size:10px;color:#888;margin-top:2px;">Maximum intelligence depth reached — full intel on all factions</div>`;
+  }
+  html += '</div>';
+
+  // Your standing with each faction (now with embassy indicators)
   html += `<div style="${S.card}">`;
   html += `<div style="${S.cardHd}"><strong>\uD83D\uDC51 Your Standing</strong></div>`;
   const metFactions = Object.keys(game.metFactions || {});
@@ -162,11 +200,21 @@ function renderOverview() {
       const rel = game.relationships?.[fid] || 0;
       const label = getRelationLabel(rel);
       const threat = assessThreat(fid);
-      html += `<div class="intel-faction-link" data-fid="${fid}" style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);">`;
-      html += `<span style="color:${faction.color}">${faction.icon || '\uD83C\uDFF0'} ${faction.name}</span>`;
-      html += `<span><span class="${label.cls}" style="font-size:11px;">${label.text}</span>`;
-      html += ` <span style="${S.badge}${S.threat[threat.level]}">${threat.level.toUpperCase()}</span></span>`;
-      html += '</div>';
+      const emb = getEmbassyInfo(fid);
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);">`;
+      html += `<span class="intel-faction-link" data-fid="${fid}" style="cursor:pointer;color:${faction.color}">${faction.icon||'\uD83C\uDFF0'} ${faction.name}</span>`;
+      html += '<span style="display:flex;align-items:center;gap:6px;">';
+      // Embassy indicator/button
+      if (emb.hasEmbassy) {
+        html += `<span style="${S.badge}background:rgba(201,168,76,0.25);color:#ffd700;" title="Embassy active — full intel">\uD83C\uDFDB\uFE0F</span>`;
+      } else if (emb.canEstablish) {
+        html += `<span class="embassy-btn" data-fid="${fid}" style="${S.badge}background:rgba(201,168,76,0.15);color:#c9a84c;cursor:pointer;border:1px dashed rgba(201,168,76,0.4);" title="Establish embassy (${EMBASSY_COST}g)">\uD83C\uDFDB\uFE0F ${EMBASSY_COST}g</span>`;
+      } else if (!emb.hasTech) {
+        html += `<span style="${S.badge}background:rgba(100,100,100,0.2);color:#555;cursor:help;" title="Requires ${EMBASSY_UNLOCK_TECH.replace(/_/g,' ')} to establish embassy">\uD83C\uDFDB\uFE0F \uD83D\uDD12</span>`;
+      }
+      html += `<span class="${label.cls}" style="font-size:11px;">${label.text}</span>`;
+      html += `<span style="${S.badge}${S.threat[threat.level]}">${threat.level.toUpperCase()}</span>`;
+      html += '</span></div>';
     }
   }
   html += '</div>';
