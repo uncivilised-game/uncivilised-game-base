@@ -1036,10 +1036,12 @@ function showGameOver(victory) {
   closeAllPanels();
   document.getElementById('game-over').style.display = 'block';
 
-  // Submit to leaderboard — use saved username or generate anonymous name
-  const savedUsername = safeStorage.getItem('uncivilised_username');
-  const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
-  submitToLeaderboard(playerName, victory);
+  // Submit to leaderboard — skip if already submitted during post-victory play
+  if (!game.postVictoryPlay) {
+    const savedUsername = safeStorage.getItem('uncivilised_username');
+    const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
+    submitToLeaderboard(playerName, victory);
+  }
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
   document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
