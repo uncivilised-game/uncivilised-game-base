@@ -72,6 +72,7 @@ let isWaitingForResponse = false;
 // ── Turn tracking ──
 export function resetAdvisorConsultations() {
   // Called at start of each turn
+  if (!game) return;
   if (game.turn !== lastConsultTurn) {
     consultationsUsed = 0;
     lastConsultTurn = game.turn;
@@ -178,16 +179,18 @@ function renderAdvisorSelection() {
   for (const [key, adv] of Object.entries(ADVISORS)) {
     const canConsult = remaining > 0;
     html += `<div class="advisor-card" data-advisor="${key}" style="`;
-    html += `background:rgba(30,30,40,0.8);border:1px solid ${canConsult ? 'rgba(201,168,76,0.3)' : 'rgba(100,100,100,0.2)'};`;
-    html += `border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:${canConsult ? 'pointer' : 'default'};`;
-    html += `opacity:${canConsult ? '1' : '0.5'};transition:border-color 0.2s;">`;
-    html += `<div style="display:flex;align-items:center;gap:10px;">`;
-    html += `<span style="font-size:24px;">${adv.icon}</span>`;
+    html += `background:rgba(30,30,40,0.8);border:2px solid ${canConsult ? 'rgba(201,168,76,0.3)' : 'rgba(100,100,100,0.2)'};`;
+    html += `border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:${canConsult ? 'pointer' : 'default'};`;
+    html += `opacity:${canConsult ? '1' : '0.5'};transition:all 0.2s ease;`;
+    html += `${canConsult ? 'box-shadow:0 0 0 0 rgba(201,168,76,0);' : ''}">`;
+    html += `<div style="display:flex;align-items:center;gap:12px;">`;
+    html += `<span style="font-size:28px;width:36px;text-align:center;">${adv.icon}</span>`;
     html += `<div style="flex:1;">`;
-    html += `<div style="color:${adv.color};font-weight:bold;font-size:13px;">${adv.name}</div>`;
-    html += `<div style="color:#aaa;font-size:11px;">${adv.title}</div>`;
-    html += `<div style="color:#888;font-size:10px;margin-top:2px;">${adv.desc}</div>`;
+    html += `<div style="color:${adv.color};font-weight:bold;font-size:14px;">${adv.name}</div>`;
+    html += `<div style="color:#ccc;font-size:11px;">${adv.title}</div>`;
+    html += `<div style="color:#888;font-size:10px;margin-top:3px;">${adv.desc}</div>`;
     html += `</div>`;
+    html += `<span style="color:${canConsult ? '#ffd700' : '#555'};font-size:16px;">&#9656;</span>`;
     html += `</div>`;
     html += `</div>`;
   }
@@ -205,9 +208,19 @@ function bindAdvisorSelectionEvents() {
       }
       openAdvisor(el.dataset.advisor);
     });
-    // Hover effect
-    el.addEventListener('mouseenter', () => { el.style.borderColor = 'rgba(201,168,76,0.6)'; });
-    el.addEventListener('mouseleave', () => { el.style.borderColor = 'rgba(201,168,76,0.3)'; });
+    // Hover effects — glow + border to make clickability obvious
+    el.addEventListener('mouseenter', () => {
+      el.style.borderColor = 'rgba(201,168,76,0.7)';
+      el.style.background = 'rgba(201,168,76,0.08)';
+      el.style.boxShadow = '0 0 12px rgba(201,168,76,0.15)';
+      el.style.transform = 'translateX(2px)';
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.borderColor = 'rgba(201,168,76,0.3)';
+      el.style.background = 'rgba(30,30,40,0.8)';
+      el.style.boxShadow = 'none';
+      el.style.transform = 'none';
+    });
   });
 }
 
