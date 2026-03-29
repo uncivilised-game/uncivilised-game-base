@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, FACTIONS, FACTION_TRAITS, TILE_IMPROVEMENTS, ZOC_EXEMPT_CLASSES, UNIT_CLASS_TERRAIN_MODS } from './constants.js';
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
@@ -167,6 +167,9 @@ function computeMoveRange() {
 
   // ZOC: check if unit starts in enemy ZOC
   const unitStartsInZOC = isInEnemyZOC(unit.col, unit.row, unit.owner);
+  const ut = UNIT_TYPES[unit.type];
+  const unitClass = ut ? ut.class : null;
+  const classMods = unitClass ? UNIT_CLASS_TERRAIN_MODS[unitClass] : null;
 
   while (queue.length > 0) {
     const cur = queue.shift();
@@ -174,18 +177,20 @@ function computeMoveRange() {
     const neighbors = getHexNeighbors(cur.col, cur.row);
     for (const nb of neighbors) {
       const tile = game.map[nb.row][nb.col];
-      const cost = getTileMoveCost(tile);
+      const cost = getTileMoveCost(tile, unitClass);
       if (cost >= 99) continue;
       // Civ-style movement rules:
       // - Flat terrain (cost 1): deduct 1 MP, keep moving
       // - Rough terrain (cost 2+: hills, woods, marsh, rainforest):
       //   uses ALL remaining movement points (can always enter with 1+ MP)
+      //   UNLESS the unit class has ignoreRoughPenalty (e.g. scouts)
       // - Roads halve cost (0.5), always allow continued movement
       // - River crossing: uses ALL remaining MP (unless road bridge on both sides)
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRoughTerrain = cost >= 2;
-      let remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      const ignoreRough = classMods && classMods.ignoreRoughPenalty;
+      let remaining = (isRiverCross || (isRoughTerrain && !ignoreRough)) ? 0 : (cur.move - cost);
 
       // Zone of Control: entering an enemy ZOC hex ends movement
       const nbInZOC = isInEnemyZOC(nb.col, nb.row, unit.owner);
@@ -199,7 +204,6 @@ function computeMoveRange() {
       const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
       if (blockingUnit) continue;
       // Civilian units can't enter enemy city tiles
-      const ut = UNIT_TYPES[unit.type];
       if (ut && ut.class === 'civilian') {
         const isEnemyCity = Object.entries(game.factionCities).some(([, fc]) => fc.col === nb.col && fc.row === nb.row)
           || (game.aiFactionCities && Object.values(game.aiFactionCities).some(cities =>
@@ -230,6 +234,9 @@ function computeRiverCrossings() {
   const visited = new Map();
   const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft, crossedRiver: false }];
   visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
+  const rut = UNIT_TYPES[unit.type];
+  const rUnitClass = rut ? rut.class : null;
+  const rClassMods = rUnitClass ? UNIT_CLASS_TERRAIN_MODS[rUnitClass] : null;
 
   while (queue.length > 0) {
     const cur = queue.shift();
@@ -237,12 +244,13 @@ function computeRiverCrossings() {
     const neighbors = getHexNeighbors(cur.col, cur.row);
     for (const nb of neighbors) {
       const tile = game.map[nb.row][nb.col];
-      const cost = getTileMoveCost(tile);
+      const cost = getTileMoveCost(tile, rUnitClass);
       if (cost >= 99) continue;
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRoughTerrain = cost >= 2;
-      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      const rIgnoreRough = rClassMods && rClassMods.ignoreRoughPenalty;
+      const remaining = (isRiverCross || (isRoughTerrain && !rIgnoreRough)) ? 0 : (cur.move - cost);
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
@@ -422,6 +430,9 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
   const startKey = `${fromCol},${fromRow}`;
   visited.set(startKey, unit.moveLeft);
   parents.set(startKey, null);
+  const mpUt = UNIT_TYPES[unit.type];
+  const mpClass = mpUt ? mpUt.class : null;
+  const mpMods = mpClass ? UNIT_CLASS_TERRAIN_MODS[mpClass] : null;
 
   while (queue.length > 0) {
     const cur = queue.shift();
@@ -429,13 +440,14 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
     const neighbors = getHexNeighbors(cur.col, cur.row);
     for (const nb of neighbors) {
       const tile = game.map[nb.row][nb.col];
-      const cost = getTileMoveCost(tile);
+      const cost = getTileMoveCost(tile, mpClass);
       if (cost >= 99) continue;
       // River crossing uses all remaining MP (unless road bridge)
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
       const isRough = cost >= 2;
-      let remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+      const mpIgnoreRough = mpMods && mpMods.ignoreRoughPenalty;
+      let remaining = (isRiverCross || (isRough && !mpIgnoreRough)) ? 0 : (cur.move - cost);
 
       // ZOC: entering enemy ZOC ends movement
       if (isInEnemyZOC(nb.col, nb.row, unit.owner)) {

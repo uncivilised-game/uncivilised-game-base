@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS, UNIT_CLASS_TERRAIN_MODS } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -712,13 +712,21 @@ function getTileYields(tile) {
   return { food, prod, gold };
 }
 
-function getTileMoveCost(tile) {
-  // Roads halve movement cost (min 0.5)
+function getTileMoveCost(tile, unitClass) {
+  const mods = unitClass ? UNIT_CLASS_TERRAIN_MODS[unitClass] : null;
+  // Roads halve movement cost (min 0.5), further modified by unit class
   if (tile.road) {
     const baseCost = getTileBaseMoveCost(tile);
-    return Math.max(0.5, baseCost * 0.5);
+    let roadCost = Math.max(0.5, baseCost * 0.5);
+    if (mods && mods.road !== 1) roadCost = Math.max(0.5, roadCost * mods.road);
+    return roadCost;
   }
-  return getTileBaseMoveCost(tile);
+  const base = getTileBaseMoveCost(tile);
+  if (base >= 99 || !mods) return base;
+  // Apply rough/flat modifier
+  const isRough = base >= 2;
+  const mod = isRough ? mods.rough : mods.flat;
+  return Math.max(1, Math.round(base * mod * 10) / 10);
 }
 
 function getTileBaseMoveCost(tile) {

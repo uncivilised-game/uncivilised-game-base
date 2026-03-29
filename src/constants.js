@@ -68,6 +68,25 @@ export let UNIT_TYPES = {
 };
 
 // ============================================
+// UNIT CLASS TERRAIN MODIFIERS
+// ============================================
+// Per-class multipliers applied to terrain movement costs.
+// < 1 = faster through that terrain, > 1 = slower, 0 = ignore terrain penalty entirely.
+// 'flat' applies to base cost-1 tiles (grassland, plains, desert, etc.).
+// 'rough' applies to features with cost >= 2 (hills, woods, marsh, rainforest).
+// 'road' applies when moving on roads.
+export const UNIT_CLASS_TERRAIN_MODS = {
+  recon:    { flat: 1, rough: 1, road: 1, ignoreRoughPenalty: true },  // Scouts ignore rough terrain "all moves" penalty
+  melee:    { flat: 1, rough: 1, road: 1, ignoreRoughPenalty: false },
+  ranged:   { flat: 1, rough: 1, road: 1, ignoreRoughPenalty: false },
+  'anti-cav': { flat: 1, rough: 1, road: 1, ignoreRoughPenalty: false },
+  cavalry:  { flat: 1, rough: 1.5, road: 1, ignoreRoughPenalty: false }, // Cavalry slower in rough terrain
+  civilian: { flat: 1, rough: 1, road: 0.5, ignoreRoughPenalty: false }, // Workers/settlers faster on roads
+  siege:    { flat: 1, rough: 1.5, road: 1, ignoreRoughPenalty: false }, // Siege slow in rough terrain
+  naval:    { flat: 99, rough: 99, road: 99, ignoreRoughPenalty: false }, // Naval can't go on land
+};
+
+// ============================================
 // ZONE OF CONTROL — civilian units don't project ZOC (but are still affected by it)
 // ============================================
 export const ZOC_EXEMPT_CLASSES = ['civilian'];
