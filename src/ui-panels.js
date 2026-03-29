@@ -436,6 +436,7 @@ function renderUnitsPanel() {
   const container = document.getElementById('units-options');
   if (!container) return;
   container.innerHTML = '';
+  const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
 
   const playerUnits = game.units.filter(u => u.owner === 'player');
 
@@ -478,7 +479,7 @@ function renderUnitsPanel() {
     const needsBarracks = !['scout', 'warrior', 'slinger', 'worker', 'settler'].includes(typeId);
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !prodBusy && !needsPop;
-    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : prodBusy ? 'Production busy' : '';
+    const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : prodBusy ? 'Production busy' : needsPop ? 'Requires population 2,000+' : '';
 
     const div = document.createElement('div');
     div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
