@@ -136,8 +136,16 @@ function calculateCityAmenities(events) {
 
 let _processingTurn = false;
 
+function continueAfterVictory() {
+  game.gameOver = false;
+  game.postVictoryPlay = true;
+  document.getElementById('game-over').style.display = 'none';
+  const btn = document.getElementById('btn-end-turn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
+
 function endTurn() {
-  if (!game || game.turn > MAX_TURNS || game.gameOver) return;
+  if (!game || (game.turn > MAX_TURNS && !game.postVictoryPlay) || game.gameOver) return;
   if (_processingTurn) return; // prevent double-click / re-entrance
   _processingTurn = true;
   markVisibilityDirty();
@@ -151,27 +159,12 @@ function endTurn() {
 
   const events = [];
 
-  // --- Auto-discover factions whose cities/units are in revealed tiles ---
-  discoverVisibleFactions();
-
-  // --- Process AI first ---
-  processAITurns();
-
-  // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
-  processZOCCaptures();
-
-  // --- AI Wonder Race production ---
-  processAIWonderTurns();
-
-  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
-  resetTurnActions();
-  processAIDiplomacy();
-  processAITradeIncome();
-
   // --- Reset player unit move points and process waypoints ---
+  // Done BEFORE AI processing so an AI error can't block player movement reset
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
+    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
     unit.moveLeft = ut.movePoints;
     unit.hasAttackedThisTurn = false;
 
@@ -190,7 +183,7 @@ function endTurn() {
       } else if (unit.fortified) {
         // Fortified: +10 HP
         healAmount = 10;
-      } else if (unit.moveLeft === ut.movePoints) {
+      } else if (didIdleLastTurn) {
         // Didn't move last turn (full moves remaining means they were idle): +5 HP
         healAmount = 5;
       }
@@ -220,6 +213,27 @@ function endTurn() {
       }
     }
   }
+
+  // --- Auto-discover factions whose cities/units are in revealed tiles ---
+  discoverVisibleFactions();
+
+  // --- Process AI (wrapped so failures don't block player turn) ---
+  try {
+    processAITurns();
+  } catch (e) { console.error('Error in processAITurns:', e); }
+  try {
+    processZOCCaptures();
+  } catch (e) { console.error('Error in processZOCCaptures:', e); }
+  try {
+    processAIWonderTurns();
+  } catch (e) { console.error('Error in processAIWonderTurns:', e); }
+
+  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
+  resetTurnActions();
+  try {
+    processAIDiplomacy();
+    processAITradeIncome();
+  } catch (e) { console.error('Error in AI diplomacy:', e); }
 
   // --- Unit maintenance costs ---
   let totalMaint = 0;
@@ -1020,17 +1034,23 @@ function showGameOver(victory) {
     <div class="summary-stat"><span class="summary-label">Technologies</span><span class="summary-value">${game.techs.length}/${TECHNOLOGIES.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Buildings</span><span class="summary-value">${game.buildings.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Factions Eliminated</span><span class="summary-value">${game.factionsEliminated || 0}</span></div>
-    <div style="text-align:center;margin-top:12px"><button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button></div>
+    <div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center">
+      <button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button>
+      <button id="btn-continue-after-victory" class="btn btn-primary" style="font-size:12px;padding:6px 14px">\u25B6 Continue Playing</button>
+    </div>
   `;
   closeAllPanels();
   document.getElementById('game-over').style.display = 'block';
 
-  // Submit to leaderboard — use saved username or generate anonymous name
-  const savedUsername = safeStorage.getItem('uncivilised_username');
-  const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
-  submitToLeaderboard(playerName, victory);
+  // Submit to leaderboard — skip if already submitted during post-victory play
+  if (!game.postVictoryPlay) {
+    const savedUsername = safeStorage.getItem('uncivilised_username');
+    const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
+    submitToLeaderboard(playerName, victory);
+  }
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
+  document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
 }
 
-export { endTurn, showTurnSummary, showGameOver };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory };

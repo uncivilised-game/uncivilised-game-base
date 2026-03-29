@@ -30,13 +30,12 @@ jobs:
         run: |
           PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
           echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
-          echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
           echo "base=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout base repo
+      - name: Checkout PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.pr.outputs.ref }}
+          ref: refs/pull/${{ steps.pr.outputs.number }}/head
           fetch-depth: 0
 
       - name: Checkout diplomacy repo
