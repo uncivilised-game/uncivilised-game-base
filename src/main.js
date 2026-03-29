@@ -20,7 +20,7 @@ import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './r
 import { initInputHandlers, clampCamera, zoomAtCenter, panCameraTo } from './input.js';
 import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, handleHexClick, applyPromotion, computeMoveRange, computeAttackRange, moveUnitTo, placeFactionCities } from './units.js';
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
-import { endTurn, showTurnSummary, showGameOver } from './turn.js';
+import { endTurn, showTurnSummary, showGameOver, continueAfterVictory } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
 import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded, registerTradeRouteCallback } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
