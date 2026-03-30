@@ -51,8 +51,7 @@ export const TERRAIN_FEATURES = {
   floodplains:{ name: 'Floodplains',food: 3, prod: 0, gold: 0, moveCost: 0, color: 'rgba(100,160,60,0.2)' },
 };
 
-// UNIT_TYPES is `let` because the game mod system can add new unit types at runtime
-export let UNIT_TYPES = {
+export const UNIT_TYPES = {
   scout:     { name: 'Scout',         cost: 15, combat: 10, rangedCombat: 0, range: 0, movePoints: 3, icon: '👁', class: 'recon',    desc: 'Fast explorer, weak in combat' },
   warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔', class: 'melee',    desc: 'Basic melee infantry' },
   slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '◎', class: 'ranged',   desc: 'Cheap ranged unit' },
@@ -105,8 +104,7 @@ export const RESOURCES = {
   cotton:   { name: 'Cotton',   icon: '\u2055', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
 };
 
-// BUILDINGS is `let` because the game mod system can add new buildings at runtime
-export let BUILDINGS = [
+export const BUILDINGS = [
   { id: 'granary',     name: 'Granary',       cost: 40,  desc: '+2 Food per turn', effect: { food: 2 } },
   { id: 'market',      name: 'Market',        cost: 50,  desc: '+3 Gold per turn', effect: { gold: 3 } },
   { id: 'barracks',    name: 'Barracks',      cost: 45,  desc: '+3 Military, unlock units', effect: { military: 3 } },
