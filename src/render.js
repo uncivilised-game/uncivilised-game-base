@@ -980,10 +980,10 @@ function render() {
     if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
       // New painterly sprite sheet — draw first frame (256x256) from idle strip
       const frameSize = newSprite.naturalHeight;
-      const drawSize = 28;
+      const drawSize = 56;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(sx, uy, 13, 0, Math.PI * 2);
+      ctx.arc(sx, uy, 27, 0, Math.PI * 2);
       ctx.clip();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
