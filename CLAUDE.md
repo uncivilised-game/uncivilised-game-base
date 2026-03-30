@@ -169,6 +169,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/deploy.yml` — triggers on push to `main` or `devel`. Checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
 - `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/conviction-autofix.yml` — runs twice daily (10am/10pm UTC), automatically implements top critical/high priority conviction issues. Uses `autofix-in-progress` and `autofix-attempted` labels to prevent overlap. Max 2 issues per run.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
