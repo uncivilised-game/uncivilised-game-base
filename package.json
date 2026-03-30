@@ -7,7 +7,8 @@
     "build": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
     "dev": "bash dev.sh",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
@@ -22,6 +23,7 @@
   },
   "homepage": "https://github.com/jamieoutlierV/uncivilised-game#readme",
   "devDependencies": {
-    "esbuild": "^0.27.4"
+    "esbuild": "^0.27.4",
+    "vitest": "^4.1.2"
   }
 }
