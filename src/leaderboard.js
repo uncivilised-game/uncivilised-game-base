@@ -427,7 +427,7 @@ function updateEnvoyUI() {
     strongEl.textContent = envoys;
     strongEl.nextSibling.nodeValue = '/' + max;
     // subtle indication when exhaused
-    strongEl.style.opacity = envoys === 0 ? '0.5' : '1';
+    el.style.opacity = envoys === 0 ? '0.5' : '1';
   }
 }
 
