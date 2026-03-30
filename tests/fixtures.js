@@ -79,10 +79,9 @@ export function makeCity(overrides = {}) {
 // ── Minimal game state ──
 
 /**
- * Creates a minimal game state object with a small map.
- * The map defaults to 60x40 (matching MAP_COLS/MAP_ROWS) filled with grassland.
- * Pass mapSize: { cols, rows } to override (but note: hex functions use the
- * constants directly, so a smaller map may cause wrapping issues in some tests).
+ * Creates a minimal game state object with a 60x40 map (matching MAP_COLS/MAP_ROWS)
+ * filled with grassland. The map size is fixed because hex functions use the
+ * constants directly for toroidal wrapping.
  */
 export function makeGameState(overrides = {}) {
   const cols = MAP_COLS;

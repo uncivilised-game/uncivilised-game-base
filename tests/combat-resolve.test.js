@@ -1,14 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { UNIT_TYPES } from '../src/constants.js';
-import { setupGameState, makeUnit, makeTile } from './fixtures.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { setupGameState, makeUnit } from './fixtures.js';
 
-// markVisibilityDirty is used as an unimported function in combat.js
-// (works in browser because esbuild bundles into single IIFE scope)
-// We need to provide it as a global for tests.
-globalThis.markVisibilityDirty = () => {};
-
-// Dynamic import after global is set
-const { resolveCombat } = await import('../src/combat.js');
+import { resolveCombat } from '../src/combat.js';
 
 describe('resolveCombat', () => {
   let state;
@@ -125,8 +118,8 @@ describe('resolveCombat', () => {
     const defender = makeUnit({ id: 2, col: 6, row: 5, type: 'warrior', owner: 'emperor_valerian' });
     state.units = [attacker, defender];
 
-    resolveCombat(attacker, defender);
-    if (!attacker.hp <= 0) {
+    const result = resolveCombat(attacker, defender);
+    if (!result.attackerDied) {
       expect(attacker.xp).toBe(10);
     }
   });

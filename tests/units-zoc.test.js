@@ -28,7 +28,7 @@ describe('isInEnemyZOC', () => {
     expect(isInEnemyZOC(10, 10, 'player')).toBe(false);
   });
 
-  it('returns false when adjacent to civilian unit (workers dont project ZOC)', () => {
+  it('returns false when adjacent to civilian unit (workers don\'t project ZOC)', () => {
     setupGameState({
       units: [makeUnit({ id: 1, col: 11, row: 10, type: 'worker', owner: 'emperor_valerian' })],
     });
