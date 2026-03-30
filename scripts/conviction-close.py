@@ -406,8 +406,8 @@ def main():
     unmatched = [i for i in issues if i["number"] not in tier1]
     tier2 = tier2_match(unmatched, prs)
 
-    # Ensure label exists before closing
-    if tier1 or tier2:
+    # Ensure label exists before closing (skip in dry-run to stay read-only)
+    if (tier1 or tier2) and not DRY_RUN:
         ensure_label()
 
     # Close matched issues — only if the fix has reached main
