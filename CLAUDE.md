@@ -126,6 +126,7 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | Script | Purpose |
 |--------|---------|
 | `scripts/conviction-triage.py` | Auto-triages new GitHub issues with conviction scoring |
+| `scripts/conviction-close.py` | Nightly auto-close of conviction issues resolved by merged PRs |
 | `scripts/newsletter.py` | Sends newsletter emails to active players via Resend API |
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
@@ -170,6 +171,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/conviction-autofix.yml` — runs twice daily (10am/10pm UTC), automatically implements top critical/high priority conviction issues. Uses `autofix-in-progress` and `autofix-attempted` labels to prevent overlap. Max 2 issues per run.
+- `.github/workflows/conviction-close.yml` — nightly (6am UTC) scan that auto-closes conviction issues resolved by merged PRs. Uses direct PR cross-referencing + Claude semantic matching. Supports `dry_run` input via manual dispatch.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
