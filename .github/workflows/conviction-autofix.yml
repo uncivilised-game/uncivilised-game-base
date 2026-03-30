@@ -6,6 +6,10 @@ on:
     - cron: '0 10,22 * * *'
   workflow_dispatch: # manual trigger
 
+concurrency:
+  group: conviction-autofix
+  cancel-in-progress: false
+
 jobs:
   find-issues:
     runs-on: ubuntu-latest
@@ -100,7 +104,6 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DIPLOMACY_REPO_TOKEN: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
@@ -135,7 +138,7 @@ jobs:
 
       - name: Setup diplomacy CLI auth
         run: |
-          printf '#!/bin/sh\nGH_TOKEN="$DIPLOMACY_REPO_TOKEN" gh "$@"\n' > /usr/local/bin/gh-diplomacy
+          printf '#!/bin/sh\nGH_TOKEN="%s" gh "$@"\n' "$DIPLOMACY_REPO_TOKEN" > /usr/local/bin/gh-diplomacy
           chmod +x /usr/local/bin/gh-diplomacy
 
       - name: Check auth method
@@ -154,7 +157,7 @@ jobs:
         run: |
           ISSUE_NUM="${{ matrix.issue.number }}"
           echo "Implementing issue #${ISSUE_NUM}"
-          TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title' | tr -d '\n' | head -c 200)
+          TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title' | tr -d '\n' | sed 's/[^a-zA-Z0-9 _.,:;!?()\-\/]//g' | head -c 200)
           echo "number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
           {
             echo "title<<TITLE_EOF"
