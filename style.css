@@ -1378,7 +1378,7 @@ a:hover { text-decoration: underline; }
 /* ---- Mod Banner ---- */
 #mod-banner {
   position: absolute;
-  top: -80px;
+  top: -110px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
@@ -1389,7 +1389,7 @@ a:hover { text-decoration: underline; }
   top: 50px !important;
 }
 .mod-banner-hide {
-  top: -80px !important;
+  top: -110px !important;
 }
 .mod-banner-content {
   display: flex;
