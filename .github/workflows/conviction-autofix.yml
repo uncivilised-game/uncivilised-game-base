@@ -96,6 +96,7 @@ jobs:
     needs: find-issues
     if: needs.find-issues.outputs.has_issues == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       matrix:
         issue: ${{ fromJSON(needs.find-issues.outputs.matrix) }}
@@ -170,6 +171,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          max_turns: 100
           prompt: |
             You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
 
@@ -232,6 +234,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          max_turns: 100
           prompt: |
             You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
 
