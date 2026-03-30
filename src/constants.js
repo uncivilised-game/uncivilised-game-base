@@ -53,17 +53,17 @@ export const TERRAIN_FEATURES = {
 
 export const UNIT_TYPES = {
   scout:     { name: 'Scout',         cost: 15, combat: 10, rangedCombat: 0, range: 0, movePoints: 3, icon: '👁', class: 'recon',    desc: 'Fast explorer, weak in combat' },
-  warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔', class: 'melee',    desc: 'Basic melee infantry' },
-  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '◎', class: 'ranged',   desc: 'Cheap ranged unit' },
+  warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔️', class: 'melee',    desc: 'Basic melee infantry' },
+  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '🎯', class: 'ranged',   desc: 'Cheap ranged unit' },
   archer:    { name: 'Archer',        cost: 30, combat: 15, rangedCombat: 25,range: 2, movePoints: 2, icon: '🏹', class: 'ranged',   desc: 'Strong ranged attacker, range 2' },
   spearman:  { name: 'Spearman',      cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 2, icon: '🔱', class: 'anti-cav', desc: '+10 vs cavalry units' },
-  chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐎', class: 'cavalry',  desc: 'Powerful mobile unit' },
-  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', buildCharges: 2, desc: 'Builds improvements on tiles (2 charges)' },
+  chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐴︎', class: 'cavalry',  desc: 'Powerful mobile unit' },
+  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', desc: 'Builds improvements on tiles (2 charges)', buildCharges: 2 },
   settler:   { name: 'Settler',       cost: 60, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '🏕', class: 'civilian', desc: 'Founds new cities' },
-  horseman:  { name: 'Horseman', cost: 45, combat: 30, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast cavalry unit, 3 moves' },
-  ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
-  galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
-  phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
+  horseman:  { name: 'Horseman',      cost: 45, combat: 30, rangedCombat: 0, range: 0, movePoints: 3, icon: '🐎', class: 'cavalry',  desc: 'Fast cavalry unit, 3 moves' },
+  ballista:  { name: 'Ballista',      cost: 50, combat: 10, rangedCombat: 30,range: 2, movePoints: 1, icon: '☄️', class: 'siege',    desc: 'Siege engine, +50% vs cities' },
+  galley:    { name: 'Galley',        cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '⛵︎', class: 'naval',    desc: 'Coastal patrol vessel' },
+  phalanx:   { name: 'Phalanx',       cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '🛡️', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
 };
 
 // ============================================
