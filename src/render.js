@@ -981,10 +981,10 @@ function render() {
       // New painterly sprite sheet — draw first frame (256x256) from idle strip
       // Centre on hex (sx, sy) rather than offset uy so sprite fills the hex
       const frameSize = newSprite.naturalHeight;
-      const drawSize = 56;
+      const drawSize = 42;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(sx, sy, 27, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 20, 0, Math.PI * 2);
       ctx.clip();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
