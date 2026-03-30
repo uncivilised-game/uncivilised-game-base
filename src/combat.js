@@ -3,7 +3,7 @@ import { game, CITY_WALL_DEFAULTS, deathMarkers } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
 import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
-import { render } from './render.js';
+import { render, markVisibilityDirty } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
 import { deselectUnit, autoSelectNext, isInEnemyZOC } from './units.js';

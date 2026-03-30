@@ -83,6 +83,13 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 - `npm run watch` — rebuild on file changes
 - `npm run dev` — watch + serve via `server.py`
 
+**Testing:**
+- `npm test` — run the full test suite (Vitest, ~170 tests)
+- `npm run test:watch` — re-run tests on file changes
+- **Always run `npm test` before committing, pushing, or creating a PR.** Tests must pass. If tests fail, fix the issue before proceeding.
+- Tests live in `tests/` with fixtures in `tests/fixtures.js` and browser global stubs in `tests/setup.js`
+- Test naming: use `test()` (not `it()`), add `()` after function names in `describe()`, use dummy faction names (`faction_a`, `faction_b`) not real ones
+
 ## Backend (Python FastAPI)
 
 Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel production). The production version has additional endpoints for auth, feedback, and admin.
@@ -140,7 +147,7 @@ Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `di
 
 ## Key Constants & Config
 
-- `MAP_COLS = 60`, `MAP_ROWS = 40` — hex grid dimensions
+- `MAP_COLS = 60`, `MAP_ROWS = 40` — hex grid dimensions (cylindrical geometry: east-west wraps, north-south does not)
 - `HEX_SIZE = 36` — hex radius in pixels
 - `MAX_TURNS = 100` — game length
 - `GAME_VERSION = 5` — save format version
