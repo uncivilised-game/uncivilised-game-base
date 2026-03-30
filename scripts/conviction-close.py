@@ -156,7 +156,6 @@ CLOSE_KEYWORDS = re.compile(
     r"(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#(\d+)",
     re.IGNORECASE,
 )
-ISSUE_REF = re.compile(r"#(\d+)")
 BRANCH_REF = re.compile(r"^fix/(\d+)")
 
 
