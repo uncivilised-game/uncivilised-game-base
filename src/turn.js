@@ -6,6 +6,7 @@ import { processAITurns, processBarbarianTurns, processAICommitments } from './d
 import { processImprovements, getImprovementYields } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
 import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
+import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
 import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
@@ -135,9 +136,42 @@ function calculateCityAmenities(events) {
 }
 
 let _processingTurn = false;
+let _hasReportedTurnError = false; // rate-limit: one auto-report per game session
+
+function reportTurnError(section, turn, error) {
+  if (_hasReportedTurnError) return;
+  _hasReportedTurnError = true;
+  try {
+    fetch(API + '/api/feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-visitor-id': safeStorage.getItem('uncivilised_visitor_id') || '',
+      },
+      body: JSON.stringify({
+        message: `[AUTO] Turn ${turn} error in "${section}": ${String(error)}. Stack: ${error?.stack?.split?.('\n')?.slice(0, 4)?.join(' | ') || 'N/A'}`,
+        visitor_id: safeStorage.getItem('uncivilised_visitor_id') || null,
+        player_name: safeStorage.getItem('uncivilised_username') || null,
+        game_state: {
+          turn, gold: game.gold, military: game.military,
+          population: game.population, score: game.score,
+          cities: game.cities?.length, units: game.units?.filter(u => u.owner === 'player')?.length,
+        },
+      }),
+    }).catch(() => {}); // fire-and-forget
+  } catch (_) { /* never let reporting itself break anything */ }
+}
+
+function continueAfterVictory() {
+  game.gameOver = false;
+  game.postVictoryPlay = true;
+  document.getElementById('game-over').style.display = 'none';
+  const btn = document.getElementById('btn-end-turn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
 
 function endTurn() {
-  if (!game || game.turn > MAX_TURNS || game.gameOver) return;
+  if (!game || (game.turn > MAX_TURNS && !game.postVictoryPlay) || game.gameOver) return;
   if (_processingTurn) return; // prevent double-click / re-entrance
   _processingTurn = true;
   markVisibilityDirty();
@@ -151,27 +185,12 @@ function endTurn() {
 
   const events = [];
 
-  // --- Auto-discover factions whose cities/units are in revealed tiles ---
-  discoverVisibleFactions();
-
-  // --- Process AI first ---
-  processAITurns();
-
-  // --- Zone of Control: capture unescorted civilians in enemy ZOC ---
-  processZOCCaptures();
-
-  // --- AI Wonder Race production ---
-  processAIWonderTurns();
-
-  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
-  resetTurnActions();
-  processAIDiplomacy();
-  processAITradeIncome();
-
   // --- Reset player unit move points and process waypoints ---
+  // Done BEFORE AI processing so an AI error can't block player movement reset
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
+    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
     unit.moveLeft = ut.movePoints;
     unit.hasAttackedThisTurn = false;
 
@@ -190,7 +209,7 @@ function endTurn() {
       } else if (unit.fortified) {
         // Fortified: +10 HP
         healAmount = 10;
-      } else if (unit.moveLeft === ut.movePoints) {
+      } else if (didIdleLastTurn) {
         // Didn't move last turn (full moves remaining means they were idle): +5 HP
         healAmount = 5;
       }
@@ -221,6 +240,32 @@ function endTurn() {
     }
   }
 
+  // --- Auto-discover factions whose cities/units are in revealed tiles ---
+  discoverVisibleFactions();
+
+  // --- Process AI (wrapped so failures don't block player turn) ---
+  try {
+    processAITurns();
+  } catch (e) { console.error('Error in processAITurns:', e); }
+  try {
+    processZOCCaptures();
+  } catch (e) { console.error('Error in processZOCCaptures:', e); }
+  try {
+    processAIWonderTurns();
+  } catch (e) { console.error('Error in processAIWonderTurns:', e); }
+
+  // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
+  resetTurnActions();
+  try {
+    processAIDiplomacy();
+    processAITradeIncome();
+  } catch (e) { console.error('Error in AI diplomacy:', e); }
+
+  // --- Player turn processing (resilient — errors won't block turn advancement) ---
+  let _turnSection = '';
+  try {
+
+  _turnSection = 'income';
   // --- Unit maintenance costs ---
   let totalMaint = 0;
   for (const unit of game.units) {
@@ -253,10 +298,12 @@ function endTurn() {
   }
   if (tradeGold > 0) { game.gold += tradeGold; events.push('Trade: +' + tradeGold + ' Gold'); }
 
+  _turnSection = 'amenities';
   // --- Per-City Amenity System ---
   calculateCityAmenities(events);
 
 
+  _turnSection = 'resources';
   // --- Resource bonuses from territory (respects city border radius) ---
   let resBonus = { food: 0, gold: 0, prod: 0 };
   for (const city of game.cities) {
@@ -281,6 +328,7 @@ function endTurn() {
   // --- Government cooldown ---
   if (game.governmentCooldown > 0) game.governmentCooldown--;
 
+  _turnSection = 'population';
   // --- Food & Population (per-city growth) ---
   for (const city of game.cities) {
     if (!city.food) city.food = 0;
@@ -309,6 +357,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'walls';
   // --- Wall repair: +5 HP per turn if not attacked for 2 turns ---
   for (const city of game.cities) {
     // Initialize wall fields if building walls was just completed
@@ -352,9 +401,11 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'improvements';
   // --- Process tile improvements ---
   processImprovements();
 
+  _turnSection = 'production';
   // --- Production (Buildings OR Units — one at a time) ---
   let prodThisTurn = game.productionPerTurn + resBonus.prod;
   // Government production bonuses
@@ -480,6 +531,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'research';
   // --- Research ---
   if (game.currentResearch) {
     game.researchProgress += game.sciencePerTurn;
@@ -523,6 +575,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'culture';
   // --- Culture per turn calculation ---
   let cpt = 1; // base
   for (const bid of game.buildings) {
@@ -572,6 +625,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'great_people';
   // --- Great People progression ---
   if (game.greatPeopleProgress) {
     game.greatPeopleProgress.science += game.sciencePerTurn;
@@ -594,12 +648,13 @@ function endTurn() {
   }
 
 
+  _turnSection = 'diplomacy_upkeep';
   // --- Alliance upkeep ---
   for (const [cid, alliance] of Object.entries(game.activeAlliances)) {
     if (game.turn >= alliance.startTurn + alliance.turns) {
       delete game.activeAlliances[cid];
-      addEvent(`Alliance with ${FACTIONS[cid].name} expired`, 'diplomacy');
-      updateReputation(cid, 'alliance_honoured', `Alliance with ${FACTIONS[cid].name} honoured to completion`);
+      addEvent(`Alliance with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
+      updateReputation(cid, 'alliance_honoured', `Alliance with ${FACTIONS[cid]?.name || cid} honoured to completion`);
     }
   }
 
@@ -607,8 +662,8 @@ function endTurn() {
   for (const [cid, deal] of Object.entries(game.tradeDeals)) {
     if (game.turn >= deal.startTurn + deal.duration) {
       delete game.tradeDeals[cid];
-      addEvent(`Trade deal with ${FACTIONS[cid].name} expired`, 'gold');
-      updateReputation(cid, 'trade_deal_honoured', `Trade deal with ${FACTIONS[cid].name} honoured to completion`);
+      addEvent(`Trade deal with ${FACTIONS[cid]?.name || cid} expired`, 'gold');
+      updateReputation(cid, 'trade_deal_honoured', `Trade deal with ${FACTIONS[cid]?.name || cid} honoured to completion`);
       continue;
     }
     // Parse and apply trade effects per turn
@@ -639,8 +694,8 @@ function endTurn() {
     if (game.turn >= pact.startTurn + pact.duration) {
       delete game.defensePacts[cid];
       game.defense = Math.max(0, game.defense - 3);
-      addEvent(`Defense pact with ${FACTIONS[cid].name} expired`, 'diplomacy');
-      updateReputation(cid, 'defense_pact_honoured', `Defense pact with ${FACTIONS[cid].name} honoured`);
+      addEvent(`Defense pact with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
+      updateReputation(cid, 'defense_pact_honoured', `Defense pact with ${FACTIONS[cid]?.name || cid} honoured`);
     }
   }
 
@@ -687,6 +742,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'diplomacy_bonds';
   // --- Marriage bond upkeep ---
   for (const [cid, marriage] of Object.entries(game.marriages)) {
     // Marriages give ongoing +1 culture per turn
@@ -717,8 +773,13 @@ function endTurn() {
     if (game.activeAlliances[cid]) game.relationships[cid] += 2;
   }
 
+  _turnSection = 'faction_systems';
   // --- Update faction AI economies ---
   updateFactionStats();
+
+  // --- Embassy turn processing (gossip accumulation) ---
+  ensureEmbassyState();
+  processEmbassyTurn();
 
   // --- Faction intelligence reports (every 10 turns) ---
   generateFactionIntelReports();
@@ -733,7 +794,7 @@ function endTurn() {
   for (const [cid, ob] of Object.entries(game.openBorders || {})) {
     if (game.turn >= ob.startTurn + ob.duration) {
       delete game.openBorders[cid];
-      addEvent(`Open borders with ${FACTIONS[cid].name} expired`, 'diplomacy');
+      addEvent(`Open borders with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
     }
   }
 
@@ -741,7 +802,7 @@ function endTurn() {
   for (const [cid, emb] of Object.entries(game.embargoes || {})) {
     if (game.turn >= emb.startTurn + emb.duration) {
       delete game.embargoes[cid];
-      addEvent(`Embargo against ${FACTIONS[cid].name} lifted`, 'diplomacy');
+      addEvent(`Embargo against ${FACTIONS[cid]?.name || cid} lifted`, 'diplomacy');
     } else {
       // Embargoes reduce target's trade income (simulated)
       game.relationships[cid] = (game.relationships[cid] || 0) - 2;
@@ -752,7 +813,7 @@ function endTurn() {
   for (const [cid, cf] of Object.entries(game.ceasefires || {})) {
     if (game.turn >= cf.startTurn + cf.duration) {
       delete game.ceasefires[cid];
-      addEvent(`Ceasefire with ${FACTIONS[cid].name} expired`, 'diplomacy');
+      addEvent(`Ceasefire with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
     } else {
       // Ceasefire slowly improves relations
       game.relationships[cid] = (game.relationships[cid] || 0) + 1;
@@ -769,7 +830,7 @@ function endTurn() {
   for (const [cid, nap] of Object.entries(game.nonAggressionPacts || {})) {
     if (game.turn >= nap.startTurn + nap.duration) {
       delete game.nonAggressionPacts[cid];
-      addEvent(`Non-aggression pact with ${FACTIONS[cid].name} expired`, 'diplomacy');
+      addEvent(`Non-aggression pact with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
     }
   }
 
@@ -792,6 +853,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'auto_management';
   // --- Auto-research: pick next tech from goal path, or cheapest ---
   if (!game.currentResearch) {
     // Check tech goal path first
@@ -891,6 +953,7 @@ function endTurn() {
     }
   }
 
+  _turnSection = 'fog_and_score';
   // --- Expand fog around cities and units ---
   for (const city of game.cities) {
     const revealRadius = 5 + Math.floor(game.turn / 15);
@@ -921,11 +984,27 @@ function endTurn() {
     (game.barbarianCamps ? game.barbarianCamps.filter(bc => bc.destroyed).length * 15 : 0)
   );
 
+  _turnSection = 'reputation';
   // --- Reputation decay & contradiction detection ---
   ensureReputationState();
   decayReputation();
   detectContradictions();
 
+  } catch (e) {
+    console.error(`[endTurn] Error in "${_turnSection}" (turn ${game.turn}):`, e);
+    logAction('error', `Turn ${game.turn} processing failed in: ${_turnSection}`, {
+      section: _turnSection, turn: game.turn,
+      error: String(e),
+      stack: e?.stack?.split?.('\n')?.slice(0, 4)?.join(' | '),
+    });
+    // Silently report to feedback endpoint for triage
+    reportTurnError(_turnSection, game.turn, e);
+  }
+
+  // ALWAYS advance the turn — even if processing above errored.
+  // Before this fix, any exception in the ~700 lines above would silently
+  // prevent game.turn++ while AI actions still executed, giving AI factions
+  // extra moves on every failed click (#157).
   game.turn++;
   game.recentEvents = events.map(text => ({ text, turn: game.turn })).concat(game.recentEvents).slice(0, 20);
 
@@ -1020,17 +1099,23 @@ function showGameOver(victory) {
     <div class="summary-stat"><span class="summary-label">Technologies</span><span class="summary-value">${game.techs.length}/${TECHNOLOGIES.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Buildings</span><span class="summary-value">${game.buildings.length}</span></div>
     <div class="summary-stat"><span class="summary-label">Factions Eliminated</span><span class="summary-value">${game.factionsEliminated || 0}</span></div>
-    <div style="text-align:center;margin-top:12px"><button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button></div>
+    <div style="text-align:center;margin-top:12px;display:flex;gap:8px;justify-content:center">
+      <button id="btn-show-leaderboard-end" class="btn btn-secondary" style="font-size:12px;padding:6px 14px">\u{1F3C6} Leaderboard</button>
+      <button id="btn-continue-after-victory" class="btn btn-primary" style="font-size:12px;padding:6px 14px">\u25B6 Continue Playing</button>
+    </div>
   `;
   closeAllPanels();
   document.getElementById('game-over').style.display = 'block';
 
-  // Submit to leaderboard — use saved username or generate anonymous name
-  const savedUsername = safeStorage.getItem('uncivilised_username');
-  const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
-  submitToLeaderboard(playerName, victory);
+  // Submit to leaderboard — skip if already submitted during post-victory play
+  if (!game.postVictoryPlay) {
+    const savedUsername = safeStorage.getItem('uncivilised_username');
+    const playerName = savedUsername || ('Player_' + String(Math.floor(Math.random() * 9000) + 1000));
+    submitToLeaderboard(playerName, victory);
+  }
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
+  document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
 }
 
-export { endTurn, showTurnSummary, showGameOver };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory };

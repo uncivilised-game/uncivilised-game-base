@@ -58,6 +58,8 @@
       </div>
       <div id="username-bar" class="username-bar" style="display:none">
         <span id="username-display" class="username-display"></span>
+        <button id="btn-link-discord" class="btn-username" onclick="linkDiscord()" style="font-size:12px;opacity:0.6;display:none">Link Discord</button>
+        <span id="discord-linked" style="font-size:12px;color:#7289da;display:none"></span>
         <button class="btn-username" onclick="playerSignOut()" style="font-size:12px;opacity:0.6">Sign Out</button>
       </div>
 
@@ -201,6 +203,10 @@
           <span class="action-label">Victory</span>
           <span class="action-key">V</span>
         </button>
+        <button class="action-btn" id="btn-advisor">
+          <span class="action-label">Advisors</span>
+          <span class="action-key">A</span>
+        </button>
       </div>
 
       <!-- Tile Info Panel -->
@@ -279,6 +285,15 @@
           <button class="panel-close" onclick="this.closest('.panel').style.display='none'">&times;</button>
         </div>
         <div id="units-options" class="panel-body"></div>
+      </div>
+
+      <!-- Advisor Chat Panel -->
+      <div id="advisor-panel" class="panel overlay-panel" style="display:none">
+        <div class="panel-header">
+          <h3 id="advisor-title">&#x1F4AC; Royal Advisors</h3>
+          <button class="panel-close" onclick="this.closest('.panel').style.display='none'">&times;</button>
+        </div>
+        <div id="advisor-body" class="panel-body"></div>
       </div>
 
       <!-- Turn Summary -->

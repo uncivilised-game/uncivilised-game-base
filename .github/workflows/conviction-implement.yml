@@ -41,9 +41,9 @@ jobs:
           fetch-depth: 0
           ref: devel
 
-      - name: Checkout diplomacy repo
+      - name: Checkout diplomacy repo (devel branch)
         run: |
-          git clone --depth 1 \
+          git clone --depth 1 --branch devel \
             "https://x-access-token:${DIPLOMACY_REPO_TOKEN}@github.com/uncivilised-game/uncivilised-diplomacy.git" \
             ../uncivilised-diplomacy
 
@@ -181,7 +181,7 @@ jobs:
                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
                - Stage, commit, and push from the base directory using git -C
                - Create a PR using the diplomacy-authenticated CLI:
-                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base main --title "..." --body "..."
+                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
             10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
                 with a link to the diplomacy PR so admins can find it. Use:
@@ -242,7 +242,7 @@ jobs:
                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
                - Stage, commit, and push from the base directory using git -C
                - Create a PR using the diplomacy-authenticated CLI:
-                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base main --title "..." --body "..."
+                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
             10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
                 with a link to the diplomacy PR so admins can find it. Use:

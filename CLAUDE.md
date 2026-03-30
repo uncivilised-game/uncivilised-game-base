@@ -163,6 +163,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - **`main`** → Production (`uncivilized.fun`) — `vercel deploy --prod`
 - **`devel`** → Staging (`staging.uncivilized.fun`) — `vercel deploy` + `vercel alias`
 - Other branches are ignored by CI
+- **Both repos must stay in sync:** `devel` ↔ `devel`, `main` ↔ `main`. When committing to both repos, always target the same branch. PRs in the diplomacy repo should target `devel` (same as base game PRs).
 
 **Workflows:**
 - `.github/workflows/deploy.yml` — triggers on push to `main` or `devel`. Checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.

@@ -20,7 +20,7 @@ import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './r
 import { initInputHandlers, clampCamera, zoomAtCenter, panCameraTo } from './input.js';
 import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, handleHexClick, applyPromotion, computeMoveRange, computeAttackRange, moveUnitTo, placeFactionCities } from './units.js';
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
-import { endTurn, showTurnSummary, showGameOver } from './turn.js';
+import { endTurn, showTurnSummary, showGameOver, continueAfterVictory } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
 import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded, registerTradeRouteCallback } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
@@ -39,6 +39,9 @@ import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFo
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
+import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
+import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './diplomacy-api.js';
+import { establishEmbassy, processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 
 // --- Log diplomacy module status ---
 if (!isDiplomacyLoaded()) {
@@ -59,6 +62,11 @@ window.showLeaderboard = showLeaderboard;
 window.showUsernamePrompt = showUsernamePrompt;
 window.sendFeedback = sendFeedback;
 window.toggleFeedbackChat = toggleFeedbackChat;
+window.switchDiploTab = switchDiploTab;
+window.establishEmbassy = establishEmbassy;
+window.getIntelSummary = getIntelSummary;
+window.openAdvisor = openAdvisor;
+window.sendAdvisorMessage = sendAdvisorMessage;
 window.toggleRankingsDropdown = toggleRankingsDropdown;
 window.togglePanel = togglePanel;
 window.openChat = openChat;
@@ -639,6 +647,82 @@ function playerSignOut() {
   refreshAuthUI();
 }
 
+async function linkDiscord() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username || !accessToken) return;
+
+  // Open tab synchronously (in click handler) to avoid popup blockers
+  const authTab = window.open('about:blank', '_blank');
+  try {
+    const res = await fetch(API + '/api/auth/discord/link', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.authorize_url && data.authorize_url.startsWith('https://discord.com/oauth2/authorize?')) {
+      authTab.location.href = data.authorize_url;
+    } else {
+      authTab.close();
+    }
+  } catch (_) {
+    if (authTab) authTab.close();
+  }
+}
+
+async function unlinkDiscord() {
+  if (!confirm('Unlink your Discord account? You can re-link it later.')) return;
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  if (!username || !accessToken) return;
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/unlink', {
+      method: 'POST',
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.success) refreshAuthUI();
+  } catch (_) {}
+}
+
+async function checkDiscordStatus() {
+  const username = safeStorage.getItem('uncivilised_username');
+  const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  const linkBtn = document.getElementById('btn-link-discord');
+  const linkedEl = document.getElementById('discord-linked');
+  if (!username || !linkBtn || !linkedEl) return;
+
+  // Reset DOM state before async fetch to prevent duplicate buttons
+  linkBtn.style.display = 'none';
+  linkedEl.style.display = 'none';
+  linkedEl.textContent = '';
+
+  try {
+    const res = await fetch(API + '/api/auth/discord/status', {
+      headers: { 'x-player-name': username, 'x-access-token': accessToken },
+    });
+    const data = await res.json();
+    if (data.linked) {
+      linkBtn.style.display = 'none';
+      linkedEl.style.display = 'inline';
+      linkedEl.textContent = '\u{1F3AE} ' + (data.discord_username || '');
+      const unlinkBtn = document.createElement('button');
+      unlinkBtn.className = 'btn-username';
+      unlinkBtn.style.cssText = 'font-size:11px;opacity:0.5;margin-left:4px';
+      unlinkBtn.textContent = 'unlink';
+      unlinkBtn.addEventListener('click', unlinkDiscord);
+      linkedEl.appendChild(unlinkBtn);
+    } else {
+      linkBtn.style.display = 'inline-block';
+      linkedEl.style.display = 'none';
+    }
+  } catch (_) {
+    linkBtn.style.display = 'inline-block';
+    linkedEl.style.display = 'none';
+  }
+}
+
 async function refreshAuthUI() {
   const username = safeStorage.getItem('uncivilised_username');
   const guestBtns = document.getElementById('auth-buttons-guest');
@@ -659,6 +743,7 @@ async function refreshAuthUI() {
   // Signed in — check access
   if (usernameBar) usernameBar.style.display = 'block';
   if (usernameDisplay) usernameDisplay.textContent = username;
+  checkDiscordStatus();
 
   try {
     const res = await fetch(API + '/api/verify-access', {
@@ -736,6 +821,7 @@ window.closeAuthModals = closeAuthModals;
 window.handleSignup = handleSignup;
 window.handleSignin = handleSignin;
 window.playerSignOut = playerSignOut;
+window.linkDiscord = linkDiscord;
 
 // --- Initialization ---
 (async function init() {

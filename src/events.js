@@ -4,6 +4,7 @@ import { hexDistance, getHexNeighbors } from './hex.js';
 import { initFactionStats } from './map.js';
 import { showModBanner } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
+import { onRumourRevealed, getEffectiveIntelLevel } from './embassy.js';
 
 export function addEvent(text, type = '') {
   if (!game) return;
@@ -234,6 +235,8 @@ export function generateFactionIntelReports() {
         for (const rum of rumours) {
           addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
         }
+        persistRumours(rumours);
+        onRumourRevealed(rumours.length);
         showIntelNotification([], rumours);
       }
     }
@@ -247,6 +250,8 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      persistRumours(rumours);
+      onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
     return;
@@ -259,13 +264,9 @@ export function generateFactionIntelReports() {
     const stats = game.factionStats[fid];
     if (!stats || !faction) continue;
 
-    // Detail level depends on relationship
-    let detail = 'minimal'; // hostile: vague info
-    if (rel >= 50) detail = 'full';        // allied: full intel
-    else if (rel >= 20) detail = 'good';   // friendly: detailed
-    else if (rel >= 0) detail = 'basic';   // neutral: basic
-    // Check for intel-sharing agreements
-    if (game.activeAlliances[fid]) detail = 'full';
+    // Detail level: combines relationship, embassies, gossip, and agreements
+    let detail = getEffectiveIntelLevel(fid);
+    // Open borders still provides a small boost
     if (game.openBorders && game.openBorders[fid]) {
       if (detail === 'basic') detail = 'good';
     }
@@ -301,6 +302,7 @@ export function generateFactionIntelReports() {
     for (const rum of rumours) {
       addEvent(`  \u{1F4AC} Rumour: ${rum.text}`, 'diplomacy');
     }
+    if (rumours.length > 0) { persistRumours(rumours); onRumourRevealed(rumours.length); }
     showIntelNotification(reports, rumours);
   } else {
     // Even if no met factions have reports, still try rumours
@@ -310,8 +312,23 @@ export function generateFactionIntelReports() {
       for (const rum of rumours) {
         addEvent(`  \u{1F4AC} ${rum.text}`, 'diplomacy');
       }
+      persistRumours(rumours);
+      onRumourRevealed(rumours.length);
       showIntelNotification([], rumours);
     }
+  }
+}
+
+// ---- Helper: persist rumours into game.rumourQueue for the Diplomacy Rumours tab ----
+function persistRumours(rumours) {
+  if (!game.rumourQueue) game.rumourQueue = [];
+  for (const rum of rumours) {
+    game.rumourQueue.push({
+      text: rum.text || rum,
+      fid: rum.fid || null,
+      revealTurn: game.turn,
+      type: 'rumour',
+    });
   }
 }
 
@@ -518,6 +535,8 @@ window.payForRumourInfo = function(factionId, rumourIdx) {
   ];
   const detail = details[Math.floor(Math.random() * details.length)];
   addEvent('\u{1F4B0} Paid 15g for intelligence: ' + detail, 'diplomacy');
+  persistRumours([{ fid: factionId, text: '\u{1F4B0} Paid informant: ' + detail }]);
+  onRumourRevealed(1); // Paid intel feeds gossip network
   const banner = document.getElementById('intel-banner');
   if (banner) banner.style.display = 'none';
   showModBanner('\u{1F50D}', detail, 'Paid informant');
@@ -542,6 +561,8 @@ window.corroborateRumour = function(factionId, rumourIdx) {
   ];
   const confirmMsg = confirms[Math.floor(Math.random() * confirms.length)];
   addEvent('\u{1F91D} ' + confirmMsg, 'diplomacy');
+  persistRumours([{ fid: factionId, text: '\u{1F91D} ' + confirmMsg }]);
+  onRumourRevealed(1); // Corroborated intel feeds gossip network
   game.relationships[bestAlly] = (game.relationships[bestAlly] || 0) + 2;
   const banner = document.getElementById('intel-banner');
   if (banner) banner.style.display = 'none';
@@ -701,6 +722,7 @@ export function discoverVillage(col, row, unit) {
   addEvent('\u{1F3D8} Tribal Village: ' + message, 'event');
   showToast('Tribal Village', message);
   logAction('event', 'Discovered tribal village at (' + col + ',' + row + ')', { reward: reward.type, message });
+  updateUI(); // refresh HUD to show gold/science/culture changes immediately
 
   return { reward, message };
 }

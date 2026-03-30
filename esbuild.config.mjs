@@ -42,6 +42,9 @@ const alias = hasDiplomacy ? {
   '@game/combat.js': resolve(__dirname, 'src/combat.js'),
   '@game/input.js': resolve(__dirname, 'src/input.js'),
   '@game/reputation.js': resolve(__dirname, 'src/reputation.js'),
+  '@game/diplomacy-api.js': resolve(__dirname, 'src/diplomacy-api.js'),
+  '@game/embassy.js': resolve(__dirname, 'src/embassy.js'),
+  '@game/intelligence.js': resolve(__dirname, 'src/intelligence.js'),
 } : {};
 
 const config = {

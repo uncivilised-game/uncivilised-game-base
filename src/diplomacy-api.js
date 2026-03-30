@@ -49,6 +49,14 @@ const _plugin = {
   processBarbarianTurns: noop,
   processAICommitments: noop,
   moveAIUnitToward: noop,
+
+  // --- advisors.js ---
+  renderAdvisorPanel: noop,
+  openAdvisor: noop,
+  sendAdvisorMessage: noop,
+  closeAdvisorChat: noop,
+  isAdvisorChatActive: () => false,
+  resetAdvisorConsultations: noop,
 };
 
 export function registerDiplomacyPlugin(impl) {
@@ -92,3 +100,9 @@ export function processAITurns(...args) { return _plugin.processAITurns(...args)
 export function processBarbarianTurns(...args) { return _plugin.processBarbarianTurns(...args); }
 export function processAICommitments(...args) { return _plugin.processAICommitments(...args); }
 export function moveAIUnitToward(...args) { return _plugin.moveAIUnitToward(...args); }
+export function renderAdvisorPanel(...args) { return _plugin.renderAdvisorPanel(...args); }
+export function openAdvisor(...args) { return _plugin.openAdvisor(...args); }
+export function sendAdvisorMessage(...args) { return _plugin.sendAdvisorMessage(...args); }
+export function closeAdvisorChat(...args) { return _plugin.closeAdvisorChat(...args); }
+export function isAdvisorChatActive(...args) { return _plugin.isAdvisorChatActive(...args); }
+export function resetAdvisorConsultations(...args) { return _plugin.resetAdvisorConsultations(...args); }

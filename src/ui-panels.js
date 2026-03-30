@@ -13,6 +13,8 @@ import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
 import { getHexNeighbors } from './hex.js';
+import { renderDiplomacyWithIntel, switchDiploTab } from './intelligence.js';
+import { renderAdvisorPanel, isAdvisorChatActive, closeAdvisorChat } from './diplomacy-api.js';
 import { MAP_COLS, MAP_ROWS, GREAT_PEOPLE_TYPES, PANTHEONS } from './constants.js';
 import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
@@ -415,18 +417,20 @@ function togglePanel(id) {
   if (panel.style.display === 'none' || !panel.style.display) {
     closeAllPanels();
     panel.style.display = 'block';
-    if (id === 'diplomacy-panel') renderDiplomacyPanel();
+    if (id === 'diplomacy-panel') { switchDiploTab('leaders'); }
     if (id === 'build-panel') renderBuildPanel();
     if (id === 'research-panel') renderResearchPanel();
     if (id === 'units-panel') renderUnitsPanel();
     if (id === 'civics-panel') renderCivicsPanel();
+    if (id === 'advisor-panel') renderAdvisorPanel();
   } else {
     panel.style.display = 'none';
   }
 }
 
 function closeAllPanels() {
-  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel'].forEach(id => {
+  if (isAdvisorChatActive()) closeAdvisorChat();
+  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -551,7 +555,7 @@ function checkVictoryConditions() {
   const allTechs = TECHNOLOGIES.filter(t => !t.id.startsWith('mod_'));
   if (game.techs.length >= allTechs.length) return { type: 'science', desc: 'You achieved technological supremacy!', icon: '\u{1F52C}' };
   if (game.civics.length >= CIVICS.length) return { type: 'culture', desc: 'Your culture is legendary!', icon: '\u{1F3A8}' };
-  if (game.turn >= MAX_TURNS) return { type: 'score', desc: 'Your civilization endures!', icon: '\u{1F3C6}' };
+  if (game.turn >= MAX_TURNS && !game.postVictoryPlay) return { type: 'score', desc: 'Your civilization endures!', icon: '\u{1F3C6}' };
   return null;
 }
 

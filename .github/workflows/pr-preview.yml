@@ -33,6 +33,7 @@ jobs:
           PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
           echo "ref=$(echo "$PR_JSON" | jq -r .head.ref)" >> "$GITHUB_OUTPUT"
           echo "sha=$(echo "$PR_JSON" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          echo "base=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout base repo
         uses: actions/checkout@v4
@@ -40,10 +41,11 @@ jobs:
           ref: ${{ steps.pr.outputs.ref }}
           path: uncivilised-game-base
 
-      - name: Checkout diplomacy repo
+      - name: Checkout diplomacy repo (matching base branch)
         uses: actions/checkout@v4
         with:
           repository: uncivilised-game/uncivilised-diplomacy
+          ref: ${{ steps.pr.outputs.base }}
           token: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
           path: uncivilised-diplomacy
 
