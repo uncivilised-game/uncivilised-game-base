@@ -914,8 +914,8 @@ function render() {
     // Hide non-player units in explored-but-not-visible areas
     if (unit.owner !== 'player' && game.visibleTiles && !(game.visibleTiles[unit.row] && game.visibleTiles[unit.row][unit.col])) continue;
     const pos = hexToPixel(unit.col, unit.row);
-    const sx = pos.x - camX;
-    const sy = pos.y - camY;
+    let sx = pos.x - camX;
+    let sy = pos.y - camY;
     const ut = UNIT_TYPES[unit.type];
     if (!ut) continue;
     const isSelected = game.selectedUnitId === unit.id;
@@ -927,7 +927,16 @@ function render() {
     ctx.globalAlpha = globalAlpha;
 
     // Unit vertical offset — shift down to avoid overlapping city icons
-    const uy = sy + 12;
+    let uy = sy + 12;
+
+    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
+    const isCiv = ut.class === 'civilian';
+    const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
+    if (stackPartner && isCiv) {
+      sx += 12;
+      uy += 12;
+      sy += 12;
+    }
 
     // Pulsing selection ring
     if (isSelected) {
