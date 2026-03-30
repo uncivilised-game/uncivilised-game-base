@@ -979,17 +979,18 @@ function render() {
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
     if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
       // New painterly sprite sheet — draw first frame (256x256) from idle strip
+      // Centre on hex (sx, sy) rather than offset uy so sprite fills the hex
       const frameSize = newSprite.naturalHeight;
       const drawSize = 56;
       ctx.save();
       ctx.beginPath();
-      ctx.arc(sx, uy, 27, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 27, 0, Math.PI * 2);
       ctx.clip();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(newSprite,
         0, 0, frameSize, frameSize,
-        sx - drawSize / 2, uy - drawSize / 2, drawSize, drawSize);
+        sx - drawSize / 2, sy - drawSize / 2, drawSize, drawSize);
       ctx.restore();
     } else if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
       const drawSize = 22;
