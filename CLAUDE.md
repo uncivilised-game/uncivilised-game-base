@@ -83,6 +83,13 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 - `npm run watch` — rebuild on file changes
 - `npm run dev` — watch + serve via `server.py`
 
+**Testing:**
+- `npm test` — run the full test suite (Vitest, ~170 tests)
+- `npm run test:watch` — re-run tests on file changes
+- **Always run `npm test` before committing, pushing, or creating a PR.** Tests must pass. If tests fail, fix the issue before proceeding.
+- Tests live in `tests/` with fixtures in `tests/fixtures.js` and browser global stubs in `tests/setup.js`
+- Test naming: use `test()` (not `it()`), add `()` after function names in `describe()`, use dummy faction names (`faction_a`, `faction_b`) not real ones
+
 ## Backend (Python FastAPI)
 
 Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel production). The production version has additional endpoints for auth, feedback, and admin.
@@ -126,6 +133,7 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | Script | Purpose |
 |--------|---------|
 | `scripts/conviction-triage.py` | Auto-triages new GitHub issues with conviction scoring |
+| `scripts/conviction-close.py` | Nightly auto-close of conviction issues resolved by merged PRs |
 | `scripts/newsletter.py` | Sends newsletter emails to active players via Resend API |
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
@@ -139,7 +147,7 @@ Tables: `players`, `leaderboard`, `game_saves`, `game_sessions`, `waitlist`, `di
 
 ## Key Constants & Config
 
-- `MAP_COLS = 60`, `MAP_ROWS = 40` — hex grid dimensions
+- `MAP_COLS = 60`, `MAP_ROWS = 40` — hex grid dimensions (cylindrical geometry: east-west wraps, north-south does not)
 - `HEX_SIZE = 36` — hex radius in pixels
 - `MAX_TURNS = 100` — game length
 - `GAME_VERSION = 5` — save format version
@@ -169,6 +177,8 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/deploy.yml` — triggers on push to `main` or `devel`. Checks out both repos, builds with the diplomacy plugin, and deploys via the Vercel CLI.
 - `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/conviction-autofix.yml` — runs twice daily (10am/10pm UTC), automatically implements top critical/high priority conviction issues. Uses `autofix-in-progress` and `autofix-attempted` labels to prevent overlap. Max 2 issues per run.
+- `.github/workflows/conviction-close.yml` — nightly (6am UTC) scan that auto-closes conviction issues resolved by merged PRs. Uses direct PR cross-referencing + Claude semantic matching. Supports `dry_run` input via manual dispatch.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.

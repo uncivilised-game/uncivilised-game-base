@@ -13,6 +13,32 @@ import { updateUI } from './leaderboard.js';
 import { startAnimLoop } from './feedback.js';
 import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
 
+// ---- Civilian / Military stacking helpers ----
+
+/** Returns true if the unit is a civilian (worker, settler, etc.) */
+function isCivilian(unit) {
+  const ut = UNIT_TYPES[unit.type];
+  return ut && ut.class === 'civilian';
+}
+
+/** Returns true if the moving unit can stack on a tile that already has `existing` on it.
+ *  Rule: one military + one civilian of the same owner may share a tile. */
+function canStackWith(movingUnit, existingUnit) {
+  if (movingUnit.owner !== existingUnit.owner) return false;       // must be same owner
+  if (isCivilian(movingUnit) === isCivilian(existingUnit)) return false; // can't stack two of same class
+  return true;
+}
+
+/** Returns true if a hex is blocked for the given unit (can't enter or pass through) */
+function isHexBlockedForUnit(unit, col, row) {
+  const occupants = game.units.filter(u => u.col === col && u.row === row && u.id !== unit.id);
+  if (occupants.length === 0) return false;
+  // If there's already a stack of 2, it's full
+  if (occupants.length >= 2) return true;
+  // One occupant — check if we can stack with them
+  return !canStackWith(unit, occupants[0]);
+}
+
 // ---- Zone of Control helpers ----
 
 /** Check if a hex is in an enemy's Zone of Control relative to a given faction */
@@ -196,8 +222,7 @@ function computeMoveRange() {
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       // Can't move through hexes with units (enemy or own)
-      const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
-      if (blockingUnit) continue;
+      if (isHexBlockedForUnit(unit, nb.col, nb.row)) continue;
       // Civilian units can't enter enemy city tiles
       const ut = UNIT_TYPES[unit.type];
       if (ut && ut.class === 'civilian') {
@@ -245,8 +270,7 @@ function computeRiverCrossings() {
       const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
-      const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
-      if (blockingUnit) continue;
+      if (isHexBlockedForUnit(unit, nb.col, nb.row)) continue;
       visited.set(key, remaining);
       const crossed = cur.crossedRiver || isRiverCross;
       if (crossed) riverTiles.add(key);
@@ -444,8 +468,7 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
 
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
-      const blockingUnit = game.units.find(u => u.col === nb.col && u.row === nb.row && u.id !== unit.id);
-      if (blockingUnit) continue;
+      if (isHexBlockedForUnit(unit, nb.col, nb.row)) continue;
       visited.set(key, remaining);
       parents.set(key, `${cur.col},${cur.row}`);
       if (remaining > 0) {
@@ -688,10 +711,16 @@ function handleHexClick(col, row) {
       return;
     }
 
-    // Check what's at this hex
-    const clickedUnit = getUnitAt(col, row);
-    if (clickedUnit) {
-      selectUnit(clickedUnit);
+    // Check what's at this hex — cycle through stacked units on repeat clicks
+    const unitsHere = game.units.filter(u => u.col === col && u.row === row);
+    if (unitsHere.length > 0) {
+      if (unitsHere.length === 1) {
+        selectUnit(unitsHere[0]);
+      } else {
+        // Multiple units stacked — cycle: pick the one that ISN'T currently selected
+        const other = unitsHere.find(u => u.id !== game.selectedUnitId);
+        selectUnit(other || unitsHere[0]);
+      }
       return;
     }
 
@@ -741,9 +770,14 @@ function handleHexClick(col, row) {
     return;
   }
 
-  const unitHere = getUnitAt(col, row);
-  if (unitHere) {
-    selectUnit(unitHere);
+  const unitsAtHex = game.units.filter(u => u.col === col && u.row === row);
+  if (unitsAtHex.length > 0) {
+    if (unitsAtHex.length === 1) {
+      selectUnit(unitsAtHex[0]);
+    } else {
+      const other = unitsAtHex.find(u => u.id !== game.selectedUnitId);
+      selectUnit(other || unitsAtHex[0]);
+    }
     return;
   }
 

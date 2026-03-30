@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning, deathMarkers } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -914,8 +914,8 @@ function render() {
     // Hide non-player units in explored-but-not-visible areas
     if (unit.owner !== 'player' && game.visibleTiles && !(game.visibleTiles[unit.row] && game.visibleTiles[unit.row][unit.col])) continue;
     const pos = hexToPixel(unit.col, unit.row);
-    const sx = pos.x - camX;
-    const sy = pos.y - camY;
+    let sx = pos.x - camX;
+    let sy = pos.y - camY;
     const ut = UNIT_TYPES[unit.type];
     if (!ut) continue;
     const isSelected = game.selectedUnitId === unit.id;
@@ -927,7 +927,16 @@ function render() {
     ctx.globalAlpha = globalAlpha;
 
     // Unit vertical offset — shift down to avoid overlapping city icons
-    const uy = sy + 12;
+    let uy = sy + 12;
+
+    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
+    const isCiv = ut.class === 'civilian';
+    const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
+    if (stackPartner && isCiv) {
+      sx += 12;
+      uy += 12;
+      sy += 12;
+    }
 
     // Pulsing selection ring
     if (isSelected) {
@@ -974,9 +983,25 @@ function render() {
       }
     }
 
-    // Unit icon — sprite atlas with emoji fallback
+    // Unit icon — new painterly sprites → legacy atlas → emoji fallback
+    const newSprite = NEW_UNIT_SPRITES[unit.type];
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
-    if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
+    if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
+      // New painterly sprite sheet — draw first frame (256x256) from idle strip
+      // Centre on hex (sx, sy) rather than offset uy so sprite fills the hex
+      const frameSize = newSprite.naturalHeight;
+      const drawSize = 56;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sx, sy, 27, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(newSprite,
+        0, 0, frameSize, frameSize,
+        sx - drawSize / 2, sy - drawSize / 2, drawSize, drawSize);
+      ctx.restore();
+    } else if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
       const drawSize = 22;
       ctx.save();
       // Clip to unit disc for clean edges
