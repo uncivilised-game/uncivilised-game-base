@@ -1,76 +1,74 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach } from 'vitest';
 import { isInEnemyZOC, getEnemyZOCHexes } from '../src/units.js';
 import { getHexNeighbors } from '../src/hex.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
-describe('isInEnemyZOC', () => {
+describe('isInEnemyZOC()', () => {
   beforeEach(() => {
     setupGameState();
   });
 
-  it('returns false when no enemy units nearby', () => {
+  test('should return false when no enemy units nearby', () => {
     setupGameState({ units: [] });
     expect(isInEnemyZOC(10, 10, 'player')).toBe(false);
   });
 
-  it('returns true when adjacent to enemy military unit', () => {
+  test('should return true when adjacent to enemy military unit', () => {
     setupGameState({
-      units: [makeUnit({ id: 1, col: 11, row: 10, type: 'warrior', owner: 'emperor_valerian' })],
+      units: [makeUnit({ id: 1, col: 11, row: 10, type: 'warrior', owner: 'faction_a' })],
     });
-    // (10,10) is adjacent to (11,10) — should be in ZOC
     expect(isInEnemyZOC(10, 10, 'player')).toBe(true);
   });
 
-  it('returns false when adjacent to friendly unit', () => {
+  test('should return false when adjacent to friendly unit', () => {
     setupGameState({
       units: [makeUnit({ id: 1, col: 11, row: 10, type: 'warrior', owner: 'player' })],
     });
     expect(isInEnemyZOC(10, 10, 'player')).toBe(false);
   });
 
-  it('returns false when adjacent to civilian unit (workers don\'t project ZOC)', () => {
+  test("should return false when adjacent to civilian unit (workers don't project ZOC)", () => {
     setupGameState({
-      units: [makeUnit({ id: 1, col: 11, row: 10, type: 'worker', owner: 'emperor_valerian' })],
+      units: [makeUnit({ id: 1, col: 11, row: 10, type: 'worker', owner: 'faction_a' })],
     });
     expect(isInEnemyZOC(10, 10, 'player')).toBe(false);
   });
 
-  it('returns true for AI units checking player ZOC', () => {
+  test('should return true for non-player units checking player ZOC', () => {
     setupGameState({
       units: [makeUnit({ id: 1, col: 11, row: 10, type: 'warrior', owner: 'player' })],
     });
-    expect(isInEnemyZOC(10, 10, 'emperor_valerian')).toBe(true);
+    expect(isInEnemyZOC(10, 10, 'faction_a')).toBe(true);
   });
 });
 
-describe('getEnemyZOCHexes', () => {
-  it('returns empty set when no enemy units', () => {
+describe('getEnemyZOCHexes()', () => {
+  test('should return empty set when no enemy units', () => {
     setupGameState({ units: [] });
     const zoc = getEnemyZOCHexes('player');
     expect(zoc.size).toBe(0);
   });
 
-  it('includes neighbors of enemy military units', () => {
+  test('should include neighbors of enemy military units', () => {
     setupGameState({
-      units: [makeUnit({ id: 1, col: 10, row: 10, type: 'warrior', owner: 'emperor_valerian' })],
+      units: [makeUnit({ id: 1, col: 10, row: 10, type: 'warrior', owner: 'faction_a' })],
     });
     const zoc = getEnemyZOCHexes('player');
-    // Should include all 6 neighbors of (10,10)
     const neighbors = getHexNeighbors(10, 10);
     for (const n of neighbors) {
       expect(zoc.has(`${n.col},${n.row}`)).toBe(true);
     }
   });
 
-  it('excludes civilian units from ZOC projection', () => {
+  test('should exclude civilian units from ZOC projection', () => {
     setupGameState({
-      units: [makeUnit({ id: 1, col: 10, row: 10, type: 'worker', owner: 'emperor_valerian' })],
+      units: [makeUnit({ id: 1, col: 10, row: 10, type: 'worker', owner: 'faction_a' })],
     });
     const zoc = getEnemyZOCHexes('player');
     expect(zoc.size).toBe(0);
   });
 
-  it('excludes friendly units from ZOC calculation', () => {
+  test('should exclude friendly units from ZOC calculation', () => {
     setupGameState({
       units: [makeUnit({ id: 1, col: 10, row: 10, type: 'warrior', owner: 'player' })],
     });
@@ -78,15 +76,17 @@ describe('getEnemyZOCHexes', () => {
     expect(zoc.size).toBe(0);
   });
 
-  it('combines ZOC from multiple enemy units', () => {
+  test('should combine ZOC from multiple enemy units', () => {
     setupGameState({
       units: [
-        makeUnit({ id: 1, col: 10, row: 10, type: 'warrior', owner: 'emperor_valerian' }),
-        makeUnit({ id: 2, col: 20, row: 20, type: 'archer', owner: 'shadow_kael' }),
+        makeUnit({ id: 1, col: 10, row: 10, type: 'warrior', owner: 'faction_a' }),
+        makeUnit({ id: 2, col: 20, row: 20, type: 'archer', owner: 'faction_b' }),
       ],
     });
     const zoc = getEnemyZOCHexes('player');
-    // Should have neighbors of both units (12 total, possibly with overlap)
-    expect(zoc.size).toBe(12); // far apart, no overlap
+    const neighbors1 = getHexNeighbors(10, 10);
+    const neighbors2 = getHexNeighbors(20, 20);
+    // Far apart, no overlap — size should be sum of neighbor counts
+    expect(zoc.size).toBe(neighbors1.length + neighbors2.length);
   });
 });

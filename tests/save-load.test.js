@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { migrateTiles } from '../src/save-load.js';
 
-describe('migrateTiles', () => {
-  it('adds missing top-level state fields', () => {
+describe('migrateTiles()', () => {
+  test('adds missing top-level state fields', () => {
     const state = { turn: 5 };
     migrateTiles(state);
 
@@ -24,7 +24,7 @@ describe('migrateTiles', () => {
     expect(state.religion).toBeNull();
   });
 
-  it('adds missing great people fields', () => {
+  test('adds missing great people fields', () => {
     const state = {};
     migrateTiles(state);
 
@@ -34,7 +34,7 @@ describe('migrateTiles', () => {
     expect(state.greatPeopleEarned).toEqual([]);
   });
 
-  it('migrates unit fields', () => {
+  test('migrates unit fields', () => {
     const state = {
       units: [
         { type: 'warrior', col: 5, row: 5, owner: 'player', hp: 100 },
@@ -54,7 +54,7 @@ describe('migrateTiles', () => {
     expect(state.units[1].buildCharges).toBe(2);
   });
 
-  it('does not overwrite existing unit fields', () => {
+  test('does not overwrite existing unit fields', () => {
     const state = {
       units: [
         { type: 'warrior', xp: 30, promotions: ['shield_wall'], pendingPromotion: true },
@@ -67,16 +67,16 @@ describe('migrateTiles', () => {
     expect(state.units[0].pendingPromotion).toBe(true);
   });
 
-  it('migrates faction city fields', () => {
+  test('migrates faction city fields', () => {
     const state = {
       factionCities: {
-        emperor_valerian: { col: 10, row: 10, name: 'Nordhaven' },
-        shadow_kael: { col: 20, row: 20, name: 'Ashland', hp: 80 },
+        faction_a: { col: 10, row: 10, name: 'Nordhaven' },
+        faction_b: { col: 20, row: 20, name: 'Ashland', hp: 80 },
       },
     };
     migrateTiles(state);
 
-    const ev = state.factionCities.emperor_valerian;
+    const ev = state.factionCities.faction_a;
     expect(ev.hp).toBe(100);
     expect(ev.population).toBe(1000);
     expect(ev.borderRadius).toBe(2);
@@ -86,10 +86,10 @@ describe('migrateTiles', () => {
     expect(ev.wallLastAttackedTurn).toBe(-99);
 
     // Existing fields preserved
-    expect(state.factionCities.shadow_kael.hp).toBe(80);
+    expect(state.factionCities.faction_b.hp).toBe(80);
   });
 
-  it('migrates player city fields with wall detection', () => {
+  test('migrates player city fields with wall detection', () => {
     const state = {
       cities: [
         { name: 'Capital', col: 5, row: 5, buildings: ['walls'] },
@@ -112,7 +112,7 @@ describe('migrateTiles', () => {
     expect(state.cities[1].food).toBe(0);
   });
 
-  it('adds map tile coordinates if missing', () => {
+  test('adds map tile coordinates if missing', () => {
     const state = {
       map: [
         [{ base: 'grassland' }, { base: 'plains' }],
@@ -130,7 +130,7 @@ describe('migrateTiles', () => {
     expect(state.map[1][1].naturalWonder).toBeNull();
   });
 
-  it('adds diplomacy and AI state fields', () => {
+  test('adds diplomacy and AI state fields', () => {
     const state = {};
     migrateTiles(state);
 
@@ -152,7 +152,7 @@ describe('migrateTiles', () => {
     expect(state.relationships).toEqual({});
   });
 
-  it('adds event and mod fields', () => {
+  test('adds event and mod fields', () => {
     const state = {};
     migrateTiles(state);
 
@@ -166,7 +166,7 @@ describe('migrateTiles', () => {
     expect(state.tribalVillages).toEqual([]);
   });
 
-  it('rebuilds revealedResources from techs if missing', () => {
+  test('rebuilds revealedResources from techs if missing', () => {
     const state = {
       techs: ['bronze_working', 'mining'],
     };
@@ -177,7 +177,7 @@ describe('migrateTiles', () => {
     expect(state.revealedResources).toContain('copper');
   });
 
-  it('preserves existing revealedResources', () => {
+  test('preserves existing revealedResources', () => {
     const state = {
       techs: ['bronze_working'],
       revealedResources: ['horses'],
@@ -187,20 +187,20 @@ describe('migrateTiles', () => {
     expect(state.revealedResources).toEqual(['horses']);
   });
 
-  it('creates faction stats for met factions that lack them', () => {
+  test('creates faction stats for met factions that lack them', () => {
     const state = {
       turn: 10,
-      metFactions: { emperor_valerian: true, shadow_kael: true },
+      metFactions: { faction_a: true, faction_b: true },
       factionStats: {},
     };
     migrateTiles(state);
 
-    expect(state.factionStats.emperor_valerian).toBeDefined();
-    expect(state.factionStats.emperor_valerian.gold).toBeDefined();
-    expect(state.factionStats.shadow_kael).toBeDefined();
+    expect(state.factionStats.faction_a).toBeDefined();
+    expect(state.factionStats.faction_a.gold).toBeDefined();
+    expect(state.factionStats.faction_b).toBeDefined();
   });
 
-  it('adds envoy and v5 diplomacy fields', () => {
+  test('adds envoy and v5 diplomacy fields', () => {
     const state = {};
     migrateTiles(state);
 
@@ -210,7 +210,7 @@ describe('migrateTiles', () => {
     expect(state.messagesThisTurn).toBe(0);
   });
 
-  it('adds reputation system', () => {
+  test('adds reputation system', () => {
     const state = {};
     migrateTiles(state);
 
@@ -225,11 +225,11 @@ describe('migrateTiles', () => {
     expect(first).toHaveProperty('cunning', 0);
   });
 
-  it('is idempotent (running twice does not change state)', () => {
+  test('is idempotent (running twice does not change state)', () => {
     const state = {
       units: [{ type: 'warrior' }],
       cities: [{ name: 'City', buildings: [] }],
-      factionCities: { emperor_valerian: { col: 0, row: 0 } },
+      factionCities: { faction_a: { col: 0, row: 0 } },
       map: [[{ base: 'grassland' }]],
       metFactions: {},
       turn: 1,

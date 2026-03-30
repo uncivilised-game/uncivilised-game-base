@@ -79,14 +79,15 @@ export function makeCity(overrides = {}) {
 // ── Minimal game state ──
 
 /**
- * Creates a minimal game state object with a 60x40 map (matching MAP_COLS/MAP_ROWS)
- * filled with grassland. The map size is fixed because hex functions use the
- * constants directly for toroidal wrapping.
+ * Creates a minimal game state object.
+ * @param {object} overrides — merged into the returned state
+ * @param {object} [options] — { cols, rows } to override map dimensions
+ *
+ * Note: hex functions use MAP_COLS/MAP_ROWS constants for wrapping,
+ * so a custom map size is useful for state-only tests but may cause
+ * issues with hex coordinate functions.
  */
-export function makeGameState(overrides = {}) {
-  const cols = MAP_COLS;
-  const rows = MAP_ROWS;
-
+export function makeGameState(overrides = {}, { cols = MAP_COLS, rows = MAP_ROWS } = {}) {
   const map = Array.from({ length: rows }, (_, r) =>
     Array.from({ length: cols }, (_, c) => makeTile({ col: c, row: r }))
   );
@@ -184,8 +185,8 @@ export function makeGameState(overrides = {}) {
  * Sets up game state on the imported `game` reference from state.js.
  * Use in beforeEach() for tests that need global game state.
  */
-export function setupGameState(overrides = {}) {
-  const state = makeGameState(overrides);
+export function setupGameState(overrides = {}, options = {}) {
+  const state = makeGameState(overrides, options);
   setGame(state);
   return state;
 }

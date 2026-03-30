@@ -9,7 +9,8 @@ export function hexToPixel(col, row) {
 export function pixelToHex(px, py) {
   const r = Math.round(py / (HEX_SIZE * 1.5));
   const c = Math.round((px / (HEX_SIZE * SQRT3)) - 0.5 * (r & 1));
-  return { col: ((c % MAP_COLS) + MAP_COLS) % MAP_COLS, row: ((r % MAP_ROWS) + MAP_ROWS) % MAP_ROWS };
+  // Cylindrical map: east-west wraps, north-south clamps
+  return { col: ((c % MAP_COLS) + MAP_COLS) % MAP_COLS, row: Math.max(0, Math.min(MAP_ROWS - 1, r)) };
 }
 
 export function drawHex(ctx, cx, cy, size) {
@@ -42,23 +43,22 @@ export function getHexNeighbors(col, row) {
     : [[0,-1],[1,-1],[-1,0],[1,0],[0,1],[1,1]];
   const neighbors = [];
   for (const [dc, dr] of dirs) {
-    // Toroidal wrapping: east-west wraps, north-south wraps
+    // Cylindrical map: east-west wraps, north-south does not
     const nc = ((col + dc) % MAP_COLS + MAP_COLS) % MAP_COLS;
-    const nr = ((row + dr) % MAP_ROWS + MAP_ROWS) % MAP_ROWS;
-    neighbors.push({ col: nc, row: nr });
+    const nr = row + dr;
+    if (nr >= 0 && nr < MAP_ROWS) {
+      neighbors.push({ col: nc, row: nr });
+    }
   }
   return neighbors;
 }
 
 export function hexDistance(c1, r1, c2, r2) {
-  // Toroidal distance: check direct and wrapped distances, use minimum
+  // Cylindrical distance: only east-west wraps, not north-south
   const directDist = hexDistanceDirect(c1, r1, c2, r2);
-  // Check wrapping alternatives
   const wrapDistances = [
     hexDistanceDirect(c1, r1, c2 + MAP_COLS, r2),
     hexDistanceDirect(c1, r1, c2 - MAP_COLS, r2),
-    hexDistanceDirect(c1, r1, c2, r2 + MAP_ROWS),
-    hexDistanceDirect(c1, r1, c2, r2 - MAP_ROWS),
   ];
   return Math.min(directDist, ...wrapDistances);
 }

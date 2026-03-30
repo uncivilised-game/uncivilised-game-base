@@ -22,6 +22,9 @@
     "url": "https://github.com/jamieoutlierV/uncivilised-game/issues"
   },
   "homepage": "https://github.com/jamieoutlierV/uncivilised-game#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
     "esbuild": "^0.27.4",
     "vitest": "^4.1.2"
