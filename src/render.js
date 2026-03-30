@@ -1,5 +1,5 @@
 import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning, deathMarkers } from './state.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -974,9 +974,24 @@ function render() {
       }
     }
 
-    // Unit icon — sprite atlas with emoji fallback
+    // Unit icon — new painterly sprites → legacy atlas → emoji fallback
+    const newSprite = NEW_UNIT_SPRITES[unit.type];
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
-    if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
+    if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
+      // New painterly sprite sheet — draw first frame (256x256) from idle strip
+      const frameSize = newSprite.naturalHeight;
+      const drawSize = 28;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sx, uy, 13, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(newSprite,
+        0, 0, frameSize, frameSize,
+        sx - drawSize / 2, uy - drawSize / 2, drawSize, drawSize);
+      ctx.restore();
+    } else if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
       const drawSize = 22;
       ctx.save();
       // Clip to unit disc for clean edges
