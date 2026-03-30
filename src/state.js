@@ -38,10 +38,34 @@ export const SETTLEMENT_IMAGES = {};
 export let tilesLoaded = false;
 export function setTilesLoaded(v) { tilesLoaded = v; }
 
-// Unit sprite atlas
+// Unit sprite atlas (legacy fallback)
 export const unitAtlas = new Image();
 unitAtlas.crossOrigin = 'anonymous';
 unitAtlas.src = 'assets/units/absolute_units.png';
+
+// New painterly unit sprite sheets (idle animations, 256x256 per frame)
+export const NEW_UNIT_SPRITES = {};
+const newSpriteFiles = {
+  warrior:        'assets/units/warrior/character_idle.png',
+  spearman:       'assets/units/spearman/spearman-spritecook_idle.png',
+  phalanx:        'assets/units/phalanx/phalanx-spritecook_idle.png',
+  scout:          'assets/units/scout/scout-spritecook_idle.png',
+  slinger:        'assets/units/slinger/slinger-spritecook_idle.png',
+  archer:         'assets/units/archer/archer-spritebook_idle.png',
+  chariot:        'assets/units/chariot/chariot_idle.png',
+  horseman:       'assets/units/horseman/horseman_idle.png',
+  ballista:       'assets/units/ballista/ballista-sprite_idle.png',
+  galley:         'assets/units/galley/gallery-sprite_idle_sheet.png',
+  worker:         'assets/units/worker/worker-sprite_idle.png',
+  settler:        'assets/units/settler/settlers-sprite_idle.png',
+  great_general:  'assets/units/great_general/general-sprite_idle.png',
+};
+for (const [unitType, path] of Object.entries(newSpriteFiles)) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = path;
+  NEW_UNIT_SPRITES[unitType] = img;
+}
 
 // Realistic hex terrain tileset
 export const realisticTerrainTileset = new Image();
