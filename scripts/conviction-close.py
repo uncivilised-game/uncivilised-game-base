@@ -29,6 +29,8 @@ LOOKBACK_DAYS = 30
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 AUTO_CLOSED_LABEL = "auto-closed"
 AUTO_CLOSED_LABEL_COLOR = "cccccc"
+MAX_TIER2_ISSUES = 30  # cap issues sent to Claude to bound prompt size
+MAX_TIER2_PRS = 50     # cap PRs sent to Claude to bound prompt size
 
 
 # ── HTTP helpers (same pattern as conviction-triage.py) ─────────────
@@ -56,30 +58,28 @@ def _req(method, url, data=None, headers=None, retries=2):
             time.sleep(2 ** attempt)
 
 
+GH_HEADERS = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+
+
 def gh_get(path, params=""):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/{path}"
     if params:
         url += f"?{params}"
-    return _req("GET", url, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-    })
+    return _req("GET", url, headers=GH_HEADERS)
 
 
 def gh_post(path, data):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/{path}"
-    return _req("POST", url, data=data, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-    })
+    return _req("POST", url, data=data, headers=GH_HEADERS)
 
 
 def gh_patch(path, data):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/{path}"
-    return _req("PATCH", url, data=data, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-    })
+    return _req("PATCH", url, data=data, headers=GH_HEADERS)
 
 
 # ── Fetch open conviction issues ───────────────────────────────────
@@ -91,7 +91,10 @@ def fetch_open_issues():
         batch = gh_get("issues", f"labels=conviction&state=open&per_page=100&page={page}")
         if not batch:
             break
-        issues.extend(batch)
+        # Filter out pull requests: /issues endpoint returns both issues and PRs
+        for item in batch:
+            if "pull_request" not in item:
+                issues.append(item)
         if len(batch) < 100:
             break
         page += 1
@@ -216,14 +219,22 @@ def tier2_match(issues, prs):
         print("Tier 2: no eligible issues after filtering, skipping LLM call")
         return {}
 
+    # Cap inputs to bound prompt size
+    capped_issues = eligible[:MAX_TIER2_ISSUES]
+    capped_prs = prs[:MAX_TIER2_PRS]
+    if len(eligible) > MAX_TIER2_ISSUES:
+        print(f"Tier 2: capped issues from {len(eligible)} to {MAX_TIER2_ISSUES}")
+    if len(prs) > MAX_TIER2_PRS:
+        print(f"Tier 2: capped PRs from {len(prs)} to {MAX_TIER2_PRS}")
+
     # Build prompt
     issues_text = "\n".join(
         f"- #{i['number']}: \"{i['title']}\" — {(i.get('body') or '')[:300]}"
-        for i in eligible
+        for i in capped_issues
     )
     prs_text = "\n".join(
         f"- PR #{p['number']} (branch: {p['branch']}, merged to {p['base']}): \"{p['title']}\" — {p['body'][:300]}"
-        for p in prs
+        for p in capped_prs
     )
 
     prompt = f"""Here are open GitHub issues from a game project:
@@ -266,12 +277,17 @@ Rules:
         print("Tier 2: failed to parse Claude response as JSON, skipping")
         return {}
 
-    # Only act on high confidence
+    # Only act on high confidence, validated against eligible issue numbers
+    eligible_numbers = {i["number"] for i in capped_issues}
     matches = {}
     pr_lookup = {p["number"]: p for p in prs}
     for m in matches_raw:
+        issue_num = m.get("issue")
+        if issue_num not in eligible_numbers:
+            if issue_num is not None:
+                print(f"  Tier 2: ignoring unexpected issue #{issue_num} (not in eligible set)")
+            continue
         if m.get("confidence") == "high" and m.get("fixed_by_pr") in pr_lookup:
-            issue_num = m["issue"]
             pr_info = pr_lookup[m["fixed_by_pr"]]
             matches[issue_num] = {
                 "prs": [pr_info],
@@ -330,11 +346,10 @@ def close_issue(issue, prs, tier, reason=""):
     # Post comment
     gh_post(f"issues/{num}/comments", {"body": comment})
 
-    # Add label
+    # Add label without overwriting other concurrent label changes
     current_labels = [l["name"] for l in issue.get("labels", [])]
     if AUTO_CLOSED_LABEL not in current_labels:
-        current_labels.append(AUTO_CLOSED_LABEL)
-        gh_patch(f"issues/{num}", {"labels": current_labels})
+        gh_post(f"issues/{num}/labels", {"labels": [AUTO_CLOSED_LABEL]})
 
     # Close
     gh_patch(f"issues/{num}", {"state": "closed", "state_reason": "completed"})
