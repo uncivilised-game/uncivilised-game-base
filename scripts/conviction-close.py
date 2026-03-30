@@ -129,6 +129,7 @@ def fetch_merged_prs():
                     "branch": pr.get("head", {}).get("ref", ""),
                     "base": base,
                     "merged_at": pr["merged_at"],
+                    "merge_commit_sha": pr.get("merge_commit_sha"),
                 })
             if not page_has_recent or len(prs) < 100:
                 break
@@ -300,6 +301,33 @@ Rules:
     return matches
 
 
+# ── Check if a commit has reached main ──────────────────────────────
+def is_on_main(sha):
+    """Check if a commit SHA is reachable from the main branch."""
+    if not sha:
+        return False
+    try:
+        # compare/{sha}...main: if main is "ahead" or "identical", sha is on main
+        result = gh_get(f"compare/{sha}...main")
+        return result.get("status") in ("ahead", "identical")
+    except urllib.error.HTTPError:
+        return False
+
+
+def filter_prs_on_main(prs):
+    """Filter to only PRs whose fix has reached main. PRs merged directly to
+    main pass automatically; PRs merged to devel are checked via the compare API."""
+    on_main = []
+    for pr in prs:
+        if "main" in pr["base"]:
+            on_main.append(pr)
+        elif is_on_main(pr["merge_commit_sha"]):
+            on_main.append(pr)
+        else:
+            print(f"  PR #{pr['number']} not yet on main (merged to {pr['base']}), skipping")
+    return on_main
+
+
 # ── Ensure label exists ─────────────────────────────────────────────
 def ensure_label():
     """Create the auto-closed label if it doesn't exist."""
@@ -382,25 +410,36 @@ def main():
     if tier1 or tier2:
         ensure_label()
 
-    # Close matched issues
+    # Close matched issues — only if the fix has reached main
     closed_t1 = 0
     closed_t2 = 0
+    skipped_not_on_main = 0
 
+    print("\nChecking which fixes have reached main...")
     for issue in issues:
         num = issue["number"]
         if num in tier1:
-            close_issue(issue, tier1[num], tier=1)
-            closed_t1 += 1
+            prs_on_main = filter_prs_on_main(tier1[num])
+            if prs_on_main:
+                close_issue(issue, prs_on_main, tier=1)
+                closed_t1 += 1
+            else:
+                skipped_not_on_main += 1
         elif num in tier2:
             info = tier2[num]
-            close_issue(issue, info["prs"], tier=2, reason=info.get("reason", ""))
-            closed_t2 += 1
+            prs_on_main = filter_prs_on_main(info["prs"])
+            if prs_on_main:
+                close_issue(issue, prs_on_main, tier=2, reason=info.get("reason", ""))
+                closed_t2 += 1
+            else:
+                skipped_not_on_main += 1
 
     # Summary
     print(f"\n=== Summary ===")
     print(f"Open conviction issues checked: {len(issues)}")
     print(f"Closed (Tier 1 — direct reference): {closed_t1}")
     print(f"Closed (Tier 2 — semantic match):   {closed_t2}")
+    print(f"Skipped (fix not yet on main): {skipped_not_on_main}")
     print(f"Remaining open: {len(issues) - closed_t1 - closed_t2}")
 
 
