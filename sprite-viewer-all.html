@@ -174,17 +174,24 @@
       image-rendering: crisp-edges;
     }
 
-    .sprite.animating {
-      animation: sprite-animation steps(8) forwards;
+    @keyframes sprite-anim-8 {
+      from { background-position: 0 0; }
+      to { background-position: -2048px 0; }
     }
 
-    .sprite.death-animating {
-      animation: sprite-animation steps(12) forwards;
+    @keyframes sprite-anim-8-warrior {
+      from { background-position: 0 0; }
+      to { background-position: -1616px 0; }
     }
 
-    @keyframes sprite-animation {
-      0% { background-position: 0 0; }
-      100% { background-position: 100% 0; }
+    @keyframes sprite-anim-12 {
+      from { background-position: 0 0; }
+      to { background-position: -3072px 0; }
+    }
+
+    @keyframes sprite-anim-12-warrior {
+      from { background-position: 0 0; }
+      to { background-position: -2424px 0; }
     }
 
     .current-state {
@@ -555,29 +562,35 @@
         }
       });
 
-      // Remove animation classes
-      spriteEl.classList.remove('animating', 'death-animating');
-
       // Set background image
       const imageUrl = unitData.sprites[state];
       spriteEl.style.backgroundImage = `url('${imageUrl}')`;
-      spriteEl.style.backgroundSize = `${unitData.frameSize * 8}px ${unitData.frameSize}px`;
       spriteEl.style.backgroundPosition = '0 0';
 
       // Update state label
       stateEl.textContent = state;
 
-      // Calculate animation duration
+      // Calculate animation
       const frameCount = FRAME_COUNTS[state] || 8;
       const speed = ANIMATION_SPEEDS[state] || 150;
-      const duration = (frameCount - 1) * speed;
+      const duration = frameCount * speed;
+      const isWarrior = unitData.frameSize === 202;
 
-      // Apply animation
-      const animClass = state === 'death' ? 'death-animating' : 'animating';
-      spriteEl.style.animation = `none`;
+      // Set background-size to auto height, actual sheet width
+      spriteEl.style.backgroundSize = 'auto 100%';
+
+      // Pick the right keyframes name
+      let animName;
+      if (frameCount === 12) {
+        animName = isWarrior ? 'sprite-anim-12-warrior' : 'sprite-anim-12';
+      } else {
+        animName = isWarrior ? 'sprite-anim-8-warrior' : 'sprite-anim-8';
+      }
+
+      // Reset and apply animation
+      spriteEl.style.animation = 'none';
       spriteEl.offsetHeight; // Trigger reflow
-      spriteEl.classList.add(animClass);
-      spriteEl.style.animation = `sprite-animation ${frameCount - 1} steps(${frameCount}) ${speed}ms steps(${frameCount}) infinite`;
+      spriteEl.style.animation = `${animName} ${duration}ms steps(${frameCount}) infinite`;
     }
 
     function setGlobalState(state) {
