@@ -174,24 +174,15 @@
       image-rendering: crisp-edges;
     }
 
+    /* All frame sizes scale to 128px display, so 8 frames = 1024px, 12 = 1536px */
     @keyframes sprite-anim-8 {
       from { background-position: 0 0; }
-      to { background-position: -2048px 0; }
-    }
-
-    @keyframes sprite-anim-8-warrior {
-      from { background-position: 0 0; }
-      to { background-position: -1616px 0; }
+      to { background-position: -1024px 0; }
     }
 
     @keyframes sprite-anim-12 {
       from { background-position: 0 0; }
-      to { background-position: -3072px 0; }
-    }
-
-    @keyframes sprite-anim-12-warrior {
-      from { background-position: 0 0; }
-      to { background-position: -2424px 0; }
+      to { background-position: -1536px 0; }
     }
 
     .current-state {
@@ -574,18 +565,11 @@
       const frameCount = FRAME_COUNTS[state] || 8;
       const speed = ANIMATION_SPEEDS[state] || 150;
       const duration = frameCount * speed;
-      const isWarrior = unitData.frameSize === 202;
-
-      // Set background-size to auto height, actual sheet width
+      // Set background-size to auto height — scales each frame to fill container height
       spriteEl.style.backgroundSize = 'auto 100%';
 
-      // Pick the right keyframes name
-      let animName;
-      if (frameCount === 12) {
-        animName = isWarrior ? 'sprite-anim-12-warrior' : 'sprite-anim-12';
-      } else {
-        animName = isWarrior ? 'sprite-anim-8-warrior' : 'sprite-anim-8';
-      }
+      // Pick the right keyframes name (8 or 12 frames)
+      const animName = frameCount === 12 ? 'sprite-anim-12' : 'sprite-anim-8';
 
       // Reset and apply animation
       spriteEl.style.animation = 'none';
