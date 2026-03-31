@@ -105,6 +105,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DIPLOMACY_REPO_TOKEN: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
@@ -171,7 +172,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          max_turns: 100
           prompt: |
             You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
 
@@ -234,7 +234,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          max_turns: 100
           prompt: |
             You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
 
