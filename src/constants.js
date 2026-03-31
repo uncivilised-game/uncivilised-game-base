@@ -307,7 +307,7 @@ export const TILE_IMPROVEMENTS = {
   // Farming & Food
   farm:        { name: 'Farm',         icon: '🌾', turns: 3, requires: 'agriculture', validOn: ['grassland','plains','floodplains'], yields: { food: 2 }, requiresRiver: false, desc: '+2 Food (better near rivers)' },
   irrigation:  { name: 'Irrigation',   icon: '💧', turns: 4, requires: 'agriculture', validOn: ['grassland','plains','desert'], yields: { food: 2, gold: 1 }, requiresRiver: true, desc: '+2 Food, +1 Gold (requires river)' },
-  pasture:     { name: 'Pasture',      icon: '🐄', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains'], yields: { food: 1, prod: 1 }, requiresResource: ['horses'], desc: '+1 Food, +1 Prod (on Horses)' },
+  pasture:     { name: 'Pasture',      icon: '🐏', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains'], yields: { food: 1, prod: 1 }, requiresResource: ['horses'], desc: '+1 Food, +1 Prod (on Horses)' },
   camp:        { name: 'Camp',         icon: '⛺', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains','tundra'], yields: { gold: 2 }, desc: '+2 Gold (hunting camp)' },
   fishing_boats:{ name: 'Fishing Boats',icon: '🎣', turns: 2, requires: 'sailing',   validOn: ['coast','ocean'], yields: { food: 2, gold: 1 }, requiresResource: ['fish'], desc: '+2 Food, +1 Gold (on Fish)' },
 
