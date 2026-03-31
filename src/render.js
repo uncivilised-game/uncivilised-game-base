@@ -12,6 +12,26 @@ import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
 
 // ============================================
+// SPRITE ANIMATION — idle frame cycling
+// ============================================
+const SPRITE_ANIM_FRAME_COUNT = 8;
+const SPRITE_ANIM_FRAME_MS = 150; // milliseconds per frame (~5.3 FPS idle bob)
+let _spriteAnimInterval = null;
+
+/** Returns the current idle animation frame index (0-7) based on wall-clock time. */
+function getSpriteAnimFrame() {
+  return Math.floor(performance.now() / SPRITE_ANIM_FRAME_MS) % SPRITE_ANIM_FRAME_COUNT;
+}
+
+/** Start the idle sprite animation loop (called once from render init). */
+function startSpriteAnimLoop() {
+  if (_spriteAnimInterval) return;
+  _spriteAnimInterval = setInterval(() => {
+    if (game) render();
+  }, SPRITE_ANIM_FRAME_MS);
+}
+
+// ============================================
 // SETTLEMENT RENDERING HELPERS
 // ============================================
 
@@ -191,6 +211,8 @@ function computeVisibility() {
 
 function render() {
   if (!game) return;
+  // Kick off idle sprite animation loop on first render
+  startSpriteAnimLoop();
   // Reset transform unconditionally — prevents accumulated scale from corrupted
   // frames where ctx.restore() was skipped due to an exception.
   ctx.setTransform(LOCKED_DPR, 0, 0, LOCKED_DPR, 0, 0);
@@ -989,9 +1011,11 @@ function render() {
     const newSprite = NEW_UNIT_SPRITES[spriteKey];
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
     if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
-      // New painterly sprite sheet — draw first frame (256x256) from idle strip
+      // New painterly sprite sheet — animate idle frames from horizontal strip
       // Centre on hex (sx, sy) rather than offset uy so sprite fills the hex
       const frameSize = newSprite.naturalHeight;
+      const animFrame = getSpriteAnimFrame();
+      const srcX = animFrame * frameSize;
       const drawSize = 56;
       ctx.save();
       ctx.beginPath();
@@ -1000,7 +1024,7 @@ function render() {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(newSprite,
-        0, 0, frameSize, frameSize,
+        srcX, 0, frameSize, frameSize,
         sx - drawSize / 2, sy - drawSize / 2, drawSize, drawSize);
       ctx.restore();
     } else if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
