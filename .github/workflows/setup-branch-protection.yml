@@ -1,0 +1,83 @@
+name: Setup Branch Protection
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print rules without applying)"
+        type: boolean
+        default: false
+
+jobs:
+  protect:
+    runs-on: ubuntu-latest
+    permissions:
+      administration: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Show current protection for devel
+        run: |
+          echo "### Current protection for devel"
+          gh api repos/${{ github.repository }}/branches/devel/protection \
+            -H "Accept: application/vnd.github+json" 2>&1 || echo "(no protection rules found)"
+
+      - name: Show current protection for main
+        run: |
+          echo "### Current protection for main"
+          gh api repos/${{ github.repository }}/branches/main/protection \
+            -H "Accept: application/vnd.github+json" 2>&1 || echo "(no protection rules found)"
+
+      - name: Apply branch protection to devel
+        if: ${{ !inputs.dry_run }}
+        run: |
+          gh api repos/${{ github.repository }}/branches/devel/protection \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            --input - <<'EOF'
+          {
+            "required_status_checks": null,
+            "enforce_admins": false,
+            "required_pull_request_reviews": {
+              "dismiss_stale_reviews": false,
+              "require_code_owner_reviews": false,
+              "required_approving_review_count": 1,
+              "require_last_push_approval": false
+            },
+            "restrictions": null,
+            "allow_force_pushes": false,
+            "allow_deletions": false
+          }
+          EOF
+          echo "✅ Branch protection applied to devel (PRs required)"
+
+      - name: Apply branch protection to main
+        if: ${{ !inputs.dry_run }}
+        run: |
+          gh api repos/${{ github.repository }}/branches/main/protection \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            --input - <<'EOF'
+          {
+            "required_status_checks": null,
+            "enforce_admins": false,
+            "required_pull_request_reviews": {
+              "dismiss_stale_reviews": false,
+              "require_code_owner_reviews": false,
+              "required_approving_review_count": 1,
+              "require_last_push_approval": false
+            },
+            "restrictions": null,
+            "allow_force_pushes": false,
+            "allow_deletions": false
+          }
+          EOF
+          echo "✅ Branch protection applied to main (PRs required)"
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "### Dry run — no changes applied"
+          echo "Would require 1 approving PR review before merging to devel and main."
+          echo "Would disallow direct force-pushes and branch deletions."
