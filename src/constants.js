@@ -369,23 +369,23 @@ export const FACTION_TRAITS = {
 
 export const GOVERNMENTS = {
   chiefdom: { name: 'Chiefdom', desc: 'Basic tribal leadership', bonuses: {}, slots: 0, unlockTech: null },
-  despotism: { name: 'Despotism', desc: '+20% Science, +30% military unit production', bonuses: { scienceBonus: 0.2, militaryProdBonus: 0.3 }, slots: 1, unlockTech: 'writing', icon: '\u{1F451}' },
-  classical_republic: { name: 'Classical Republic', desc: '+20% Culture, +15% wonder production', bonuses: { cultureBonus: 0.2, wonderProdBonus: 0.15 }, slots: 2, unlockTech: 'philosophy', icon: '\u{1F3DB}' },
-  oligarchy: { name: 'Oligarchy', desc: '+20% Food, +30% building production', bonuses: { foodBonus: 0.2, buildingProdBonus: 0.3 }, slots: 1, unlockTech: 'currency', icon: '\u{1F3E6}' },
+  despotism: { name: 'Despotism', desc: '+20% Science, +30% military unit production', bonuses: { scienceBonus: 0.2, militaryProdBonus: 0.3 }, slots: 1, unlockTech: 'writing', icon: '👑' },
+  oligarchy: { name: 'Oligarchy', desc: '+20% Food, +30% building production', bonuses: { foodBonus: 0.2, buildingProdBonus: 0.3 }, slots: 1, unlockTech: 'currency', icon: '🏦' },
+  classical_republic: { name: 'Classical Republic', desc: '+20% Culture, +15% wonder production', bonuses: { cultureBonus: 0.2, wonderProdBonus: 0.15 }, slots: 2, unlockTech: 'philosophy', icon: '🏛' },
 };
 
 // ============================================
 // WONDERS SYSTEM
 // ============================================
 export const WONDERS = [
-  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}', category: 'economic' },
-  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}', category: 'economic' },
-  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}', category: 'cultural' },
-  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}', category: 'military' },
-  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}', category: 'cultural' },
-  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}', category: 'economic' },
-  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}', category: 'military' },
-  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}', category: 'economic' },
+  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '🌿', category: 'economic' },
+  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '🛕', category: 'economic' },
+  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '📜', category: 'cultural' },
+  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '🗿', category: 'military' },
+  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '🔮', category: 'cultural' },
+  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '🕯️', category: 'economic' },
+  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '🥋', category: 'military' },
+  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '🏜', category: 'economic' },
 ];
 
 // Wonder priorities per faction archetype — higher = more desired
