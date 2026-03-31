@@ -760,16 +760,16 @@ function showBattlePanel(attacker, defender, onChoice) {
           <span>Hold formation. -10% damage dealt, -25% damage taken.</span>
         </button>
         <button class="battle-tactic" data-tactic="flanking">
-          <strong>\u{1F3AF} Flanking Maneuver</strong>
+          <strong>\u{1F3AF} Flanking Manoeuver</strong>
           <span>Risky outflank. 60% chance of +30% damage, 40% chance of -15%.</span>
         </button>
         <button class="battle-tactic" data-tactic="feigned_retreat">
           <strong>\u{1F3C3} Feigned Retreat</strong>
-          <span>Lure them in. If enemy combat > yours: +25% damage. Otherwise: -10%.</span>
+          <span>Lure them in. If enemy combat > ours: +25% damage. Otherwise: -10%.</span>
         </button>
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
-          <span>Withdraw without fighting. Unit loses 1 move point.</span>
+          <span>Withdraw without fighting. Uses 1 movement.</span>
         </button>
       </div>
     </div>
