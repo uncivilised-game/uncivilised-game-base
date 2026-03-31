@@ -709,7 +709,7 @@ function renderBuildPanel() {
 
   const rateP = document.createElement('p');
   rateP.style.cssText = 'color:var(--color-text-muted);font-size:11px;margin-bottom:8px;text-align:right';
-  rateP.textContent = '\u2692 ' + game.productionPerTurn + ' production/turn';
+  rateP.textContent = '⚒️ ' + game.productionPerTurn + ' production/turn';
   container.appendChild(rateP);
 
   // Buildings
