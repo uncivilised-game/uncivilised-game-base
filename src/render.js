@@ -984,7 +984,9 @@ function render() {
     }
 
     // Unit icon — new painterly sprites → legacy atlas → emoji fallback
-    const newSprite = NEW_UNIT_SPRITES[unit.type];
+    // Barbarian special units use barbSpecial key for their sprite
+    const spriteKey = unit.barbSpecial || unit.type;
+    const newSprite = NEW_UNIT_SPRITES[spriteKey];
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
     if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
       // New painterly sprite sheet — draw first frame (256x256) from idle strip

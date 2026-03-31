@@ -59,6 +59,12 @@ const newSpriteFiles = {
   worker:         'assets/units/worker/worker-sprite_idle.png',
   settler:        'assets/units/settler/settlers-sprite_idle.png',
   great_general:  'assets/units/great_general/general-sprite_idle.png',
+  // Pack 7 — Barbarians
+  barbarian_warrior: 'assets/units/barbarian_warrior/Barbarian-warrior_idle.png',
+  horse_raider:      'assets/units/horse_raider/barbarian_horseman_idle.png',
+  berserker:         'assets/units/berserker/bersker-barbarian_idle.png',
+  war_drummer:       'assets/units/war_drummer/war-drummer-barbarian_idle.png',
+  shaman:            'assets/units/shaman/shaman-barb_idle.png',
 };
 for (const [unitType, path] of Object.entries(newSpriteFiles)) {
   const img = new Image();
