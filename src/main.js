@@ -189,6 +189,7 @@ function createInitialState() {
   for (const fc of Object.values(factionCities)) {
     startPositions.push({ col: fc.col, row: fc.row });
   }
+  startPositions.map(sp => map[sp.row][sp.col].road = true);
   const tribalVillages = placeTribalVillages(map, startPositions);
 
   const startingUnits = [];

@@ -322,6 +322,7 @@ window.barbCampAction = function(campId, action) {
         population: 500, buildings: [], isCapital: false, founded: game.turn,
         ...CITY_WALL_DEFAULTS,
       });
+      game.map[bc.row][bc.col].road = true;
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
       addEvent(`\u{1F3F0} Barbarian camp converted to settlement "${cityName}"! The former raiders join your civilization.`, 'diplomacy');
@@ -476,6 +477,7 @@ window.minorAction = function(mfId, action) {
         population: 500, buildings: [], isCapital: false, founded: game.turn,
         ...CITY_WALL_DEFAULTS,
       });
+      game.map[bc.row][bc.col].road = true;
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
       addEvent(`\u{1F3F0} Barbarian camp converted to settlement "${cityName}"! The former raiders join your civilization.`, 'diplomacy');

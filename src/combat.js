@@ -440,6 +440,7 @@ function captureExpansionCity(factionId, cityIdx) {
     owner: 'player',
     ...CITY_WALL_DEFAULTS,
   });
+  game.map[ec.row][ec.col].road = true;
 
   // Remove garrison units
   game.units = game.units.filter(u => !(u.col === ec.col && u.row === ec.row && u.owner === factionId));
@@ -627,6 +628,7 @@ function captureFactionCity(factionId) {
     cultureAccum: 0,
     ...CITY_WALL_DEFAULTS,
   });
+  game.map[fc.row][fc.col].road = true;
 
   // Remove from faction cities
   delete game.factionCities[factionId];

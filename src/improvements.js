@@ -327,6 +327,9 @@ window.foundCity = function(unitId) {
     ...CITY_WALL_DEFAULTS,
   });
 
+  // Add a road on the tile
+  game.map[unit.row][unit.col].road = true;
+
   // Remove the settler
   game.units = game.units.filter(u => u.id !== unitId);
   game.selectedUnitId = null;
