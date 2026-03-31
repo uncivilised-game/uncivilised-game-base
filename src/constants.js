@@ -82,26 +82,26 @@ export const UNIT_UPGRADES = {
 };
 
 export const RESOURCES = {
-  iron:     { name: 'Iron',     icon: '⛏',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
-  gold_ore: { name: 'Gold Ore', icon: '◈',  color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
-  horses:   { name: 'Horses',   icon: '♞',  color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
-  gems:     { name: 'Gems',     icon: '◆',  color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  wheat:    { name: 'Wheat',    icon: '⌇',  color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
-  stone:    { name: 'Stone',    icon: '▢',  color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
-  fish:     { name: 'Fish',     icon: '⋈',  color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
-  spices:   { name: 'Spices',   icon: '❋',  color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
-  silk:     { name: 'Silk',     icon: '≈',  color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  copper:   { name: 'Copper',   icon: '⊕',  color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
-  marble:   { name: 'Marble',   icon: '\u25A1', color: '#d0c8b8', bonus: { prod: 1, gold: 1 }, category: 'bonus' },
-  incense:  { name: 'Incense',  icon: '\u2604', color: '#b8a0d0', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  ivory:    { name: 'Ivory',    icon: '\u2658', color: '#f0e8d0', bonus: { gold: 2 }, category: 'luxury' },
-  dyes:     { name: 'Dyes',     icon: '\u2740', color: '#d05080', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  furs:     { name: 'Furs',     icon: '\u2248', color: '#8a6040', bonus: { gold: 2 }, category: 'luxury' },
-  salt:     { name: 'Salt',     icon: '\u2662', color: '#e8e0d0', bonus: { food: 1, gold: 1 }, category: 'bonus' },
-  obsidian: { name: 'Obsidian', icon: '\u25C6', color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
-  jade:     { name: 'Jade',     icon: '\u25C9', color: '#50a060', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  wine:     { name: 'Wine',     icon: '\u2617', color: '#8a2040', bonus: { gold: 2 }, category: 'luxury' },
-  cotton:   { name: 'Cotton',   icon: '\u2055', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
+  iron:     { name: 'Iron',     icon: '⛏', color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
+  gold_ore: { name: 'Gold Ore', icon: '🟨', color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
+  horses:   { name: 'Horses',   icon: '🐴', color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
+  gems:     { name: 'Gems',     icon: '💎', color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  wheat:    { name: 'Wheat',    icon: '🌾', color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
+  stone:    { name: 'Stone',    icon: '🪨', color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
+  fish:     { name: 'Fish',     icon: '🐟', color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
+  spices:   { name: 'Spices',   icon: '🌶️', color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
+  silk:     { name: 'Silk',     icon: '🧵', color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  copper:   { name: 'Copper',   icon: '🟫', color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
+  marble:   { name: 'Marble',   icon: '⬜', color: '#d0c8b8', bonus: { prod: 1, gold: 1 }, category: 'bonus' },
+  incense:  { name: 'Incense',  icon: '🪔', color: '#b8a0d0', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  ivory:    { name: 'Ivory',    icon: '🐘', color: '#f0e8d0', bonus: { gold: 2 }, category: 'luxury' },
+  dyes:     { name: 'Dyes',     icon: '🎨', color: '#d05080', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  furs:     { name: 'Furs',     icon: '🦫', color: '#8a6040', bonus: { gold: 2 }, category: 'luxury' },
+  salt:     { name: 'Salt',     icon: '🧂', color: '#e8e0d0', bonus: { food: 1, gold: 1 }, category: 'bonus' },
+  obsidian: { name: 'Obsidian', icon: '⬛️', color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
+  jade:     { name: 'Jade',     icon: '🟩', color: '#50a060', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  wine:     { name: 'Wine',     icon: '🍷', color: '#8a2040', bonus: { gold: 2 }, category: 'luxury' },
+  cotton:   { name: 'Cotton',   icon: '☁️', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
 };
 
 export const BUILDINGS = [
@@ -233,11 +233,11 @@ export const PROMOTION_XP_THRESHOLDS = [15, 40];
 export const LUXURY_RESOURCES = ['gold_ore', 'gems', 'spices', 'silk', 'incense', 'ivory', 'dyes', 'furs', 'jade', 'wine'];
 
 export const NATURAL_WONDERS = [
-  { id: 'grand_mesa', name: 'Grand Mesa', icon: '\u26F0', color: '#c49858', yields: { prod: 2, gold: 2 }, desc: 'A towering flat-topped mountain', terrain: ['plains', 'desert'], feature: 'hills' },
-  { id: 'great_barrier_reef', name: 'Great Barrier Reef', icon: '\u{1F41A}', color: '#40c0c0', yields: { food: 3, gold: 2 }, desc: 'A sprawling underwater coral wonder', terrain: ['coast'], feature: null },
-  { id: 'krakatoa', name: 'Krakatoa', icon: '\u{1F30B}', color: '#d04020', yields: { prod: 3, science: 2 }, desc: 'An active volcanic island', terrain: ['coast', 'ocean'], feature: null },
-  { id: 'old_faithful', name: 'Old Faithful', icon: '\u2668', color: '#80b0d0', yields: { science: 3, gold: 1 }, desc: 'A legendary erupting geyser', terrain: ['plains', 'grassland'], feature: null },
-  { id: 'fountain_of_youth', name: 'Fountain of Youth', icon: '\u2B50', color: '#f0d060', yields: { food: 2, culture: 3 }, desc: 'A mythical healing spring', terrain: ['grassland'], feature: 'woods' },
+  { id: 'grand_mesa', name: 'Grand Mesa', icon: '🏜️', color: '#c49858', yields: { prod: 2, gold: 2 }, desc: 'A towering flat-topped mountain', terrain: ['plains', 'desert'], feature: 'hills' },
+  { id: 'great_barrier_reef', name: 'Great Barrier Reef', icon: '🐠', color: '#40c0c0', yields: { food: 3, gold: 2 }, desc: 'A sprawling underwater coral wonder', terrain: ['coast'], feature: null },
+  { id: 'krakatoa', name: 'Krakatoa', icon: '🌋', color: '#d04020', yields: { prod: 3, science: 2 }, desc: 'An active volcanic island', terrain: ['coast', 'ocean'], feature: null },
+  { id: 'old_faithful', name: 'Old Faithful', icon: '🏞️', color: '#80b0d0', yields: { science: 3, gold: 1 }, desc: 'A legendary erupting geyser', terrain: ['plains', 'grassland'], feature: null },
+  { id: 'fountain_of_youth', name: 'Fountain of Youth', icon: '⛲', color: '#f0d060', yields: { food: 2, culture: 3 }, desc: 'A mythical healing spring', terrain: ['grassland'], feature: 'woods' },
 ];
 
 export const TERRAIN_TILE_MAP = {
@@ -314,15 +314,15 @@ export const TILE_IMPROVEMENTS = {
   // Production & Mining
   mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], yields: { prod: 2 }, desc: '+2 Production' },
   quarry:      { name: 'Quarry',       icon: '🪨', turns: 4, requires: 'masonry',     validOn: ['hills','plains'], yields: { prod: 1, gold: 1 }, requiresResource: ['stone'], desc: '+1 Prod, +1 Gold (on Stone)' },
-  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
+  lumber_mill: { name: 'Lumber Mill',  icon: '🪵', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
 
   // Infrastructure
-  road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
+  road:        { name: 'Road',         icon: '🛣️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },
   plant_forest:{ name: 'Plant Forest', icon: '🌲', turns: 4, requires: 'mysticism',   validOn: ['grassland','plains'], yields: {}, terraform: { addFeature: 'woods' }, desc: 'Grow forest on empty land' },
-  drain_marsh: { name: 'Drain Marsh',  icon: '🏗️', turns: 3, requires: 'masonry',     validFeature: ['marsh'], yields: {}, terraform: { removeFeature: true, food: 1 }, desc: 'Drain marsh, gain fertile land' },
+  drain_marsh: { name: 'Drain Marsh',  icon: '🌱', turns: 3, requires: 'masonry',     validFeature: ['marsh'], yields: {}, terraform: { removeFeature: true, food: 1 }, desc: 'Drain marsh, gain fertile land' },
 };
 
 // Worker unit type
@@ -409,11 +409,11 @@ export const WONDER_PRIORITIES = {
 };
 
 export const BARBARIAN_UNITS = {
-  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee', desc: 'Basic barbarian raider' },
-  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast mounted raider, +3 move', movePoints: 3, special: 'pillage' },
-  berserker:         { name: 'Berserker',          combat: 30, icon: '\u{1F4A2}', class: 'melee', desc: '+50% attack but -25% defense', special: 'frenzy' },
-  war_drummer:       { name: 'War Drummer',        combat: 10, icon: '\u{1F941}', class: 'support', desc: 'Adjacent allies +5 combat', special: 'inspire' },
-  shaman:            { name: 'Shaman',             combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
+  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '🧔🏼‍', class: 'melee',   desc: 'Basic barbarian raider' },
+  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '🐎', class: 'cavalry', desc: 'Fast mounted raider, +3 move',    special: 'pillage', movePoints: 3 },
+  berserker:         { name: 'Berserker',         combat: 30, icon: '🪓', class: 'melee',   desc: '+50% attack but -25% defense',    special: 'frenzy' },
+  war_drummer:       { name: 'War Drummer',       combat: 10, icon: '🥁', class: 'support', desc: 'Adjacent allies +5 combat',       special: 'inspire' },
+  shaman:            { name: 'Shaman',            combat: 8,  icon: '🧙', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
 };
 
 export const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];
