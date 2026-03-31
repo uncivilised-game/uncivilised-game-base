@@ -51,20 +51,19 @@ export const TERRAIN_FEATURES = {
   floodplains:{ name: 'Floodplains',food: 3, prod: 0, gold: 0, moveCost: 0, color: 'rgba(100,160,60,0.2)' },
 };
 
-// UNIT_TYPES is `let` because the game mod system can add new unit types at runtime
-export let UNIT_TYPES = {
+export const UNIT_TYPES = {
   scout:     { name: 'Scout',         cost: 15, combat: 10, rangedCombat: 0, range: 0, movePoints: 3, icon: '👁', class: 'recon',    desc: 'Fast explorer, weak in combat' },
-  warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔', class: 'melee',    desc: 'Basic melee infantry' },
-  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '◎', class: 'ranged',   desc: 'Cheap ranged unit' },
+  warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔️', class: 'melee',    desc: 'Basic melee infantry' },
+  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '🎯', class: 'ranged',   desc: 'Cheap ranged unit' },
   archer:    { name: 'Archer',        cost: 30, combat: 15, rangedCombat: 25,range: 2, movePoints: 2, icon: '🏹', class: 'ranged',   desc: 'Strong ranged attacker, range 2' },
   spearman:  { name: 'Spearman',      cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 2, icon: '🔱', class: 'anti-cav', desc: '+10 vs cavalry units' },
-  chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐎', class: 'cavalry',  desc: 'Powerful mobile unit' },
-  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', buildCharges: 2, desc: 'Builds improvements on tiles (2 charges)' },
+  chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐴︎', class: 'cavalry',  desc: 'Powerful mobile unit' },
+  worker:    { name: 'Worker',        cost: 30, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '👷', class: 'civilian', desc: 'Builds improvements on tiles (2 charges)', buildCharges: 2 },
   settler:   { name: 'Settler',       cost: 60, combat: 0,  rangedCombat: 0, range: 0, movePoints: 2, icon: '🏕', class: 'civilian', desc: 'Founds new cities' },
-  horseman:  { name: 'Horseman', cost: 45, combat: 30, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast cavalry unit, 3 moves' },
-  ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
-  galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
-  phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
+  horseman:  { name: 'Horseman',      cost: 45, combat: 30, rangedCombat: 0, range: 0, movePoints: 3, icon: '🐎', class: 'cavalry',  desc: 'Fast cavalry unit, 3 moves' },
+  ballista:  { name: 'Ballista',      cost: 50, combat: 10, rangedCombat: 30,range: 2, movePoints: 1, icon: '☄️', class: 'siege',    desc: 'Siege engine, +50% vs cities' },
+  galley:    { name: 'Galley',        cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '⛵︎', class: 'naval',    desc: 'Coastal patrol vessel' },
+  phalanx:   { name: 'Phalanx',       cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '🛡️', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
 };
 
 // ============================================
@@ -83,30 +82,29 @@ export const UNIT_UPGRADES = {
 };
 
 export const RESOURCES = {
-  iron:     { name: 'Iron',     icon: '⛏',  color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
-  gold_ore: { name: 'Gold Ore', icon: '◈',  color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
-  horses:   { name: 'Horses',   icon: '♞',  color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
-  gems:     { name: 'Gems',     icon: '◆',  color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  wheat:    { name: 'Wheat',    icon: '⌇',  color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
-  stone:    { name: 'Stone',    icon: '▢',  color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
-  fish:     { name: 'Fish',     icon: '⋈',  color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
-  spices:   { name: 'Spices',   icon: '❋',  color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
-  silk:     { name: 'Silk',     icon: '≈',  color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  copper:   { name: 'Copper',   icon: '⊕',  color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
-  marble:   { name: 'Marble',   icon: '\u25A1', color: '#d0c8b8', bonus: { prod: 1, gold: 1 }, category: 'bonus' },
-  incense:  { name: 'Incense',  icon: '\u2604', color: '#b8a0d0', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  ivory:    { name: 'Ivory',    icon: '\u2658', color: '#f0e8d0', bonus: { gold: 2 }, category: 'luxury' },
-  dyes:     { name: 'Dyes',     icon: '\u2740', color: '#d05080', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  furs:     { name: 'Furs',     icon: '\u2248', color: '#8a6040', bonus: { gold: 2 }, category: 'luxury' },
-  salt:     { name: 'Salt',     icon: '\u2662', color: '#e8e0d0', bonus: { food: 1, gold: 1 }, category: 'bonus' },
-  obsidian: { name: 'Obsidian', icon: '\u25C6', color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
-  jade:     { name: 'Jade',     icon: '\u25C9', color: '#50a060', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
-  wine:     { name: 'Wine',     icon: '\u2617', color: '#8a2040', bonus: { gold: 2 }, category: 'luxury' },
-  cotton:   { name: 'Cotton',   icon: '\u2055', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
+  iron:     { name: 'Iron',     icon: '⛏', color: '#9a9aaa', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'bronze_working' },
+  gold_ore: { name: 'Gold Ore', icon: '🟨', color: '#d4b45a', bonus: { gold: 2 }, category: 'luxury' },
+  horses:   { name: 'Horses',   icon: '🐴', color: '#a0785a', bonus: { prod: 1 }, category: 'strategic', revealedBy: 'animal_husbandry' },
+  gems:     { name: 'Gems',     icon: '💎', color: '#9b6fc5', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  wheat:    { name: 'Wheat',    icon: '🌾', color: '#c9b04c', bonus: { food: 2 }, category: 'bonus' },
+  stone:    { name: 'Stone',    icon: '🪨', color: '#8a8a8a', bonus: { prod: 2 }, category: 'bonus' },
+  fish:     { name: 'Fish',     icon: '🐟', color: '#5ba8d9', bonus: { food: 2 }, category: 'bonus' },
+  spices:   { name: 'Spices',   icon: '🌶️', color: '#d98a5b', bonus: { gold: 2 }, category: 'luxury' },
+  silk:     { name: 'Silk',     icon: '🧵', color: '#c495d9', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  copper:   { name: 'Copper',   icon: '🟫', color: '#c88a5a', bonus: { prod: 1, gold: 1 }, category: 'strategic', revealedBy: 'mining' },
+  marble:   { name: 'Marble',   icon: '⬜', color: '#d0c8b8', bonus: { prod: 1, gold: 1 }, category: 'bonus' },
+  incense:  { name: 'Incense',  icon: '🪔', color: '#b8a0d0', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  ivory:    { name: 'Ivory',    icon: '🐘', color: '#f0e8d0', bonus: { gold: 2 }, category: 'luxury' },
+  dyes:     { name: 'Dyes',     icon: '🎨', color: '#d05080', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  furs:     { name: 'Furs',     icon: '🦫', color: '#8a6040', bonus: { gold: 2 }, category: 'luxury' },
+  salt:     { name: 'Salt',     icon: '🧂', color: '#e8e0d0', bonus: { food: 1, gold: 1 }, category: 'bonus' },
+  obsidian: { name: 'Obsidian', icon: '⬛️', color: '#303030', bonus: { prod: 2 }, category: 'strategic', revealedBy: 'mining' },
+  jade:     { name: 'Jade',     icon: '🟩', color: '#50a060', bonus: { gold: 1, culture: 1 }, category: 'luxury' },
+  wine:     { name: 'Wine',     icon: '🍷', color: '#8a2040', bonus: { gold: 2 }, category: 'luxury' },
+  cotton:   { name: 'Cotton',   icon: '☁️', color: '#e8e8f0', bonus: { gold: 1 }, category: 'bonus' },
 };
 
-// BUILDINGS is `let` because the game mod system can add new buildings at runtime
-export let BUILDINGS = [
+export const BUILDINGS = [
   { id: 'granary',     name: 'Granary',       cost: 40,  desc: '+2 Food per turn', effect: { food: 2 } },
   { id: 'market',      name: 'Market',        cost: 50,  desc: '+3 Gold per turn', effect: { gold: 3 } },
   { id: 'barracks',    name: 'Barracks',      cost: 45,  desc: '+3 Military, unlock units', effect: { military: 3 } },
@@ -235,11 +233,11 @@ export const PROMOTION_XP_THRESHOLDS = [15, 40];
 export const LUXURY_RESOURCES = ['gold_ore', 'gems', 'spices', 'silk', 'incense', 'ivory', 'dyes', 'furs', 'jade', 'wine'];
 
 export const NATURAL_WONDERS = [
-  { id: 'grand_mesa', name: 'Grand Mesa', icon: '\u26F0', color: '#c49858', yields: { prod: 2, gold: 2 }, desc: 'A towering flat-topped mountain', terrain: ['plains', 'desert'], feature: 'hills' },
-  { id: 'great_barrier_reef', name: 'Great Barrier Reef', icon: '\u{1F41A}', color: '#40c0c0', yields: { food: 3, gold: 2 }, desc: 'A sprawling underwater coral wonder', terrain: ['coast'], feature: null },
-  { id: 'krakatoa', name: 'Krakatoa', icon: '\u{1F30B}', color: '#d04020', yields: { prod: 3, science: 2 }, desc: 'An active volcanic island', terrain: ['coast', 'ocean'], feature: null },
-  { id: 'old_faithful', name: 'Old Faithful', icon: '\u2668', color: '#80b0d0', yields: { science: 3, gold: 1 }, desc: 'A legendary erupting geyser', terrain: ['plains', 'grassland'], feature: null },
-  { id: 'fountain_of_youth', name: 'Fountain of Youth', icon: '\u2B50', color: '#f0d060', yields: { food: 2, culture: 3 }, desc: 'A mythical healing spring', terrain: ['grassland'], feature: 'woods' },
+  { id: 'grand_mesa', name: 'Grand Mesa', icon: '🏜️', color: '#c49858', yields: { prod: 2, gold: 2 }, desc: 'A towering flat-topped mountain', terrain: ['plains', 'desert'], feature: 'hills' },
+  { id: 'great_barrier_reef', name: 'Great Barrier Reef', icon: '🐠', color: '#40c0c0', yields: { food: 3, gold: 2 }, desc: 'A sprawling underwater coral wonder', terrain: ['coast'], feature: null },
+  { id: 'krakatoa', name: 'Krakatoa', icon: '🌋', color: '#d04020', yields: { prod: 3, science: 2 }, desc: 'An active volcanic island', terrain: ['coast', 'ocean'], feature: null },
+  { id: 'old_faithful', name: 'Old Faithful', icon: '🏞️', color: '#80b0d0', yields: { science: 3, gold: 1 }, desc: 'A legendary erupting geyser', terrain: ['plains', 'grassland'], feature: null },
+  { id: 'fountain_of_youth', name: 'Fountain of Youth', icon: '⛲', color: '#f0d060', yields: { food: 2, culture: 3 }, desc: 'A mythical healing spring', terrain: ['grassland'], feature: 'woods' },
 ];
 
 export const TERRAIN_TILE_MAP = {
@@ -309,22 +307,22 @@ export const TILE_IMPROVEMENTS = {
   // Farming & Food
   farm:        { name: 'Farm',         icon: '🌾', turns: 3, requires: 'agriculture', validOn: ['grassland','plains','floodplains'], yields: { food: 2 }, requiresRiver: false, desc: '+2 Food (better near rivers)' },
   irrigation:  { name: 'Irrigation',   icon: '💧', turns: 4, requires: 'agriculture', validOn: ['grassland','plains','desert'], yields: { food: 2, gold: 1 }, requiresRiver: true, desc: '+2 Food, +1 Gold (requires river)' },
-  pasture:     { name: 'Pasture',      icon: '🐄', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains'], yields: { food: 1, prod: 1 }, requiresResource: ['horses'], desc: '+1 Food, +1 Prod (on Horses)' },
+  pasture:     { name: 'Pasture',      icon: '🐏', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains'], yields: { food: 1, prod: 1 }, requiresResource: ['horses'], desc: '+1 Food, +1 Prod (on Horses)' },
   camp:        { name: 'Camp',         icon: '⛺', turns: 3, requires: 'animal_husbandry', validOn: ['grassland','plains','tundra'], yields: { gold: 2 }, desc: '+2 Gold (hunting camp)' },
   fishing_boats:{ name: 'Fishing Boats',icon: '🎣', turns: 2, requires: 'sailing',   validOn: ['coast','ocean'], yields: { food: 2, gold: 1 }, requiresResource: ['fish'], desc: '+2 Food, +1 Gold (on Fish)' },
 
   // Production & Mining
   mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], yields: { prod: 2 }, desc: '+2 Production' },
   quarry:      { name: 'Quarry',       icon: '🪨', turns: 4, requires: 'masonry',     validOn: ['hills','plains'], yields: { prod: 1, gold: 1 }, requiresResource: ['stone'], desc: '+1 Prod, +1 Gold (on Stone)' },
-  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
+  lumber_mill: { name: 'Lumber Mill',  icon: '🪵', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
 
   // Infrastructure
-  road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
+  road:        { name: 'Road',         icon: '🛣️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },
   plant_forest:{ name: 'Plant Forest', icon: '🌲', turns: 4, requires: 'mysticism',   validOn: ['grassland','plains'], yields: {}, terraform: { addFeature: 'woods' }, desc: 'Grow forest on empty land' },
-  drain_marsh: { name: 'Drain Marsh',  icon: '🏗️', turns: 3, requires: 'masonry',     validFeature: ['marsh'], yields: {}, terraform: { removeFeature: true, food: 1 }, desc: 'Drain marsh, gain fertile land' },
+  drain_marsh: { name: 'Drain Marsh',  icon: '🌱', turns: 3, requires: 'masonry',     validFeature: ['marsh'], yields: {}, terraform: { removeFeature: true, food: 1 }, desc: 'Drain marsh, gain fertile land' },
 };
 
 // Worker unit type
@@ -371,23 +369,23 @@ export const FACTION_TRAITS = {
 
 export const GOVERNMENTS = {
   chiefdom: { name: 'Chiefdom', desc: 'Basic tribal leadership', bonuses: {}, slots: 0, unlockTech: null },
-  despotism: { name: 'Despotism', desc: '+20% Science, +30% military unit production', bonuses: { scienceBonus: 0.2, militaryProdBonus: 0.3 }, slots: 1, unlockTech: 'writing', icon: '\u{1F451}' },
-  classical_republic: { name: 'Classical Republic', desc: '+20% Culture, +15% wonder production', bonuses: { cultureBonus: 0.2, wonderProdBonus: 0.15 }, slots: 2, unlockTech: 'philosophy', icon: '\u{1F3DB}' },
-  oligarchy: { name: 'Oligarchy', desc: '+20% Food, +30% building production', bonuses: { foodBonus: 0.2, buildingProdBonus: 0.3 }, slots: 1, unlockTech: 'currency', icon: '\u{1F3E6}' },
+  despotism: { name: 'Despotism', desc: '+20% Science, +30% military unit production', bonuses: { scienceBonus: 0.2, militaryProdBonus: 0.3 }, slots: 1, unlockTech: 'writing', icon: '👑' },
+  oligarchy: { name: 'Oligarchy', desc: '+20% Food, +30% building production', bonuses: { foodBonus: 0.2, buildingProdBonus: 0.3 }, slots: 1, unlockTech: 'currency', icon: '🏦' },
+  classical_republic: { name: 'Classical Republic', desc: '+20% Culture, +15% wonder production', bonuses: { cultureBonus: 0.2, wonderProdBonus: 0.15 }, slots: 2, unlockTech: 'philosophy', icon: '🏛' },
 };
 
 // ============================================
 // WONDERS SYSTEM
 // ============================================
 export const WONDERS = [
-  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '\u{1F33F}', category: 'economic' },
-  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '\u{1F4D0}', category: 'economic' },
-  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '\u{1F4DA}', category: 'cultural' },
-  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '\u{1F5FF}', category: 'military' },
-  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '\u{1F52E}', category: 'cultural' },
-  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '\u{1F6E4}', category: 'economic' },
-  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '\u{1F5FF}', category: 'military' },
-  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '\u{1F3DC}', category: 'economic' },
+  { id: 'hanging_gardens', name: 'Hanging Gardens', cost: 150, desc: '+1 Food on all farms, +10% growth', effect: { foodPerFarm: 1, growthBonus: 0.1 }, requires: 'irrigation_tech', placement: 'river', icon: '🌿', category: 'economic' },
+  { id: 'pyramids', name: 'Pyramids', cost: 120, desc: '+1 Gold and +1 Production on river tiles', effect: { riverGold: 1, riverProd: 1 }, requires: 'masonry', placement: 'desert_or_flat', icon: '🛕', category: 'economic' },
+  { id: 'great_library', name: 'Great Library', cost: 200, desc: '+4 Science, +1 Science on all science buildings', effect: { science: 4, scienceOnBuildings: 1 }, requires: 'education', placement: 'any', icon: '📜', category: 'cultural' },
+  { id: 'colossus', name: 'Colossus', cost: 160, desc: '+3 Gold, +3 Resource capacity', effect: { gold: 3 }, requires: 'currency', placement: 'coastal', icon: '🗿', category: 'military' },
+  { id: 'oracle', name: 'Oracle', cost: 140, desc: '+2 Culture, +20 Culture per rumour event', effect: { culture: 2, rumourCulture: 20 }, requires: 'mysticism', placement: 'any', icon: '🔮', category: 'cultural' },
+  { id: 'great_lighthouse', name: 'Great Lighthouse', cost: 140, desc: '+3 Gold, +1 Sight for all units', effect: { gold: 3, sightBonus: 1 }, requires: 'sailing', placement: 'coastal', icon: '🕯️', category: 'economic' },
+  { id: 'terracotta_army', name: 'Terracotta Army', cost: 180, desc: '+2 Production, free Army unit, +25% combat XP', effect: { production: 2, freeUnit: 'warrior' }, requires: 'iron_working', placement: 'any', icon: '🥋', category: 'military' },
+  { id: 'petra', name: 'Petra', cost: 160, desc: '+2 Gold, +1 Prod on desert tiles in territory', effect: { gold: 2, desertProd: 1 }, requires: 'currency', placement: 'desert', icon: '🏜', category: 'economic' },
 ];
 
 // Wonder priorities per faction archetype — higher = more desired
@@ -411,11 +409,11 @@ export const WONDER_PRIORITIES = {
 };
 
 export const BARBARIAN_UNITS = {
-  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee', desc: 'Basic barbarian raider' },
-  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast mounted raider, +3 move', movePoints: 3, special: 'pillage' },
-  berserker:         { name: 'Berserker',          combat: 30, icon: '\u{1F4A2}', class: 'melee', desc: '+50% attack but -25% defense', special: 'frenzy' },
-  war_drummer:       { name: 'War Drummer',        combat: 10, icon: '\u{1F941}', class: 'support', desc: 'Adjacent allies +5 combat', special: 'inspire' },
-  shaman:            { name: 'Shaman',             combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
+  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '🧔🏼‍', class: 'melee',   desc: 'Basic barbarian raider' },
+  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '🐎', class: 'cavalry', desc: 'Fast mounted raider, +3 move',    special: 'pillage', movePoints: 3 },
+  berserker:         { name: 'Berserker',         combat: 30, icon: '🪓', class: 'melee',   desc: '+50% attack but -25% defense',    special: 'frenzy' },
+  war_drummer:       { name: 'War Drummer',       combat: 10, icon: '🥁', class: 'support', desc: 'Adjacent allies +5 combat',       special: 'inspire' },
+  shaman:            { name: 'Shaman',            combat: 8,  icon: '🧙', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
 };
 
 export const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];

@@ -274,22 +274,21 @@ setTimeout(initUsernameUI, 100);
 function updateUI() {
   document.getElementById('stat-turn').innerHTML = `Turn <strong>${game.turn}</strong>/${MAX_TURNS}`;
   document.getElementById('stat-gold').querySelector('strong').textContent = game.gold;
-  // BUG-03: Show research progress alongside science rate
   {
     const sciEl = document.getElementById('stat-science');
     if (sciEl) {
-      let sciText = game.sciencePerTurn + ' /turn';
+      let sciText = '';
       if (game.currentResearch) {
         const tdata = TECHNOLOGIES.find(t => t.id === game.currentResearch);
         if (tdata) {
           const pct = Math.min(100, Math.floor(game.researchProgress / tdata.cost * 100));
-          sciText += ' | ' + tdata.name + ' ' + pct + '%';
+          sciText += tdata.name + ' ' + pct + '%';
         }
       }
-      sciEl.querySelector('strong').textContent = sciText;
+      sciEl.querySelector('.science').textContent = game.sciencePerTurn;
+      sciEl.querySelector('.research').textContent = sciText;
     }
   }
-  // BUG-04: Add food stat to top bar
   {
     let foodEl = document.getElementById('stat-food');
     if (!foodEl) {
@@ -298,7 +297,7 @@ function updateUI() {
         foodEl = document.createElement('span');
         foodEl.id = 'stat-food';
         foodEl.className = 'stat';
-        foodEl.style.cssText = 'color:#6aab5c;margin-left:12px;font-size:12px';
+        foodEl.style.cssText = 'color:#6aab5c;font-size:12px';
         foodEl.innerHTML = '\u{1F33E} <strong></strong>';
         // Insert before the military stat
         const milEl = document.getElementById('stat-military');
@@ -321,7 +320,7 @@ function updateUI() {
       cultureEl = document.createElement('span');
       cultureEl.id = 'stat-culture-turn';
       cultureEl.className = 'stat';
-      cultureEl.style.cssText = 'color:#e8a0ff;margin-left:12px;font-size:12px;cursor:pointer';
+      cultureEl.style.cssText = 'color:#e8a0ff;font-size:12px;cursor:pointer';
       cultureEl.title = 'Click to open Civics panel (C)';
       cultureEl.addEventListener('click', () => toggleCivicsPanel());
       statsBar.appendChild(cultureEl);
@@ -384,13 +383,13 @@ function updateUI() {
   }
   // Show trade routes in top bar
   let tradeEl = document.getElementById('stat-trade');
-  if (!tradeEl && (game.tradeRoutes || []).length > 0) {
+  if (!tradeEl && game.maxTradeRoutes > 0) {
     const statsBar = document.getElementById('stat-turn')?.parentElement;
     if (statsBar) {
       tradeEl = document.createElement('span');
       tradeEl.id = 'stat-trade';
       tradeEl.className = 'stat';
-      tradeEl.style.cssText = 'color:#c9a84c;margin-left:8px;font-size:12px';
+      tradeEl.style.cssText = 'color:#c9a84c;font-size:12px';
       statsBar.appendChild(tradeEl);
     }
   }
@@ -406,7 +405,7 @@ function updateUI() {
       govEl = document.createElement('span');
       govEl.id = 'stat-government';
       govEl.className = 'stat';
-      govEl.style.cssText = 'color:#d4a0ff;margin-left:12px;font-size:12px';
+      govEl.style.cssText = 'color:#d4a0ff;font-size:12px';
       statsBar.appendChild(govEl);
     }
   }
@@ -424,8 +423,10 @@ function updateEnvoyUI() {
   if (el && game) {
     const envoys = game.envoys != null ? game.envoys : 3;
     const max = game.maxEnvoys || 3;
-    el.querySelector('strong').textContent = `${envoys}/${max}`;
-    // Visual warning when low
+    const strongEl = el.querySelector('strong');
+    strongEl.textContent = envoys;
+    strongEl.nextSibling.nodeValue = '/' + max;
+    // subtle indication when exhaused
     el.style.opacity = envoys === 0 ? '0.5' : '1';
   }
 }
