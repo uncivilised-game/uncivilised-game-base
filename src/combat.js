@@ -703,9 +703,14 @@ function getCityAt(col, row) {
   // Check player cities
   const pCity = game.cities.find(c => c.col === col && c.row === row);
   if (pCity) return { ...pCity, owner: 'player' };
-  // Check faction cities
+  // Check faction capitals
   for (const [fid, fc] of Object.entries(game.factionCities)) {
     if (fc.col === col && fc.row === row) return { ...fc, owner: fid };
+  }
+  // Check faction expansion cities
+  for (const [owner, cities] of Object.entries(game.aiFactionCities)) {
+    for (const city of cities)
+      if (city.col === col && city.row === row) return { ...city, owner };
   }
   return null;
 }
