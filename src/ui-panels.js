@@ -124,8 +124,10 @@ function showSelectionPanel(unit) {
                 const fid = tid.replace('city_', '');
                 cityName = game.factionCities[fid] ? game.factionCities[fid].name : fid;
               } else {
-                const parts = tid.split('_');
-                const fid = parts[1], ci = parseInt(parts[2]);
+                const withoutPrefix = tid.slice('expcity_'.length);
+                const lastUnderscore = withoutPrefix.lastIndexOf('_');
+                const fid = withoutPrefix.slice(0, lastUnderscore);
+                const ci = parseInt(withoutPrefix.slice(lastUnderscore + 1));
                 const ecs = game.aiFactionCities[fid];
                 cityName = (ecs && ecs[ci]) ? ecs[ci].name : fid;
               }

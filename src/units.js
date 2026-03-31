@@ -613,9 +613,10 @@ function handleHexClick(col, row) {
           return;
         }
         if (typeof targetId === 'string' && targetId.startsWith('expcity_')) {
-          const parts = targetId.split('_');
-          const factionId = parts[1];
-          const cityIdx = parseInt(parts[2]);
+          const withoutPrefix = targetId.slice('expcity_'.length);
+          const lastUnderscore = withoutPrefix.lastIndexOf('_');
+          const factionId = withoutPrefix.slice(0, lastUnderscore);
+          const cityIdx = parseInt(withoutPrefix.slice(lastUnderscore + 1));
           attackExpansionCity(unit, factionId, cityIdx);
           return;
         }
