@@ -539,7 +539,16 @@
       const spriteEl = document.getElementById(`sprite-${unitKey}`);
       const stateEl = document.getElementById(`state-${unitKey}`);
 
-      if (!unitData.sprites[state]) return;
+      // Fallback logic for walk states
+      let actualState = state;
+      if (!unitData.sprites[state]) {
+        // If it's a walk state and not found, try generic "walk" fallback
+        if (state.startsWith('walk_') && unitData.sprites['walk']) {
+          actualState = 'walk';
+        } else {
+          return; // State not found and no fallback available
+        }
+      }
 
       unitStates[unitKey] = state;
 
@@ -554,7 +563,7 @@
       });
 
       // Set background image
-      const imageUrl = unitData.sprites[state];
+      const imageUrl = unitData.sprites[actualState];
       spriteEl.style.backgroundImage = `url('${imageUrl}')`;
       spriteEl.style.backgroundPosition = '0 0';
 
@@ -562,8 +571,8 @@
       stateEl.textContent = state;
 
       // Calculate animation
-      const frameCount = FRAME_COUNTS[state] || 8;
-      const speed = ANIMATION_SPEEDS[state] || 150;
+      const frameCount = FRAME_COUNTS[actualState] || 8;
+      const speed = ANIMATION_SPEEDS[actualState] || 150;
       const duration = frameCount * speed;
       // Set background-size to auto height — scales each frame to fill container height
       spriteEl.style.backgroundSize = 'auto 100%';
@@ -592,7 +601,8 @@
       if (!playAllMode) {
         Object.keys(UNITS).forEach(unitKey => {
           const unitData = UNITS[unitKey];
-          if (unitData.sprites[state]) {
+          // Check if exact state exists, or if it's a walk state with a generic "walk" fallback
+          if (unitData.sprites[state] || (state.startsWith('walk_') && unitData.sprites['walk'])) {
             playAnimation(unitKey, state);
           }
         });
@@ -612,7 +622,8 @@
           const state = states[stateIndex];
           Object.keys(UNITS).forEach(unitKey => {
             const unitData = UNITS[unitKey];
-            if (unitData.sprites[state]) {
+            // Check if exact state exists, or if it's a walk state with a generic "walk" fallback
+            if (unitData.sprites[state] || (state.startsWith('walk_') && unitData.sprites['walk'])) {
               playAnimation(unitKey, state);
             }
           });
