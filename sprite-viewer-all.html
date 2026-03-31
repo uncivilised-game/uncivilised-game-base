@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uncivilised Game - Sprite Animation Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #1a1410 0%, #2d2420 100%);
+      color: #e0d7cf;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #4a3f38;
+      padding-bottom: 20px;
+    }
+
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      color: #f5e6d3;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    .control-bar {
+      background: #2d2420;
+      border: 1px solid #4a3f38;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-label {
+      font-weight: bold;
+      color: #f5e6d3;
+      font-size: 0.95em;
+    }
+
+    .state-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .state-btn {
+      padding: 10px 14px;
+      background: #3d3530;
+      border: 1px solid #5a4f48;
+      color: #e0d7cf;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .state-btn:hover {
+      background: #4a4038;
+      border-color: #7a6f68;
+    }
+
+    .state-btn.active {
+      background: #8b5a3c;
+      border-color: #d4a574;
+      color: #f5e6d3;
+      font-weight: bold;
+    }
+
+    .state-btn.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .state-btn.disabled:hover {
+      background: #3d3530;
+      border-color: #5a4f48;
+    }
+
+    .play-all-btn {
+      padding: 10px 20px;
+      background: #6b4423;
+      border: 1px solid #8b5a3c;
+      color: #f5e6d3;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: bold;
+      transition: all 0.2s ease;
+    }
+
+    .play-all-btn:hover {
+      background: #8b5a3c;
+      border-color: #d4a574;
+    }
+
+    .play-all-btn.active {
+      background: #a67c52;
+      border-color: #e6c9a8;
+    }
+
+    .units-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .unit-card {
+      background: #2d2420;
+      border: 1px solid #4a3f38;
+      border-radius: 8px;
+      padding: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .unit-card:hover {
+      border-color: #6a5f58;
+      background: #352d28;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    .unit-name {
+      font-size: 1.3em;
+      font-weight: bold;
+      color: #f5e6d3;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .sprite-container {
+      background: #1a1410;
+      border: 1px solid #3d3530;
+      border-radius: 4px;
+      width: 128px;
+      height: 128px;
+      margin: 0 auto 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .sprite {
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: 0 0;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+    }
+
+    /* All frame sizes scale to 128px display, so 8 frames = 1024px, 12 = 1536px */
+    @keyframes sprite-anim-8 {
+      from { background-position: 0 0; }
+      to { background-position: -1024px 0; }
+    }
+
+    @keyframes sprite-anim-12 {
+      from { background-position: 0 0; }
+      to { background-position: -1536px 0; }
+    }
+
+    .current-state {
+      text-align: center;
+      font-size: 0.85em;
+      color: #b5a99e;
+      margin-bottom: 12px;
+      min-height: 20px;
+    }
+
+    .unit-state-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .unit-state-btn {
+      padding: 6px 10px;
+      background: #3d3530;
+      border: 1px solid #5a4f48;
+      color: #e0d7cf;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.75em;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .unit-state-btn:hover {
+      background: #4a4038;
+      border-color: #7a6f68;
+    }
+
+    .unit-state-btn.active {
+      background: #8b5a3c;
+      border-color: #d4a574;
+      color: #f5e6d3;
+      font-weight: bold;
+    }
+
+    .unit-state-btn.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .unit-state-btn.disabled:hover {
+      background: #3d3530;
+      border-color: #5a4f48;
+    }
+
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 1.8em;
+      }
+
+      .units-grid {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 15px;
+      }
+
+      .control-bar {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .state-buttons {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Uncivilised Game - Sprite Animation Viewer</h1>
+    </header>
+
+    <div class="control-bar">
+      <div class="control-label">Global State:</div>
+      <div class="state-buttons">
+        <button class="state-btn active" data-state="idle" onclick="setGlobalState('idle')">🧍 Idle</button>
+        <button class="state-btn" data-state="walk_down" onclick="setGlobalState('walk_down')">⬇️ Walk Down</button>
+        <button class="state-btn" data-state="walk_up" onclick="setGlobalState('walk_up')">⬆️ Walk Up</button>
+        <button class="state-btn" data-state="walk_right" onclick="setGlobalState('walk_right')">➡️ Walk Right</button>
+        <button class="state-btn" data-state="attack" onclick="setGlobalState('attack')">⚔️ Attack</button>
+        <button class="state-btn" data-state="death" onclick="setGlobalState('death')">💀 Death</button>
+      </div>
+      <button class="play-all-btn" onclick="togglePlayAll()">▶️ Play All</button>
+    </div>
+
+    <div class="units-grid" id="unitsGrid"></div>
+  </div>
+
+  <script>
+    const UNITS = {
+      warrior: {
+        label: "Warrior", frameSize: 202,
+        sprites: {
+          idle: "assets/units/warrior/character_idle.png",
+          attack: "assets/units/warrior/character_attack.png",
+          death: "assets/units/warrior/character_death.png",
+          walk: "assets/units/warrior/character_walk.png"
+        }
+      },
+      spearman: {
+        label: "Spearman", frameSize: 256,
+        sprites: {
+          idle: "assets/units/spearman/spearman-spritecook_idle.png",
+          attack: "assets/units/spearman/spearman-spritecook_attack.png",
+          death: "assets/units/spearman/spearman-spritecook_death.png",
+          walk_down: "assets/units/spearman/spearman-spritecook_front_walk_walk.png"
+        }
+      },
+      phalanx: {
+        label: "Phalanx", frameSize: 256,
+        sprites: {
+          idle: "assets/units/phalanx/phalanx-spritecook_idle.png",
+          attack: "assets/units/phalanx/phalanx-spritecook_attack.png",
+          death: "assets/units/phalanx/phalanx-spritecook_death.png",
+          walk_down: "assets/units/phalanx/phalanx-spritecook_front_walk_walk_down.png",
+          walk_up: "assets/units/phalanx/phalanx-spritecook_back_walk_walk_up.png",
+          walk_right: "assets/units/phalanx/phalanx-spritecook_right_walk_walk_right.png"
+        }
+      },
+      scout: {
+        label: "Scout", frameSize: 256,
+        sprites: {
+          idle: "assets/units/scout/scout-spritecook_idle.png",
+          attack: "assets/units/scout/scout-spritecook_attack.png",
+          death: "assets/units/scout/scout-spritecook_death.png",
+          walk_down: "assets/units/scout/scout-spritecook_front_walk_walk_down.png",
+          walk_up: "assets/units/scout/scout-spritecook_back_walk_walk_up.png",
+          walk_right: "assets/units/scout/scout-spritecook_right_walk_walk_right.png"
+        }
+      },
+      slinger: {
+        label: "Slinger", frameSize: 256,
+        sprites: {
+          idle: "assets/units/slinger/slinger-spritecook_idle.png",
+          attack: "assets/units/slinger/slinger-spritecook_attack.png",
+          death: "assets/units/slinger/slinger-spritecook_death.png",
+          walk_down: "assets/units/slinger/slinger-spritecook_front_walk_walk_down.png",
+          walk_up: "assets/units/slinger/slinger-spritecook_back_walk_walk_up.png"
+        }
+      },
+      archer: {
+        label: "Archer", frameSize: 256,
+        sprites: {
+          idle: "assets/units/archer/archer-spritebook_idle.png",
+          attack: "assets/units/archer/archer-spritebook_attack.png",
+          death: "assets/units/archer/archer-spritebook_death.png",
+          walk_down: "assets/units/archer/archer-spritebook_front_walk_walk_down.png",
+          walk_up: "assets/units/archer/archer-spritebook_back_walk_walk_up.png",
+          walk_right: "assets/units/archer/archer-spritebook_right_walk_walk_right.png"
+        }
+      },
+      chariot: {
+        label: "Chariot", frameSize: 256,
+        sprites: {
+          idle: "assets/units/chariot/chariot_idle.png",
+          attack: "assets/units/chariot/chariot_attack.png",
+          death: "assets/units/chariot/chariot_death.png",
+          walk_down: "assets/units/chariot/chariot_front_walk_walk_down.png",
+          walk_up: "assets/units/chariot/chariot_back_walk_walk_up.png"
+        }
+      },
+      horseman: {
+        label: "Horseman", frameSize: 256,
+        sprites: {
+          idle: "assets/units/horseman/horseman_idle.png",
+          attack: "assets/units/horseman/horseman_attack.png",
+          death: "assets/units/horseman/horseman_death.png",
+          walk_down: "assets/units/horseman/horseman_front_walk_walk_down.png",
+          walk_up: "assets/units/horseman/horseman_back_walk_walk_up.png",
+          walk_right: "assets/units/horseman/horseman_right_walk_walk_right.png"
+        }
+      },
+      ballista: {
+        label: "Ballista", frameSize: 256,
+        sprites: {
+          idle: "assets/units/ballista/ballista-sprite_idle.png",
+          attack: "assets/units/ballista/ballista-sprite_attack.png",
+          death: "assets/units/ballista/ballista-sprite_death.png",
+          walk_down: "assets/units/ballista/ballista-sprite_front_walk_walk_down.png",
+          walk_up: "assets/units/ballista/ballista-sprite_back_walk_walk_up.png",
+          walk_right: "assets/units/ballista/ballista-sprite_right_walk_walk_right.png"
+        }
+      },
+      galley: {
+        label: "Galley", frameSize: 256,
+        sprites: {
+          idle: "assets/units/galley/gallery-sprite_idle_sheet.png",
+          attack: "assets/units/galley/gallery-sprite_attack_sheet.png",
+          death: "assets/units/galley/gallery-sprite_death_sheet.png",
+          walk_down: "assets/units/galley/gallery-sprite_front_walk_walk_down_sheet.png",
+          walk_up: "assets/units/galley/gallery-sprite_back_walk_walk_up_sheet.png"
+        }
+      },
+      worker: {
+        label: "Worker", frameSize: 256,
+        sprites: {
+          idle: "assets/units/worker/worker-sprite_idle.png",
+          attack: "assets/units/worker/worker-sprite_attack.png",
+          death: "assets/units/worker/worker-sprite_death.png",
+          walk_down: "assets/units/worker/worker-sprite_front_walk_walk_down.png",
+          walk_up: "assets/units/worker/worker-sprite_back_walk_walk_up.png",
+          walk_right: "assets/units/worker/worker-sprite_right_walk_walk_right.png"
+        }
+      },
+      settler: {
+        label: "Settler", frameSize: 256,
+        sprites: {
+          idle: "assets/units/settler/settlers-sprite_idle.png",
+          death: "assets/units/settler/settlers-sprite_death.png",
+          walk_down: "assets/units/settler/settlers-sprite_front_walk_walk_down.png",
+          walk_up: "assets/units/settler/settlers-sprite_back_walk_walk_up.png",
+          walk_right: "assets/units/settler/settlers-sprite_right_walk_walk_right.png"
+        }
+      },
+      great_general: {
+        label: "Great General", frameSize: 256,
+        sprites: {
+          idle: "assets/units/great_general/general-sprite_idle.png",
+          attack: "assets/units/great_general/general-sprite_attack.png",
+          death: "assets/units/great_general/general-sprite_death.png",
+          walk_down: "assets/units/great_general/general-sprite_front_walk_walk_down.png",
+          walk_up: "assets/units/great_general/general-sprite_back_walk_walk_up.png",
+          walk_right: "assets/units/great_general/general-sprite_right_walk_walk_right.png"
+        }
+      },
+      barbarian_warrior: {
+        label: "Barb Warrior", frameSize: 256,
+        sprites: {
+          idle: "assets/units/barbarian_warrior/Barbarian-warrior_idle.png",
+          attack: "assets/units/barbarian_warrior/Barbarian-warrior_attack.png",
+          death: "assets/units/barbarian_warrior/Barbarian-warrior_death.png",
+          walk_down: "assets/units/barbarian_warrior/Barbarian-warrior_front_walk_walk_down.png",
+          walk_up: "assets/units/barbarian_warrior/Barbarian-warrior_back_walk_walk_up.png",
+          walk_right: "assets/units/barbarian_warrior/Barbarian-warrior_right_walk_walk_right.png"
+        }
+      },
+      horse_raider: {
+        label: "Horse Raider", frameSize: 256,
+        sprites: {
+          idle: "assets/units/horse_raider/barbarian_horseman_idle.png",
+          attack: "assets/units/horse_raider/barbarian_horseman_attack.png",
+          death: "assets/units/horse_raider/barbarian_horseman_death.png",
+          walk_down: "assets/units/horse_raider/barbarian_horseman_front_walk_walk_down.png",
+          walk_up: "assets/units/horse_raider/barbarian_horseman_back_walk_walk_up.png",
+          walk_right: "assets/units/horse_raider/barbarian_horseman_right_walk_walk_right.png"
+        }
+      },
+      berserker: {
+        label: "Berserker", frameSize: 256,
+        sprites: {
+          idle: "assets/units/berserker/bersker-barbarian_idle.png",
+          attack: "assets/units/berserker/bersker-barbarian_attack.png",
+          death: "assets/units/berserker/bersker-barbarian_death.png",
+          walk_down: "assets/units/berserker/bersker-barbarian_front_walk_walk_down.png",
+          walk_up: "assets/units/berserker/bersker-barbarian_back_walk_walk_up.png",
+          walk_right: "assets/units/berserker/bersker-barbarian_right_walk_walk_right.png"
+        }
+      },
+      war_drummer: {
+        label: "War Drummer", frameSize: 256,
+        sprites: {
+          idle: "assets/units/war_drummer/war-drummer-barbarian_idle.png",
+          walk_down: "assets/units/war_drummer/war-drummer-barbarian_front_walk_walk_down.png",
+          walk_up: "assets/units/war_drummer/war-drummer-barbarian_back_walk_walk_up.png",
+          walk_right: "assets/units/war_drummer/war-drummer-barbarian_right_walk_walk_right.png"
+        }
+      },
+      shaman: {
+        label: "Shaman", frameSize: 256,
+        sprites: {
+          idle: "assets/units/shaman/shaman-barb_idle.png",
+          death: "assets/units/shaman/shaman-barb_death.png",
+          walk_down: "assets/units/shaman/shaman-barb_front_walk_walk_down.png",
+          walk_up: "assets/units/shaman/shaman-barb_back_walk_walk_up.png"
+        }
+      }
+    };
+
+    const STATE_ICONS = {
+      idle: "🧍",
+      walk_down: "⬇️",
+      walk_up: "⬆️",
+      walk_right: "➡️",
+      attack: "⚔️",
+      death: "💀"
+    };
+
+    const ANIMATION_SPEEDS = {
+      idle: 150,
+      walk_down: 150,
+      walk_up: 150,
+      walk_right: 150,
+      attack: 120,
+      death: 200
+    };
+
+    const FRAME_COUNTS = {
+      death: 12
+    };
+
+    let currentGlobalState = 'idle';
+    let playAllMode = false;
+    let playAllInterval = null;
+    const unitStates = {};
+
+    function initUnits() {
+      const grid = document.getElementById('unitsGrid');
+      grid.innerHTML = '';
+
+      Object.entries(UNITS).forEach(([unitKey, unitData]) => {
+        unitStates[unitKey] = 'idle';
+
+        const card = document.createElement('div');
+        card.className = 'unit-card';
+
+        const availableStates = Object.keys(unitData.sprites);
+
+        let html = `
+          <div class="unit-name">${unitData.label}</div>
+          <div class="sprite-container">
+            <div class="sprite" id="sprite-${unitKey}"></div>
+          </div>
+          <div class="current-state" id="state-${unitKey}">idle</div>
+          <div class="unit-state-buttons">
+        `;
+
+        const allStates = ['idle', 'walk_down', 'walk_up', 'walk_right', 'attack', 'death'];
+        allStates.forEach(state => {
+          const isAvailable = availableStates.includes(state);
+          const isActive = state === 'idle';
+          const buttonClass = `unit-state-btn ${isActive ? 'active' : ''} ${!isAvailable ? 'disabled' : ''}`;
+          const onClick = isAvailable ? `playAnimation('${unitKey}', '${state}')` : '';
+
+          html += `<button class="${buttonClass}" onclick="${onClick}" ${!isAvailable ? 'disabled' : ''}>${STATE_ICONS[state]}</button>`;
+        });
+
+        html += `</div>`;
+        card.innerHTML = html;
+        grid.appendChild(card);
+
+        // Initialize sprite
+        playAnimation(unitKey, 'idle');
+      });
+    }
+
+    function playAnimation(unitKey, state) {
+      const unitData = UNITS[unitKey];
+      const spriteEl = document.getElementById(`sprite-${unitKey}`);
+      const stateEl = document.getElementById(`state-${unitKey}`);
+
+      if (!unitData.sprites[state]) return;
+
+      unitStates[unitKey] = state;
+
+      // Update buttons
+      const buttons = spriteEl.closest('.unit-card').querySelectorAll('.unit-state-btn');
+      buttons.forEach((btn, idx) => {
+        const btnState = ['idle', 'walk_down', 'walk_up', 'walk_right', 'attack', 'death'][idx];
+        btn.classList.remove('active');
+        if (btnState === state) {
+          btn.classList.add('active');
+        }
+      });
+
+      // Set background image
+      const imageUrl = unitData.sprites[state];
+      spriteEl.style.backgroundImage = `url('${imageUrl}')`;
+      spriteEl.style.backgroundPosition = '0 0';
+
+      // Update state label
+      stateEl.textContent = state;
+
+      // Calculate animation
+      const frameCount = FRAME_COUNTS[state] || 8;
+      const speed = ANIMATION_SPEEDS[state] || 150;
+      const duration = frameCount * speed;
+      // Set background-size to auto height — scales each frame to fill container height
+      spriteEl.style.backgroundSize = 'auto 100%';
+
+      // Pick the right keyframes name (8 or 12 frames)
+      const animName = frameCount === 12 ? 'sprite-anim-12' : 'sprite-anim-8';
+
+      // Reset and apply animation
+      spriteEl.style.animation = 'none';
+      spriteEl.offsetHeight; // Trigger reflow
+      spriteEl.style.animation = `${animName} ${duration}ms steps(${frameCount}) infinite`;
+    }
+
+    function setGlobalState(state) {
+      currentGlobalState = state;
+
+      // Update global control buttons
+      document.querySelectorAll('.control-bar .state-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.state === state) {
+          btn.classList.add('active');
+        }
+      });
+
+      // Update all units if not in play all mode
+      if (!playAllMode) {
+        Object.keys(UNITS).forEach(unitKey => {
+          const unitData = UNITS[unitKey];
+          if (unitData.sprites[state]) {
+            playAnimation(unitKey, state);
+          }
+        });
+      }
+    }
+
+    function togglePlayAll() {
+      playAllMode = !playAllMode;
+      const btn = document.querySelector('.play-all-btn');
+      btn.classList.toggle('active', playAllMode);
+
+      if (playAllMode) {
+        let stateIndex = 0;
+        const states = ['idle', 'walk_down', 'walk_up', 'walk_right', 'attack', 'death'];
+
+        const cycle = () => {
+          const state = states[stateIndex];
+          Object.keys(UNITS).forEach(unitKey => {
+            const unitData = UNITS[unitKey];
+            if (unitData.sprites[state]) {
+              playAnimation(unitKey, state);
+            }
+          });
+
+          // Update global control buttons
+          document.querySelectorAll('.control-bar .state-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.state === state) {
+              btn.classList.add('active');
+            }
+          });
+
+          stateIndex = (stateIndex + 1) % states.length;
+        };
+
+        cycle();
+        playAllInterval = setInterval(cycle, 2000);
+      } else {
+        clearInterval(playAllInterval);
+        setGlobalState(currentGlobalState);
+      }
+    }
+
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', initUnits);
+  </script>
+</body>
+</html>
