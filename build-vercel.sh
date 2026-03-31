@@ -7,5 +7,5 @@ else
 fi
 
 mkdir -p .vercel-static
-cp index.html about.html waitlist.html tile-world-preview.html game.js resource-icons.js style.css .vercel-static/
+cp index.html about.html waitlist.html tile-world-preview.html game.js resource-icons.js style.css sprite-map.html .vercel-static/
 cp -r assets .vercel-static/assets
