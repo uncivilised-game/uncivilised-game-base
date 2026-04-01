@@ -152,7 +152,12 @@ export function initInputHandlers() {
         else if (key === 'a') { e.preventDefault(); togglePanel('advisor-panel'); }
         else if (key === 'c') {
           e.preventDefault();
-          const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
+          let sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
+          // If no unit selected, auto-select next movable unit
+          if (!sel) {
+            selectNextUnit();
+            sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
+          }
           if (sel) { panCameraTo(sel.col, sel.row); render(); }
         }
         else if (key === ' ') {
