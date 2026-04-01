@@ -496,30 +496,42 @@ function endTurn() {
     game.unitBuildProgress += prodThisTurn;
     const ut = UNIT_TYPES[game.currentUnitBuild];
     if (ut && game.unitBuildProgress >= ut.cost) {
-      const city = game.cities[0];
-      const neighbors = getHexNeighbors(city.col, city.row);
+      // Place unit near the city that started the build (fallback to any city with room)
+      const buildCityIdx = game.unitBuildCityIdx || 0;
+      const cityOrder = [...game.cities];
+      // Put the build city first, then try others
+      if (buildCityIdx > 0 && buildCityIdx < cityOrder.length) {
+        const buildCity = cityOrder.splice(buildCityIdx, 1)[0];
+        cityOrder.unshift(buildCity);
+      }
       let placed = false;
-      for (const nb of neighbors) {
-        const tile = game.map[nb.row][nb.col];
-        if (!isTilePassable(tile)) continue;
-        if (getUnitAt(nb.col, nb.row)) continue;
-        const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
-        newUnit.moveLeft = 0;
-        game.units.push(newUnit);
-        game.military += Math.floor(ut.combat / 4);
-        placed = true;
-        break;
+      let placedCity = null;
+      for (const city of cityOrder) {
+        const neighbors = getHexNeighbors(city.col, city.row);
+        for (const nb of neighbors) {
+          const tile = game.map[nb.row][nb.col];
+          if (!isTilePassable(tile)) continue;
+          if (getUnitAt(nb.col, nb.row)) continue;
+          const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
+          newUnit.moveLeft = 0;
+          game.units.push(newUnit);
+          game.military += Math.floor(ut.combat / 4);
+          placed = true;
+          placedCity = city;
+          break;
+        }
+        if (placed) break;
       }
       if (placed) {
         if (game.currentUnitBuild === 'settler') {
           game.population = Math.max(500, game.population - 500);
-          const mc = game.cities[0];
-          if (mc) mc.population = Math.max(500, (mc.population || game.population) - 500);
+          if (placedCity) placedCity.population = Math.max(500, (placedCity.population || game.population) - 500);
         }
         events.push(`${ut.name} trained!`);
-        addEvent(`${ut.name} trained!`, 'combat');
+        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!`, 'combat');
         game.currentUnitBuild = null;
         game.unitBuildProgress = 0;
+        game.unitBuildCityIdx = 0;
         showCompletionNotification('unit', ut.name, ut.desc);
         if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!');
       } else {

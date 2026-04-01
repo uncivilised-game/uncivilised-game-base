@@ -37,6 +37,7 @@ function migrateTiles(state) {
 
   if (state.currentUnitBuild === undefined) state.currentUnitBuild = null;
   if (state.unitBuildProgress === undefined) state.unitBuildProgress = 0;
+  if (state.unitBuildCityIdx === undefined) state.unitBuildCityIdx = 0;
   if (state.factionCities) {
     for (const fc of Object.values(state.factionCities)) {
       if (fc.hp === undefined) fc.hp = 100;
