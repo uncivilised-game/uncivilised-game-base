@@ -99,6 +99,10 @@ function showSelectionPanel(unit) {
       const newDef = UNIT_TYPES[upg.to];
       html += '<button class="sel-btn" style="border-color:' + (canAfford ? '#4a9' : '#666') + ';opacity:' + (canAfford ? '1' : '0.5') + '" ' + (canAfford ? 'onclick="upgradeUnit(' + unit.id + ')"' : 'disabled') + '><span>' + (newDef ? newDef.icon : '') + ' Upgrade to ' + (newDef ? newDef.name : upg.to) + ' (' + upg.cost + 'g)</span></button>';
     }
+    // Activate button for fortified/sleeping units
+    if (unit.fortified || unit.sleeping) {
+      html += `<button class="sel-btn" style="border-color:#6aab5c" onclick="unitAction('activate')"><span>\u{26A1} Activate</span><span class="sel-key">W</span></button>`;
+    }
     if (unit.moveLeft > 0) {
       html += `<button class="sel-btn" onclick="unitAction('skip')"><span>Skip</span><span class="sel-key">S</span></button>`;
       if (!unit.fortified) {
@@ -1372,6 +1376,14 @@ window.unitAction = function(action) {
   const ut = UNIT_TYPES[unit.type];
 
   switch (action) {
+    case 'activate':
+      unit.fortified = false;
+      unit.sleeping = false;
+      unit.alert = false;
+      addEvent(`${ut.name} activated`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
     case 'cancelWaypoint':
       unit.waypoint = null;
       addEvent(`${ut.name} journey cancelled`, '');
