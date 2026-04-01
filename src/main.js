@@ -191,6 +191,7 @@ function createInitialState() {
   }
   const tribalVillages = placeTribalVillages(map, startPositions);
 
+  // Player starts with 4 units (no pre-founded city — settler lets player choose)
   const startingUnits = [];
   const startNeighbors = getHexNeighbors(startCol, startRow);
   const landNeighbors = startNeighbors.filter(nb => {
@@ -200,20 +201,23 @@ function createInitialState() {
   });
   const pos1 = landNeighbors[0] || { col: startCol, row: startRow };
   const pos2 = landNeighbors[1] || { col: startCol, row: startRow };
+  const pos3 = landNeighbors[2] || pos1;
+  startingUnits.push(createUnit('settler', startCol, startRow, 'player'));
   startingUnits.push(createUnit('warrior', pos1.col, pos1.row, 'player'));
   startingUnits.push(createUnit('scout', pos2.col, pos2.row, 'player'));
-  startingUnits.push(createUnit('worker', startCol, startRow, 'player'));
+  startingUnits.push(createUnit('worker', pos3.col, pos3.row, 'player'));
 
+  // AI factions start with warrior + archer + worker (parity with player)
   const factionUnits = [];
   for (const [fid, fc] of Object.entries(factionCities)) {
     const neighbors = getHexNeighbors(fc.col, fc.row);
     let placed = 0;
     for (const nb of neighbors) {
-      if (placed >= 2) break;
+      if (placed >= 3) break;
       const tile = map[nb.row][nb.col];
       const bInfo = BASE_TERRAIN[tile.base];
       if (!bInfo.movable) continue;
-      const unitType = placed === 0 ? 'warrior' : 'archer';
+      const unitType = placed === 0 ? 'warrior' : placed === 1 ? 'archer' : 'worker';
       factionUnits.push(createUnit(unitType, nb.col, nb.row, fid));
       placed++;
     }
@@ -226,7 +230,7 @@ function createInitialState() {
     food: 0, foodPerTurn: 4,
     production: 0, productionPerTurn: 3,
     culture: 0, military: 10, defense: 5, population: 1000,
-    cities: [{ name: 'Capital', col: startCol, row: startRow, buildings: [], population: 1000, borderRadius: 2, cultureAccum: 0, ...CITY_WALL_DEFAULTS }],
+    cities: [],
     factionCities: factionCities,
     map: map,
     riverPaths: riverPaths,
