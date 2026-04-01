@@ -1,9 +1,9 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
-import { processImprovements, getImprovementYields } from './improvements.js';
+import { processImprovements, getImprovementYields, getAvailableImprovements, startImprovement } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
 import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
@@ -777,6 +777,12 @@ function endTurn() {
   // --- Update faction AI economies ---
   updateFactionStats();
 
+  // --- AI worker/settler spawning (same constraints as player) ---
+  processAIUnitSpawning();
+
+  // --- AI worker auto-improve tiles near cities ---
+  processAIWorkerImprovements();
+
   // --- Embassy turn processing (gossip accumulation) ---
   ensureEmbassyState();
   processEmbassyTurn();
@@ -1118,4 +1124,276 @@ function showGameOver(victory) {
   document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory };
+// ============================================
+// AI WORKER / SETTLER SPAWNING
+// ============================================
+// Mirrors player constraints: same production costs, population requirements,
+// build charges, and settler pop deduction.
+
+function processAIUnitSpawning() {
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    const stats = game.factionStats?.[fid];
+    if (!stats) continue;
+    const traits = FACTION_TRAITS[fid] || {};
+
+    // Count existing AI units of each type
+    const factionUnits = game.units.filter(u => u.owner === fid);
+    const workerCount = factionUnits.filter(u => u.type === 'worker').length;
+    const settlerCount = factionUnits.filter(u => u.type === 'settler').length;
+
+    // Find a free spawn tile near the faction capital
+    const spawnTile = findSpawnTile(fc.col, fc.row, fid);
+    if (!spawnTile) continue;
+
+    // Worker spawning: same cost as player (30 production, simulated via faction gold)
+    // AI can have at most 1 worker at a time (player can queue more, but typically has 1-2)
+    if (workerCount === 0 && stats.gold >= UNIT_TYPES.worker.cost) {
+      stats.gold -= UNIT_TYPES.worker.cost;
+      const worker = createUnit('worker', spawnTile.col, spawnTile.row, fid);
+      game.units.push(worker);
+      continue; // One spawn per faction per turn
+    }
+
+    // Settler spawning: same requirements as player
+    // - Costs 60 production (from faction gold)
+    // - Requires population >= 2000 (same as player's 2000 threshold)
+    // - Consumes 500 population on spawn (same as player)
+    // - Max 1 expansion city per faction (keeps game balanced)
+    const expansionCities = game.aiFactionCities[fid] || [];
+    const settlerThreshold = traits.settlerThreshold || 2000;
+    if (settlerCount === 0 && expansionCities.length < 1 &&
+        stats.population >= settlerThreshold &&
+        stats.gold >= UNIT_TYPES.settler.cost) {
+      stats.gold -= UNIT_TYPES.settler.cost;
+      stats.population -= 500;
+      fc.population = Math.max(500, (fc.population || 1000) - 500);
+      const settler = createUnit('settler', spawnTile.col, spawnTile.row, fid);
+      game.units.push(settler);
+    }
+  }
+}
+
+function findSpawnTile(col, row, factionId) {
+  const neighbors = getHexNeighbors(col, row);
+  for (const nb of neighbors) {
+    const tile = game.map[nb.row]?.[nb.col];
+    if (!tile) continue;
+    if (!isTilePassable(tile)) continue;
+    if (getUnitAt(nb.col, nb.row)) continue;
+    return nb;
+  }
+  return null;
+}
+
+// ============================================
+// AI WORKER AUTO-IMPROVEMENTS
+// ============================================
+// AI workers automatically build improvements near their faction's cities,
+// following the faction's improvePriority. Same turn costs and build charges
+// as the player.
+
+function processAIWorkerImprovements() {
+  const aiWorkers = game.units.filter(u => u.type === 'worker' && u.owner !== 'player');
+  for (const worker of aiWorkers) {
+    // Skip workers that are already building
+    if (worker.sleeping) continue;
+    // Skip workers with no charges left (they'll be consumed by processImprovements)
+    if (worker.buildCharges !== undefined && worker.buildCharges <= 0) continue;
+
+    const fid = worker.owner;
+    const traits = FACTION_TRAITS[fid] || {};
+    const priority = traits.improvePriority || ['farm', 'mine', 'road'];
+
+    // Try to build on current tile first
+    if (tryAIImprove(worker, priority)) continue;
+
+    // Move toward nearest unimproved tile near a faction city
+    moveAIWorkerTowardWork(worker, fid, priority);
+  }
+
+  // AI settler auto-found: if a settler is on a valid city location, found the city
+  const aiSettlers = game.units.filter(u => u.type === 'settler' && u.owner !== 'player');
+  for (const settler of aiSettlers) {
+    const fid = settler.owner;
+    if (canAIFoundCityAt(settler.col, settler.row, fid)) {
+      foundAICity(settler, fid);
+    } else {
+      moveAISettlerTowardSite(settler, fid);
+    }
+  }
+}
+
+function tryAIImprove(worker, priority) {
+  const tile = game.map[worker.row]?.[worker.col];
+  if (!tile || tile.improvement || tile.road || tile.improvementBuilder) return false;
+  // Don't improve city tiles
+  const isCity = game.cities.some(c => c.col === worker.col && c.row === worker.row) ||
+    Object.values(game.factionCities).some(fc => fc.col === worker.col && fc.row === worker.row);
+  if (isCity) return false;
+
+  // Check available improvements using the same logic as player
+  for (const impId of priority) {
+    const imp = TILE_IMPROVEMENTS[impId];
+    if (!imp) continue;
+    if (impId !== 'road' && tile.improvement === impId) continue;
+    if (impId === 'road' && tile.road) continue;
+    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) continue;
+    if (imp.validFeature && !imp.validFeature.includes(tile.feature)) continue;
+    if (imp.requiresRiver && !tile.hasRiver) continue;
+    if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
+    if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && impId !== 'fishing_boats') continue;
+    if (tile.feature === 'mountain') continue;
+    if (imp.terraform) continue; // AI skips terraforming
+
+    // Use the same startImprovement function as the player
+    startImprovement(worker.id, impId);
+    return true;
+  }
+  return false;
+}
+
+function moveAIWorkerTowardWork(worker, fid, priority) {
+  if (worker.moveLeft <= 0) return;
+
+  // Find cities belonging to this faction
+  const cities = [];
+  if (game.factionCities[fid]) cities.push(game.factionCities[fid]);
+  if (game.aiFactionCities[fid]) cities.push(...game.aiFactionCities[fid]);
+
+  // Find nearest unimproved tile within city borders
+  let bestTile = null, bestDist = Infinity;
+  for (const city of cities) {
+    const radius = city.borderRadius || 2;
+    for (const nb of getHexNeighbors(city.col, city.row)) {
+      const t = game.map[nb.row]?.[nb.col];
+      if (!t || t.improvement || t.road || t.improvementBuilder) continue;
+      if (!isTilePassable(t)) continue;
+      if (t.feature === 'mountain') continue;
+      const isOnCity = cities.some(c => c.col === nb.col && c.row === nb.row);
+      if (isOnCity) continue;
+      if (hexDistance(nb.col, nb.row, city.col, city.row) > radius) continue;
+      const dist = hexDistance(worker.col, worker.row, nb.col, nb.row);
+      if (dist < bestDist) { bestDist = dist; bestTile = nb; }
+    }
+  }
+
+  if (bestTile && bestDist > 0) {
+    // Simple 1-step movement toward target
+    const neighbors = getHexNeighbors(worker.col, worker.row);
+    let closest = null, closestDist = bestDist;
+    for (const nb of neighbors) {
+      const t = game.map[nb.row]?.[nb.col];
+      if (!t || !isTilePassable(t)) continue;
+      if (getUnitAt(nb.col, nb.row)) continue;
+      const d = hexDistance(nb.col, nb.row, bestTile.col, bestTile.row);
+      if (d < closestDist) { closestDist = d; closest = nb; }
+    }
+    if (closest) {
+      worker.col = closest.col;
+      worker.row = closest.row;
+      worker.moveLeft--;
+    }
+  }
+}
+
+function canAIFoundCityAt(col, row, fid) {
+  const tile = game.map[row]?.[col];
+  if (!tile) return false;
+  if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
+  if (tile.feature === 'mountain') return false;
+  // Must be 4+ hexes from any player city
+  for (const city of game.cities) {
+    if (hexDistance(col, row, city.col, city.row) < 4) return false;
+  }
+  // Must be 4+ hexes from any faction city (including own)
+  for (const fc of Object.values(game.factionCities)) {
+    if (hexDistance(col, row, fc.col, fc.row) < 4) return false;
+  }
+  for (const cities of Object.values(game.aiFactionCities || {})) {
+    for (const ec of cities) {
+      if (hexDistance(col, row, ec.col, ec.row) < 4) return false;
+    }
+  }
+  return true;
+}
+
+function foundAICity(settler, fid) {
+  const faction = FACTIONS[fid];
+  const factionName = faction ? faction.name : 'Unknown';
+  const cityNames = ['Outpost', 'Forward Camp', 'Frontier', 'Haven', 'Garrison', 'Reach'];
+  const existing = (game.aiFactionCities[fid] || []).map(c => c.name);
+  const available = cityNames.filter(n => !existing.includes(factionName + ' ' + n));
+  const cityName = available.length > 0
+    ? factionName + ' ' + available[Math.floor(Math.random() * available.length)]
+    : factionName + ' Colony';
+
+  if (!game.aiFactionCities[fid]) game.aiFactionCities[fid] = [];
+  game.aiFactionCities[fid].push({
+    name: cityName,
+    col: settler.col,
+    row: settler.row,
+    color: faction?.color || '#888',
+    hp: 100,
+    population: 500,
+    borderRadius: 1,
+    improvements: 0,
+    wallHP: 0,
+    wallMaxHP: 0,
+    wallLastAttackedTurn: -99,
+  });
+
+  // Remove settler (same as player)
+  game.units = game.units.filter(u => u.id !== settler.id);
+
+  if (game.metFactions?.[fid]) {
+    addEvent(`${factionName} founded ${cityName}!`, 'world');
+  }
+}
+
+function moveAISettlerTowardSite(settler, fid) {
+  if (settler.moveLeft <= 0) return;
+
+  const capital = game.factionCities[fid];
+  if (!capital) return;
+
+  // Look for a valid founding site 6-10 hexes from capital
+  let bestSite = null, bestScore = -Infinity;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const c = Math.max(0, Math.min(MAP_COLS - 1, capital.col + Math.floor(Math.random() * 16) - 8));
+    const r = Math.max(0, Math.min(MAP_ROWS - 1, capital.row + Math.floor(Math.random() * 12) - 6));
+    if (!canAIFoundCityAt(c, r, fid)) continue;
+    const dist = hexDistance(c, r, capital.col, capital.row);
+    if (dist < 5 || dist > 12) continue;
+    // Score: prefer moderate distance, more land neighbors
+    let landNbs = 0;
+    for (const nb of getHexNeighbors(c, r)) {
+      const t = game.map[nb.row]?.[nb.col]?.base;
+      if (t && t !== 'ocean' && t !== 'coast') landNbs++;
+    }
+    const score = landNbs * 5 - Math.abs(dist - 8) + Math.random() * 3;
+    if (score > bestScore) { bestScore = score; bestSite = { col: c, row: r }; }
+  }
+
+  // Cache target
+  if (bestSite) settler._targetSite = bestSite;
+  const target = settler._targetSite;
+  if (!target) return;
+
+  // Move one step toward target
+  const neighbors = getHexNeighbors(settler.col, settler.row);
+  let closest = null, closestDist = hexDistance(settler.col, settler.row, target.col, target.row);
+  for (const nb of neighbors) {
+    const t = game.map[nb.row]?.[nb.col];
+    if (!t || !isTilePassable(t)) continue;
+    if (getUnitAt(nb.col, nb.row)) continue;
+    const d = hexDistance(nb.col, nb.row, target.col, target.row);
+    if (d < closestDist) { closestDist = d; closest = nb; }
+  }
+  if (closest) {
+    settler.col = closest.col;
+    settler.row = closest.row;
+    settler.moveLeft--;
+  }
+}
+
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements };

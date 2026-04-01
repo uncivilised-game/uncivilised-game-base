@@ -209,11 +209,11 @@ function createInitialState() {
     const neighbors = getHexNeighbors(fc.col, fc.row);
     let placed = 0;
     for (const nb of neighbors) {
-      if (placed >= 2) break;
+      if (placed >= 3) break;
       const tile = map[nb.row][nb.col];
       const bInfo = BASE_TERRAIN[tile.base];
       if (!bInfo.movable) continue;
-      const unitType = placed === 0 ? 'warrior' : 'archer';
+      const unitType = placed === 0 ? 'warrior' : placed === 1 ? 'archer' : 'worker';
       factionUnits.push(createUnit(unitType, nb.col, nb.row, fid));
       placed++;
     }
