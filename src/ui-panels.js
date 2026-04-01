@@ -8,7 +8,7 @@ import { addEvent, logAction, showToast, showCompletionNotification } from './ev
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { getModCombatBonus } from './diplomacy-api.js';
-import { isAtWarWith, declareSurpriseWar } from './combat.js';
+import { isAtWarWith, declareSurpriseWar, confirmAndDeclareWar } from './combat.js';
 import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
@@ -1399,36 +1399,7 @@ window.unitAction = function(action) {
       if (tileOwner) {
         const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
         if (!isAtWarWith(tileOwner)) {
-          const hasPeace = game.ceasefires[tileOwner] || game.nonAggressionPacts[tileOwner] ||
-                           game.activeAlliances[tileOwner] || game.defensePacts[tileOwner];
-          if (hasPeace) {
-            const agreements = [];
-            if (game.activeAlliances[tileOwner]) agreements.push('Alliance');
-            if (game.defensePacts[tileOwner]) agreements.push('Defense Pact');
-            if (game.nonAggressionPacts[tileOwner]) agreements.push('Non-Aggression Pact');
-            if (game.ceasefires[tileOwner]) agreements.push('Ceasefire');
-            const agreed = confirm(
-              'Pillaging here will BREAK your agreements with ' + ownerName + ':\n\n' +
-              '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
-              'This constitutes a surprise attack and declares war on ' + ownerName + '.\n\nProceed?'
-            );
-            if (!agreed) break;
-            delete game.ceasefires[tileOwner];
-            delete game.nonAggressionPacts[tileOwner];
-            delete game.activeAlliances[tileOwner];
-            delete game.defensePacts[tileOwner];
-            delete game.openBorders[tileOwner];
-            game.relationships[tileOwner] = Math.min(-50, (game.relationships[tileOwner] || 0) - 50);
-            for (const fid of Object.keys(game.relationships)) {
-              if (fid !== tileOwner) game.relationships[fid] = (game.relationships[fid] || 0) - 10;
-            }
-            addEvent('\u{26A0} Peace broken with ' + ownerName + '! (-50 relations, -10 with all others)', 'diplomacy');
-            logAction('diplomacy', 'Broke peace with ' + ownerName + ' by pillaging', { factionId: tileOwner });
-          } else {
-            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + ownerName + '.');
-            if (!agreed) break;
-          }
-          declareSurpriseWar(tileOwner, ownerName);
+          if (!confirmAndDeclareWar(tileOwner)) break;
         }
       }
       let reward = '';

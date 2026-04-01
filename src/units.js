@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOC
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
-import { resolveCombat, isAtWarWith, declareSurpriseWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
+import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
@@ -623,11 +623,7 @@ function handleHexClick(col, row) {
         if (target) {
           // Surprise attack check: non-barbarian units belonging to a faction we're not at war with
           if (target.owner !== 'barbarian' && !isAtWarWith(target.owner)) {
-            const faction = FACTIONS[target.owner];
-            const factionName = faction ? faction.name : target.owner;
-            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
-            if (!agreed) return;
-            declareSurpriseWar(target.owner, factionName);
+            if (!confirmAndDeclareWar(target.owner)) return;
           }
           // Civilian units (workers, settlers) are captured, not fought
           const targetType = UNIT_TYPES[target.type];
