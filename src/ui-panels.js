@@ -488,18 +488,30 @@ function renderUnitsPanel() {
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
     const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
+    const gCost = goldCost(ut.cost);
+    const canBuy = canRecruit && game.gold >= gCost;
+    const turns = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
 
     const div = document.createElement('div');
-    div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    const disabled = !canRecruit && !canBuy;
+    div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!canRecruit && canBuy ? ' has-gold-option' : '');
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
         <div class="item-desc">${ut.desc}${reason ? ` — ${reason}` : ''}</div>
       </div>
-      <div class="item-cost">${Math.ceil(ut.cost / Math.max(1, game.productionPerTurn))}T</div>
+      <div class="item-cost-group">
+        <span class="cost-prod${canRecruit && !prodBusy ? '' : ' cost-na'}">${prodBusy && canRecruit ? 'Busy' : turns + 'T'}</span>
+        ${canRecruit ? `<span class="cost-gold${canBuy ? '' : ' cost-na'}" title="Buy instantly with gold">${gCost}g</span>` : ''}
+      </div>
     `;
-    if (canRecruit) {
+    if (canBuy) {
+      div.addEventListener('click', ((uid) => (e) => { e.stopPropagation(); purchaseUnit(uid); })(typeId));
+    } else if (canRecruit && !prodBusy) {
       div.addEventListener('click', () => recruitUnit(typeId));
+    } else if (canRecruit && prodBusy) {
+      div.addEventListener('click', () => addEvent('Production busy — need ' + gCost + 'g to buy with gold (have ' + game.gold + 'g)', 'gold'));
     }
     container.appendChild(div);
   }
@@ -789,7 +801,8 @@ function renderBuildPanel() {
     const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
     const needsPop = tid === 'settler' && game.population < 2000;
     const prereqMet = techOk && (!needsBarr || hasBarracks) && !needsPop;
-    const can = prereqMet;
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
+    const canProd = prereqMet && !prodBusy;
     const gCost = goldCost(ut.cost);
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
@@ -799,26 +812,26 @@ function renderBuildPanel() {
     else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
-    const unitDisabled = !can && !canBuy;
-    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    const unitDisabled = !prereqMet && !canBuy;
+    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!canProd && canBuy && !unitDisabled ? ' has-gold-option' : '');
     if (unitDisabled && reason) div.title = reason;
     const popNote = tid === 'settler' ? ' (-500 pop)' : '';
     const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
+    const prodLabel = prodBusy && prereqMet ? 'Busy' : turns + 'T';
     div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
       + '<div class="item-desc">' + ut.desc + popNote + maintNote + (reason ? ' \u2014 ' + reason : '') + '</div></div>'
       + '<div class="item-cost-group">'
-      + (can ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
+      + (canProd ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + prodLabel + '</span>')
       + (prereqMet ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
       + '</div>';
-    if (can) div.addEventListener('click', () => recruitUnit(tid));
-    container.appendChild(div);
     if (canBuy) {
-      const goldBtn = div.querySelector('.cost-gold');
-      if (goldBtn) {
-        goldBtn.style.cursor = 'pointer';
-        goldBtn.addEventListener('click', (e) => { e.stopPropagation(); purchaseUnit(tid); });
-      }
+      div.addEventListener('click', ((unitId) => (e) => { e.stopPropagation(); purchaseUnit(unitId); })(tid));
+    } else if (canProd) {
+      div.addEventListener('click', () => recruitUnit(tid));
+    } else if (prereqMet && !canBuy) {
+      div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
     }
+    container.appendChild(div);
   }
 
   // --- Government Section ---
