@@ -39,6 +39,7 @@ import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFo
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
+import { initTutorial, tutorialNext, tutorialPrev, closeTutorial } from './tutorial.js';
 import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
 import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './diplomacy-api.js';
 import { establishEmbassy, processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
@@ -360,7 +361,10 @@ async function startNewGame() {
   addEvent('Scout and Warrior ready for orders', 'combat');
   generateMinorFactions(game.map);
   scanForFirstContact();
-  setTimeout(() => selectNextUnit(), 300);
+  setTimeout(() => {
+    selectNextUnit();
+    initTutorial();
+  }, 300);
   if (!game.currentResearch) {
     game.currentResearch = 'writing';
     game.researchProgress = 0;
@@ -434,6 +438,9 @@ async function continueGame() {
 // Expose for input.js and HTML
 window.startNewGame = startNewGame;
 window.continueGame = continueGame;
+window.tutorialNext = tutorialNext;
+window.tutorialPrev = tutorialPrev;
+window.closeTutorial = closeTutorial;
 
 // --- Expose for testing ---
 window.render_game_to_text = () => {
