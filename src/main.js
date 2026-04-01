@@ -9,7 +9,7 @@ import './assets.js';      // preloads terrain tiles, portraits, improvement ima
 import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
-import { SAVE_KEY, GAME_VERSION, RESOURCES } from './constants.js';
+import { SAVE_KEY, GAME_VERSION, RESOURCES, FACTION_TRAITS } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
   currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS,
@@ -205,8 +205,18 @@ function createInitialState() {
   startingUnits.push(createUnit('scout', pos2.col, pos2.row, 'player'));
   startingUnits.push(createUnit('worker', startCol, startRow, 'player'));
 
+  // Choose second starting unit based on faction archetype
+  const ARCHETYPE_STARTING_UNITS = {
+    militaristic: 'spearman',   // aggressive melee pairing
+    expansionist: 'scout',      // exploration-focused
+    diplomatic:   'slinger',    // defensive, lower early threat
+    cultural:     'worker',     // economy-focused start
+  };
+
   const factionUnits = [];
   for (const [fid, fc] of Object.entries(factionCities)) {
+    const traits = FACTION_TRAITS[fid];
+    const secondUnit = (traits && ARCHETYPE_STARTING_UNITS[traits.archetype]) || 'warrior';
     const neighbors = getHexNeighbors(fc.col, fc.row);
     let placed = 0;
     for (const nb of neighbors) {
@@ -214,7 +224,7 @@ function createInitialState() {
       const tile = map[nb.row][nb.col];
       const bInfo = BASE_TERRAIN[tile.base];
       if (!bInfo.movable) continue;
-      const unitType = placed === 0 ? 'warrior' : 'archer';
+      const unitType = placed === 0 ? 'warrior' : secondUnit;
       factionUnits.push(createUnit(unitType, nb.col, nb.row, fid));
       placed++;
     }
