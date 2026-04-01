@@ -317,7 +317,7 @@ export const TILE_IMPROVEMENTS = {
   // Production & Mining
   mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], yields: { prod: 2 }, desc: '+2 Production' },
   quarry:      { name: 'Quarry',       icon: '🪨', turns: 4, requires: 'masonry',     validOn: ['hills','plains'], yields: { prod: 1, gold: 1 }, requiresResource: ['stone'], desc: '+1 Prod, +1 Gold (on Stone)' },
-  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
+  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'construction', validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest, requires Construction)' },
 
   // Infrastructure
   road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
