@@ -712,19 +712,34 @@ function handleHexClick(col, row) {
 
     // Check what's at this hex — cycle through stacked units on repeat clicks
     const unitsHere = game.units.filter(u => u.col === col && u.row === row);
-    if (unitsHere.length > 0) {
-      if (unitsHere.length === 1) {
-        selectUnit(unitsHere[0]);
+    const playerUnitsHere = unitsHere.filter(u => u.owner === 'player');
+    const cityHere = getCityAt(col, row);
+
+    if (playerUnitsHere.length > 0) {
+      // If a player unit is already selected here, cycle: next unit or city
+      const currentlySelected = playerUnitsHere.find(u => u.id === game.selectedUnitId);
+      if (currentlySelected) {
+        const nextUnit = playerUnitsHere.find(u => u.id !== game.selectedUnitId);
+        if (nextUnit) {
+          selectUnit(nextUnit);
+        } else if (cityHere && cityHere.owner === 'player') {
+          // Cycled through all units — show city panel
+          deselectUnit();
+          game.selectedHex = { col, row };
+          showCityPanel(cityHere);
+        } else {
+          selectUnit(playerUnitsHere[0]);
+        }
       } else {
-        // Multiple units stacked — cycle: pick the one that ISN'T currently selected
-        const other = unitsHere.find(u => u.id !== game.selectedUnitId);
-        selectUnit(other || unitsHere[0]);
+        selectUnit(playerUnitsHere[0]);
       }
+      return;
+    } else if (unitsHere.length > 0) {
+      selectUnit(unitsHere[0]);
       return;
     }
 
-    // Check for city
-    const cityHere = getCityAt(col, row);
+    // Check for city (no player units on tile)
     if (cityHere) {
       deselectUnit();
       game.selectedHex = { col, row };

@@ -161,6 +161,13 @@ export function initInputHandlers() {
           const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
           if (sel) { panCameraTo(sel.col, sel.row); render(); }
         }
+        else if (key === 'w') {
+          e.preventDefault();
+          const sel = game.selectedUnitId && game.units.find(u => u.id === game.selectedUnitId);
+          if (sel && sel.owner === 'player' && (sel.fortified || sel.sleeping)) {
+            window.unitAction('activate');
+          }
+        }
       }
     }
     // Escape key closes any open panel or overlay
