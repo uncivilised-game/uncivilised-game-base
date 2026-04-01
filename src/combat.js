@@ -298,19 +298,25 @@ function attackFactionCity(attacker, factionId) {
 // CITY DEFENSE SYSTEM (Civ-style)
 // ============================================
 function computeCityDefense(city, factionId) {
-  let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
-
-  // Walls bonus — check wall HP or military stat fallback
+  // Cities cannot bombard or defend without walls
   const hasActiveWalls = city.wallHP !== undefined && city.wallHP > 0;
-  const fStats = game.factionStats[factionId];
-  if (hasActiveWalls) {
-    strength += CITY_DEFENSE.WALLS_BONUS;
-    strength += 5; // City ranged strike enhanced by walls
-  } else if (fStats && fStats.military > 20) {
-    strength += CITY_DEFENSE.WALLS_BONUS;
+  if (!hasActiveWalls) {
+    // No walls — city has no ranged strike and no combat defense
+    // Garrison units still contribute if present
+    const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
+    if (garrison.length > 0) {
+      const bestGarrison = Math.max(...garrison.map(g => (UNIT_TYPES[g.type]?.combat || 0)));
+      return { strength: Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER), garrison, hasWalls: false };
+    }
+    return { strength: 0, garrison: [], hasWalls: false };
   }
 
+  let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
+  strength += CITY_DEFENSE.WALLS_BONUS;
+  strength += 5; // City ranged strike enhanced by walls
+
   // Fortress bonus
+  const fStats = game.factionStats[factionId];
   if (fStats && fStats.military > 40) strength += CITY_DEFENSE.FORTRESS_BONUS;
 
   // Terrain bonus — hills
@@ -328,7 +334,7 @@ function computeCityDefense(city, factionId) {
   const pop = city.population || 500;
   strength += Math.floor(pop / 500);
 
-  return { strength, garrison };
+  return { strength, garrison, hasWalls: true };
 }
 
 function attackExpansionCity(attacker, factionId, cityIdx) {
@@ -365,7 +371,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
 
   if (!ec.hp) ec.hp = CITY_DEFENSE.BASE_HP;
 
-  const { strength: cityDefence, garrison } = computeCityDefense(ec, factionId);
+  const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(ec, factionId);
 
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
@@ -375,7 +381,8 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   atkPower = Math.floor(atkPower * (tacticResult.atkMod || 1));
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
-  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  // Cities without walls cannot deal return damage (garrison units still fight separately)
+  const defDamage = (!hasWalls || aType.rangedCombat > 0) ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (ec.wallHP === undefined) ec.wallHP = 0;
@@ -541,7 +548,7 @@ function executeCityAttack(attacker, factionId, tactic) {
   if (!fc.hp) fc.hp = CITY_DEFENSE.BASE_HP;
 
   // Use proper Civ-style defense computation
-  const { strength: cityDefence, garrison } = computeCityDefense(fc, factionId);
+  const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(fc, factionId);
 
   // Apply tactic modifier
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
@@ -552,7 +559,8 @@ function executeCityAttack(attacker, factionId, tactic) {
   atkPower = Math.floor(atkPower * (tacticResult.atkMod || 1));
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
-  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  // Cities without walls cannot deal return damage (garrison units still fight separately)
+  const defDamage = (!hasWalls || aType.rangedCombat > 0) ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (fc.wallHP === undefined) fc.wallHP = 0;
