@@ -504,13 +504,19 @@ function endTurn() {
         const buildCity = cityOrder.splice(buildCityIdx, 1)[0];
         cityOrder.unshift(buildCity);
       }
+      const isNavalUnit = ut && ut.class === 'naval';
       let placed = false;
       let placedCity = null;
       for (const city of cityOrder) {
         const neighbors = getHexNeighbors(city.col, city.row);
         for (const nb of neighbors) {
           const tile = game.map[nb.row][nb.col];
-          if (!isTilePassable(tile)) continue;
+          if (isNavalUnit) {
+            // Naval units must spawn on water tiles (coast or ocean)
+            if (!tile || (tile.base !== 'coast' && tile.base !== 'ocean')) continue;
+          } else {
+            if (!isTilePassable(tile)) continue;
+          }
           if (getUnitAt(nb.col, nb.row)) continue;
           const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
           newUnit.moveLeft = 0;
