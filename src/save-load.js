@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY, WALL_HP } from './constants.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, UNIT_UNLOCKS, BUILDINGS, TECHNOLOGIES, RESOURCES, FACTIONS, GAME_VERSION, SAVE_KEY, WALL_HP } from './constants.js';
 import { getDefaultFactionStats } from './map.js';
 import { game, safeStorage, API, setGame, setNextUnitId } from './state.js';
 import { updateActiveGameProgress } from './leaderboard.js';
@@ -17,6 +17,15 @@ function migrateTiles(state) {
       if (u.hasAttackedThisTurn === undefined) u.hasAttackedThisTurn = false;
       // Backfill build charges for workers
       if (u.type === 'worker' && u.buildCharges === undefined) u.buildCharges = 2;
+      // Backfill per-unit movePoints (sum of base type + any promotion move bonuses)
+      if (u.movePoints === undefined) {
+        const baseMove = UNIT_TYPES[u.type]?.movePoints ?? 2;
+        const promoMove = (u.promotions || []).reduce((acc, pid) => {
+          const p = UNIT_PROMOTIONS[pid];
+          return acc + (p?.moveBonus || 0);
+        }, 0);
+        u.movePoints = baseMove + promoMove;
+      }
     }
   }
 

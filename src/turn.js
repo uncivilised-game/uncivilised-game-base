@@ -190,8 +190,9 @@ function endTurn() {
   for (const unit of game.units) {
     if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
-    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
-    unit.moveLeft = ut.movePoints;
+    const unitMovePoints = unit.movePoints ?? ut.movePoints;
+    const didIdleLastTurn = unit.moveLeft === unitMovePoints;
+    unit.moveLeft = unitMovePoints;
     unit.hasAttackedThisTurn = false;
 
     // Process multi-turn waypoint movement

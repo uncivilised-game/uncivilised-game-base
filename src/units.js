@@ -82,6 +82,7 @@ function createUnit(type, col, row, owner) {
     row: row,
     owner: owner, // 'player' or faction ID string
     hp: 100,
+    movePoints: ut.movePoints,
     moveLeft: ut.movePoints,
     combat: ut.combat,
     fortified: false,
@@ -817,8 +818,8 @@ function applyPromotion(unitId, promoId) {
   unit.pendingPromotion = false;
   const p = UNIT_PROMOTIONS[promoId];
   if (p && p.moveBonus) {
-    const ut = UNIT_TYPES[unit.type];
-    if (ut) unit.moveLeft = Math.min(unit.moveLeft + p.moveBonus, ut.movePoints + p.moveBonus);
+    unit.movePoints = (unit.movePoints || UNIT_TYPES[unit.type]?.movePoints || 2) + p.moveBonus;
+    unit.moveLeft = unit.moveLeft + p.moveBonus;
   }
   addEvent((UNIT_TYPES[unit.type]?.name || unit.type) + ' promoted: ' + (p ? p.icon + ' ' + p.name : promoId), 'combat');
   showSelectionPanel(unit);
