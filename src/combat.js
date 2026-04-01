@@ -703,9 +703,14 @@ function getCityAt(col, row) {
   // Check player cities
   const pCity = game.cities.find(c => c.col === col && c.row === row);
   if (pCity) return { ...pCity, owner: 'player' };
-  // Check faction cities
+  // Check faction capitals
   for (const [fid, fc] of Object.entries(game.factionCities)) {
     if (fc.col === col && fc.row === row) return { ...fc, owner: fid };
+  }
+  // Check faction expansion cities
+  for (const [owner, cities] of Object.entries(game.aiFactionCities)) {
+    for (const city of cities)
+      if (city.col === col && city.row === row) return { ...city, owner };
   }
   return null;
 }
@@ -760,16 +765,16 @@ function showBattlePanel(attacker, defender, onChoice) {
           <span>Hold formation. -10% damage dealt, -25% damage taken.</span>
         </button>
         <button class="battle-tactic" data-tactic="flanking">
-          <strong>\u{1F3AF} Flanking Maneuver</strong>
+          <strong>\u{1F3AF} Flanking Manoeuver</strong>
           <span>Risky outflank. 60% chance of +30% damage, 40% chance of -15%.</span>
         </button>
         <button class="battle-tactic" data-tactic="feigned_retreat">
           <strong>\u{1F3C3} Feigned Retreat</strong>
-          <span>Lure them in. If enemy combat > yours: +25% damage. Otherwise: -10%.</span>
+          <span>Lure them in. If enemy combat > ours: +25% damage. Otherwise: -10%.</span>
         </button>
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
-          <span>Withdraw without fighting. Unit loses 1 move point.</span>
+          <span>Withdraw without fighting. Uses 1 movement.</span>
         </button>
       </div>
     </div>

@@ -1217,7 +1217,7 @@ function renderMiniMap() {
   }
 
   // Faction cities
-  for (const [fid, fc] of Object.entries(game.factionCities)) {
+  for (const [_fid, fc] of Object.entries(game.factionCities)) {
     if (game.fogOfWar[fc.row] && game.fogOfWar[fc.row][fc.col]) {
       miniCtx.fillStyle = fc.color;
       miniCtx.fillRect(fc.col * scaleX - 1, fc.row * scaleY - 1, 3, 3);
@@ -1248,11 +1248,9 @@ function renderMiniMap() {
 function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   const tile = game.map[row][col];
   const unitHere = getUnitAt(col, row);
-  const cityHere = getCityAt(col, row);
 
   // Build tooltip lines
   const lines = [];
-  const icons = [];
 
   // Terrain info
   const tileName = getTileName(tile);
@@ -1262,30 +1260,47 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   const yields = getTileYields(tile);
   const yieldParts = [];
   if (yields.food > 0) yieldParts.push(`${yields.food} Food`);
-  if (yields.prod > 0) yieldParts.push(`${yields.prod} Prod`);
+  if (yields.prod > 0) yieldParts.push(`${yields.prod} Production`);
   if (yields.gold > 0) yieldParts.push(`${yields.gold} Gold`);
   if (yieldParts.length) lines.push({ text: yieldParts.join('  '), color: '#aab0a8' });
 
-  // Improvement info
-  if (tile.improvement && TILE_IMPROVEMENTS[tile.improvement]) {
-    const imp = TILE_IMPROVEMENTS[tile.improvement];
-    lines.push({ text: `${imp.icon} ${imp.name}`, bold: true, color: '#c9a84c' });
-  }
-  if (tile.road) lines.push({ text: '\u{1F6E4}\uFE0F Road (half move cost)', color: '#8a7a5a' });
-  if (tile.improvementBuilder) {
-    const bImp = TILE_IMPROVEMENTS[tile.improvementBuilder.improvementId];
-    if (bImp) lines.push({ text: `Building: ${bImp.name} (${tile.improvementBuilder.turnsLeft} turns)`, color: '#ddc060' });
-  }
-
   // River bonus
-  if (tile.hasRiver) lines.push({ text: 'River (+1 Gold, fresh water, crossing costs all MP, -5 combat attacking across)', color: '#5baad9' });
+  if (tile.hasRiver) lines.push({ text: `🛶 River (+1 Gold, fresh water,${tile.road ? '' : ' crossing costs all movement,\n '} -5 combat attacking across)`, color: '#5baad9' });
 
   // Move cost
   const moveCost = getTileMoveCost(tile);
   if (moveCost < 99) {
-    lines.push({ text: `Move: ${moveCost} MP`, color: '#8a9080' });
+    lines.push({ text: `🥾 Move cost: ${moveCost}`, color: '#8a9080' });
   } else {
-    lines.push({ text: 'Impassable', color: '#d9534f' });
+    lines.push({ text: '⛔ Impassable', color: '#d9534f' });
+  }
+
+  // Improvement
+  if (tile.improvement && TILE_IMPROVEMENTS[tile.improvement]) {
+    const imp = TILE_IMPROVEMENTS[tile.improvement];
+    lines.push({ text: `${imp.icon} ${imp.name}`, bold: true, color: '#c9a84c' });
+  }
+  if (tile.road) lines.push({ text: `🛣️ Road (halves movement cost${tile.river ? ', no river crossing penalty' : ''})`, color: '#8a7a5a' });
+  if (tile.improvementBuilder) {
+    const bImp = TILE_IMPROVEMENTS[tile.improvementBuilder.improvementId];
+    if (bImp) lines.push({ text: `🏗️ In Progress: ${bImp.name} (${tile.improvementBuilder.turnsLeft} turns)`, color: '#ddc060' });
+  }
+
+  // Natural wonder
+  if (tile.naturalWonder) {
+    const nw = NATURAL_WONDERS.find(n => n.id === tile.naturalWonder);
+    if (nw) {
+      lines.push({ text: '', color: '' }); // spacer
+      lines.push({ text: `${nw.icon} ${nw.name}`, color: nw.color, bold: true });
+      lines.push({ text: `  ${nw.desc}`, color: nw.color });
+      const bonusParts = [];
+      if (nw.yields.food) bonusParts.push(`+${nw.yields.food} Food`);
+      if (nw.yields.prod) bonusParts.push(`+${nw.yields.prod} Production`);
+      if (nw.yields.gold) bonusParts.push(`+${nw.yields.gold} Gold`);
+      // if (nw.yields.culture) bonusParts.push(`+${res.bonus.culture} Culture`); // culture bonus not supported yet
+      // if (nw.yields.science) bonusParts.push(`+${res.bonus.science} Science`); // science bonus not supported yet
+      if (bonusParts.length) lines.push({ text: '  ' + bonusParts.join(', '), color: '#aab0a8' });
+    }
   }
 
   // Resource (hidden if unrevealed strategic)
@@ -1293,30 +1308,42 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
     const res = RESOURCES[tile.resource];
     const cat = res.category || 'bonus';
     const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
-    lines.push({ text: `${res.name} (${catLabel})`, color: res.color });
+    lines.push({ text: '', color: '' }); // spacer
+    lines.push({ text: `${res.icon} ${res.name} (${catLabel})`, color: res.color, bold: true });
     const bonusParts = [];
     if (res.bonus.food) bonusParts.push(`+${res.bonus.food} Food`);
-    if (res.bonus.prod) bonusParts.push(`+${res.bonus.prod} Prod`);
+    if (res.bonus.prod) bonusParts.push(`+${res.bonus.prod} Production`);
     if (res.bonus.gold) bonusParts.push(`+${res.bonus.gold} Gold`);
-    if (res.bonus.culture) bonusParts.push(`+${res.bonus.culture} Culture`);
-    if (bonusParts.length) lines.push({ text: '  ' + bonusParts.join(', '), color: '#aab0a8' });
+    // if (res.bonus.culture) bonusParts.push(`+${res.bonus.culture} Culture`); // culture bonus not supported yet
+    if (bonusParts.length) lines.push({ text: '  ' + bonusParts.join('  '), color: '#aab0a8' });
   }
 
-  // City info
-  if (cityHere) {
+  // Settlement
+  const city = getCityAt(col, row);
+  if (city) {
     lines.push({ text: '', color: '' }); // spacer
-    if (cityHere.owner === 'player') {
-      lines.push({ text: `\u{1F3F0} ${cityHere.name} (Your City)`, bold: true, color: '#c9a84c' });
-      lines.push({ text: `Pop: ${(cityHere.population || game.population).toLocaleString()}`, color: '#aab0a8' });
-      if (game.buildings.length) lines.push({ text: `Buildings: ${game.buildings.length}`, color: '#aab0a8' });
+    if (city.owner === 'player') {
+      const icon = ['🛖', '🛖🛖', '🛖🛖🛖', '🏰'][getSettlementStage(city.population) - 1];
+      lines.push({ text: `${icon} ${city.name} (Your Settlement)`, bold: true, color: '#c9a84c' });
+      lines.push({ text: `Population: ${city.population.toLocaleString()}`, color: '#aab0a8' });
+      if (city.buildings.length > 5) {
+        lines.push({ text: `Buildings: ${city.buildings.length}`, color: '#aab0a8' });
+      } else if (city.buildings.length) {
+        lines.push({ text: `Buildings:`, color: '#aab0a8' });
+        city.buildings.forEach((b) => {
+          lines.push({ text: `  ${b.icon ? b.icon + ' ' : ''}${b.name}`, color: '#aab0a8' });
+        });
+      }
     } else {
-      const faction = FACTIONS[cityHere.owner];
+      const faction = FACTIONS[city.owner];
       if (faction) {
-        const met = game.metFactions && game.metFactions[cityHere.owner];
-        lines.push({ text: `\u{1F3F0} ${cityHere.name}`, bold: true, color: faction.color });
-        lines.push({ text: cityHere.owner === 'barbarian' ? 'Barbarian Camp' : (met ? faction.name : 'Unknown Civilization'), color: '#aab0a8' });
+        const met = game.metFactions && game.metFactions[city.owner];
+        const isBarb = city.owner === 'barbarian';
+        const icon = isBarb ? '⛺' : '🏰';
+        lines.push({ text: `${icon} ${city.name}`, bold: true, color: faction.color });
+        lines.push({ text: isBarb ? 'Barbarian Camp' : (met ? faction.name : 'Unknown Civilization'), color: '#aab0a8' });
         if (met) {
-          const rel = game.relationships[cityHere.owner] || 0;
+          const rel = game.relationships[city.owner] || 0;
           const relLabel = getRelationLabel(rel);
           lines.push({ text: `${relLabel.text} (${rel > 0 ? '+' : ''}${rel})`, color: relLabel.cls === 'relation-hostile' ? '#d9534f' : relLabel.cls === 'relation-friendly' ? '#6aab5c' : relLabel.cls === 'relation-allied' ? '#c9a84c' : '#aab0a8' });
         }
@@ -1331,7 +1358,7 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
     const ut = UNIT_TYPES[unitHere.type];
     const isPlayer = unitHere.owner === 'player';
     if (isPlayer) {
-      lines.push({ text: `${ut.icon} ${ut.name} (Yours)`, bold: true, color: '#c9a84c' });
+      lines.push({ text: `${ut.icon} ${ut.name} (mine)`, bold: true, color: '#c9a84c' });
     } else {
       const faction = FACTIONS[unitHere.owner];
       const met = game.metFactions && game.metFactions[unitHere.owner];
@@ -1341,7 +1368,7 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
       lines.push({ text: `${ut.icon} ${ut.name} (${ownerName})`, bold: true, color: unitColor });
     }
     lines.push({ text: `HP: ${unitHere.hp}/100  Combat: ${ut.combat}${ut.rangedCombat ? '  Ranged: ' + ut.rangedCombat : ''}`, color: unitHere.hp > 60 ? '#6aab5c' : unitHere.hp > 30 ? '#ddc060' : '#d9534f' });
-    lines.push({ text: `Moves: ${unitHere.moveLeft}/${ut.movePoints}  Class: ${ut.class}`, color: '#8a9080' });
+    lines.push({ text: `Moves: ${unitHere.moveLeft}/${ut.movePoints}  Class: ${ut.class === 'melee' ? 'mêlée' : ut.class}`, color: '#8a9080' });
     if (unitHere.fortified) lines.push({ text: 'Fortified (+20% def, +10 HP/turn)', color: '#5baad9' });
     // Show healing status
     if (unitHere.hp < 100 && unitHere.owner === 'player') {
