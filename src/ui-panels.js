@@ -64,6 +64,7 @@ function showSelectionPanel(unit) {
     // Status
     if (unit.fortified) html += `<div class="sel-status fortified">\u{1F6E1} Fortified (+20% defense)</div>`;
     if (unit.sleeping) html += `<div class="sel-status sleeping">\u{1F4A4} Sleeping</div>`;
+    if (unit.waypoint) html += `<div class="sel-status" style="color:#c9a84c">\u{1F6A9} En route to (${unit.waypoint.col},${unit.waypoint.row})</div>`;
 
     // XP & Promotions
     const xpStr = (unit.xp || 0) + ' XP';
@@ -87,6 +88,10 @@ function showSelectionPanel(unit) {
 
     // Action buttons
     html += `<div class="sel-actions">`;
+    // Cancel waypoint journey
+    if (unit.waypoint) {
+      html += `<button class="sel-btn" style="border-color:#c9a84c" onclick="unitAction('cancelWaypoint')"><span>\u{1F6A9} Cancel Journey</span></button>`;
+    }
     // Unit upgrade button
     const upg = UNIT_UPGRADES[unit.type];
     if (upg && game.techs.includes(upg.requires)) {
@@ -1351,6 +1356,12 @@ window.unitAction = function(action) {
   const ut = UNIT_TYPES[unit.type];
 
   switch (action) {
+    case 'cancelWaypoint':
+      unit.waypoint = null;
+      addEvent(`${ut.name} journey cancelled`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
     case 'skip':
       unit.moveLeft = 0;
       addEvent(`${ut.name} skipped`, '');
