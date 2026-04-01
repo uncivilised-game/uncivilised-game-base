@@ -366,7 +366,8 @@ function render() {
           ctx.restore();
         }
       }
-      if (tile.road) {
+      // road has lower priority, otherwise it dominates vs. improvements
+      else if (tile.road) {
         const roadImg = IMPROVEMENT_IMAGES['road'];
         if (roadImg && roadImg.complete && roadImg.naturalWidth > 0) {
           ctx.save();
