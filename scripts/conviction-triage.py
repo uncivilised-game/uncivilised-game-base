@@ -31,6 +31,7 @@ MIN_MESSAGE_LENGTH = 10  # skip very short/empty messages
 ACTIONABLE_CATEGORIES = {"bug_report", "feature_request", "gameplay_feedback"}
 
 PRIORITY_WEIGHTS = {"critical": 5, "high": 3, "medium": 2, "low": 1}
+ROLE_WEIGHTS = {"admin": 3.0, "dev": 2.0, "user": 1.0}
 CATEGORY_LABELS = {
     "bug_report": "bug",
     "feature_request": "enhancement",
@@ -163,8 +164,24 @@ def cluster_feedback(items):
     return clusters
 
 
+# ── Player role lookup ─────────────────────────────────────────────
+def fetch_player_roles(player_names):
+    """Look up roles for a set of player names from the players table."""
+    roles = {}
+    for name in player_names:
+        if not name:
+            continue
+        try:
+            rows = sb_get("players", f"username_lower=eq.{name.lower()}&select=username,role&limit=1")
+            if rows:
+                roles[name] = rows[0].get("role", "user") or "user"
+        except Exception:
+            pass  # default to "user" if lookup fails
+    return roles  # name -> role string
+
+
 # ── Conviction scoring ─────────────────────────────────────────────
-def score_cluster(cluster):
+def score_cluster(cluster, player_roles=None):
     """
     Score a cluster by conviction signals. Designed so that:
     - 1 person, 1 medium report     = 2+2 = 4  (below threshold, no issue)
@@ -174,12 +191,19 @@ def score_cluster(cluster):
     - 1 person spamming 3 reports   = 6+2 = 8  (barely passes — unique reporters matter)
 
     Formula:
-      priority_sum + (unique_reporters * 2) + recency_bonus
+      priority_sum (role-weighted) + (unique_reporters * 2) + recency_bonus
 
     Unique reporters are weighted 2x because independent confirmation
-    is the strongest conviction signal.
+    is the strongest conviction signal. Admin reports get 3x priority weight,
+    dev reports get 2x, to fast-track issues validated by the team.
     """
-    priority_score = sum(PRIORITY_WEIGHTS.get(item.get("priority", "medium"), 2) for item in cluster)
+    if player_roles is None:
+        player_roles = {}
+    priority_score = sum(
+        PRIORITY_WEIGHTS.get(item.get("priority", "medium"), 2)
+        * ROLE_WEIGHTS.get(player_roles.get(item.get("player_name", ""), "user"), 1.0)
+        for item in cluster
+    )
     unique_reporters = len(set(item.get("player_name", "") for item in cluster if item.get("player_name")))
 
     # Recency bonus: reports from last 48h get +1 each
@@ -255,11 +279,15 @@ def update_github_issue(issue_number, body):
 
 
 # ── Claude summarization ──────────────────────────────────────────
-def summarize_cluster(cluster, conviction_score):
+def summarize_cluster(cluster, conviction_score, player_roles=None):
     """Use Claude to generate an issue title and description from a cluster of feedback."""
+    if player_roles is None:
+        player_roles = {}
     reports_text = "\n".join(
         f"- [{item.get('category', 'other')}][{item.get('priority', 'medium')}] "
-        f"**{item.get('player_name', 'anon')}** (turn {item.get('game_turn', '?')}): "
+        f"**{item.get('player_name', 'anon')}**"
+        f"{' [' + player_roles.get(item.get('player_name', ''), 'user') + ']' if player_roles.get(item.get('player_name', ''), 'user') != 'user' else ''}"
+        f" (turn {item.get('game_turn', '?')}): "
         f"\"{item.get('message', '')}\""
         for item in cluster
     )
@@ -307,8 +335,10 @@ Respond with EXACTLY this JSON (no other text):
 
 
 # ── Issue body formatting ──────────────────────────────────────────
-def format_issue_body(cluster, conviction_score, description):
+def format_issue_body(cluster, conviction_score, description, player_roles=None):
     """Format the GitHub issue body."""
+    if player_roles is None:
+        player_roles = {}
     unique_reporters = sorted(set(item.get("player_name", "anon") for item in cluster if item.get("player_name")))
     categories = [item.get("category", "other") for item in cluster]
     dominant = max(set(categories), key=categories.count)
@@ -318,8 +348,16 @@ def format_issue_body(cluster, conviction_score, description):
         if item.get("created_at"):
             dates.append(item["created_at"][:10])
 
+    def _role_badge(name):
+        role = player_roles.get(name, "user")
+        if role == "admin":
+            return " `[admin]`"
+        elif role == "dev":
+            return " `[dev]`"
+        return ""
+
     reports_section = "\n".join(
-        f"- **{item.get('player_name', 'anon')}** "
+        f"- **{item.get('player_name', 'anon')}**{_role_badge(item.get('player_name', ''))} "
         f"({item.get('created_at', '?')[:10]}): "
         f"\"{item.get('message', '')}\""
         for item in sorted(cluster, key=lambda x: x.get("created_at", ""))
@@ -340,6 +378,7 @@ def format_issue_body(cluster, conviction_score, description):
 
 ---
 *Auto-triaged by conviction pipeline. Score updates on each run.*
+*Role-weighted scoring: admin=3x, dev=2x, user=1x priority multiplier.*
 *Feedback IDs: {', '.join(str(item['id']) for item in cluster)}*"""
 
 
@@ -444,6 +483,14 @@ def run():
     if len(pending_feedback) > 0:
         print(f"   Merged {len(pending_feedback)} pending entries into pool")
 
+    # 5c. Fetch player roles for role-weighted scoring
+    all_player_names = list(set(fb.get("player_name", "") for fb in all_feedback if fb.get("player_name")))
+    print(f"\n   Fetching roles for {len(all_player_names)} unique reporters...")
+    player_roles = fetch_player_roles(all_player_names)
+    privileged = {n: r for n, r in player_roles.items() if r in ("admin", "dev")}
+    if privileged:
+        print(f"   Privileged reporters: {', '.join(f'{n} ({r})' for n, r in privileged.items())}")
+
     # 6. Match all feedback against existing issues
     print("\n5. Matching against existing issues...")
     matched = {}  # issue_number -> [feedback items]
@@ -479,11 +526,18 @@ def run():
             snapshot = item.get("game_state_snapshot") or {}
             item["game_turn"] = snapshot.get("turn", "?")
 
-        score = score_cluster(all_linked)
+        # Fetch roles for any new reporters in this issue's feedback
+        linked_names = list(set(item.get("player_name", "") for item in all_linked if item.get("player_name")))
+        for name in linked_names:
+            if name and name not in player_roles:
+                extra = fetch_player_roles([name])
+                player_roles.update(extra)
+
+        score = score_cluster(all_linked, player_roles)
         issue = issue_centroids[issue_num]["issue"]
         # Re-summarize with all reports
-        summary = summarize_cluster(all_linked, score)
-        body = format_issue_body(all_linked, score, summary["description"])
+        summary = summarize_cluster(all_linked, score, player_roles)
+        body = format_issue_body(all_linked, score, summary["description"], player_roles)
         update_github_issue(issue_num, body)
         print(f"   Updated issue #{issue_num}: score={score}, reports={len(all_linked)}")
 
@@ -501,7 +555,7 @@ def run():
         skipped_count = 0
 
         for cluster in clusters:
-            score = score_cluster(cluster)
+            score = score_cluster(cluster, player_roles)
             dominant_cat = max(
                 set(item.get("category", "other") for item in cluster),
                 key=lambda c: sum(1 for item in cluster if item.get("category") == c)
@@ -517,7 +571,7 @@ def run():
                 continue
 
             # Summarize with Claude
-            summary = summarize_cluster(cluster, score)
+            summary = summarize_cluster(cluster, score, player_roles)
             labels = ["conviction", CATEGORY_LABELS.get(dominant_cat, "feedback")]
 
             # Add priority label for high/critical
@@ -527,7 +581,7 @@ def run():
             elif "high" in priorities:
                 labels.append("priority:high")
 
-            body = format_issue_body(cluster, score, summary["description"])
+            body = format_issue_body(cluster, score, summary["description"], player_roles)
             issue = create_github_issue(summary["title"], body, labels)
             issue_num = issue["number"]
             created_count += 1
