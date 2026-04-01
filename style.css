@@ -1807,3 +1807,106 @@ a:hover { text-decoration: underline; }
 .rel-friendly { color: #6aab5c; }
 .rel-hostile { color: #d9534f; }
 .rel-neutral { color: #c9a84c; }
+
+/* ---- Tutorial / Onboarding ---- */
+#tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.25s ease;
+}
+
+#tutorial-modal {
+  position: relative;
+  background: #161a18;
+  border: 1px solid rgba(201, 168, 76, 0.3);
+  border-radius: 14px;
+  padding: 36px 32px 28px;
+  width: 90%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+#tutorial-skip {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: #5a5750;
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+#tutorial-skip:hover { color: #a89e8a; }
+
+#tutorial-icon-wrap {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+#tutorial-modal h2 {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #e8dfc8;
+  margin-bottom: 12px;
+}
+
+#tutorial-body {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: #a89e8a;
+  text-align: left;
+  margin-bottom: 20px;
+}
+
+#tutorial-body strong { color: #d4cfc4; }
+
+#tutorial-body kbd {
+  display: inline-block;
+  background: #0d0f0e;
+  border: 1px solid #3a3830;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.8em;
+  font-family: var(--font-body);
+  color: #c9a84c;
+}
+
+#tutorial-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.tutorial-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3a3830;
+  transition: background 0.2s;
+}
+.tutorial-dot.active { background: #c9a84c; }
+
+#tutorial-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+#tutorial-actions .btn {
+  min-width: 100px;
+}
+
+#tutorial-prev { visibility: hidden; }
