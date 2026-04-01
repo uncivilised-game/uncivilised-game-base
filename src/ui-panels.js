@@ -1,6 +1,6 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3 } from './constants.js';
 import { getNextUnitId } from './state.js';
-import { game } from './state.js';
+import { game, canvasW, canvasH, gameZoom } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
 import { getTileYields, getTileName, isResourceRevealed } from './map.js';
 import { render } from './render.js';
@@ -530,6 +530,19 @@ function switchProduction(startFn) {
   startFn();
 }
 
+function getNearestCityIndex() {
+  if (game.cities.length <= 1) return 0;
+  // Find city closest to camera center
+  const camCenterCol = Math.floor((game.cameraX + (canvasW / 2) / gameZoom) / (HEX_SIZE * SQRT3));
+  const camCenterRow = Math.floor((game.cameraY + (canvasH / 2) / gameZoom) / (HEX_SIZE * 1.5));
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < game.cities.length; i++) {
+    const d = hexDistance(camCenterCol, camCenterRow, game.cities[i].col, game.cities[i].row);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 function recruitUnit(typeId) {
   const ut = UNIT_TYPES[typeId];
   if (typeId === 'settler' && game.population < 2000) {
@@ -539,9 +552,12 @@ function recruitUnit(typeId) {
   const doRecruit = () => {
     game.currentUnitBuild = typeId;
     game.unitBuildProgress = 0;
+    // Track which city is building (closest to camera center)
+    game.unitBuildCityIdx = getNearestCityIndex();
     const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
-    logAction('build', 'Started training ' + ut.name, { unitType: typeId });
-    addEvent('Training ' + ut.name + ' (' + turnsNeeded + ' turns)', 'combat');
+    const buildCityName = game.cities[game.unitBuildCityIdx]?.name || 'city';
+    logAction('build', 'Started training ' + ut.name + ' in ' + buildCityName, { unitType: typeId });
+    addEvent('Training ' + ut.name + ' in ' + buildCityName + ' (' + turnsNeeded + ' turns)', 'combat');
     if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
     updateUI();
     closeAllPanels();
