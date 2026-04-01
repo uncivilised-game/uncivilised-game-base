@@ -1,0 +1,105 @@
+name: Conviction Auto-Merge
+
+on:
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+
+jobs:
+  auto-merge:
+    # Only run for conviction PRs (fix/* branches targeting devel)
+    if: >-
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'approved') ||
+      (github.event_name == 'check_suite' &&
+       github.event.check_suite.conclusion == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Find conviction PRs to merge
+        id: find-prs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            # Get the PR number from the review event
+            PR_NUM="${{ github.event.pull_request.number }}"
+            echo "prs=[$PR_NUM]" >> "$GITHUB_OUTPUT"
+          else
+            # check_suite: find open PRs for the head branch
+            BRANCH="${{ github.event.check_suite.head_branch }}"
+            if [ -z "$BRANCH" ]; then
+              echo "No branch found in check_suite event"
+              echo "prs=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            PRS=$(gh pr list --repo "${{ github.repository }}" \
+              --head "$BRANCH" --base devel --state open \
+              --json number --jq '[.[].number]')
+            echo "prs=${PRS:-[]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auto-merge eligible PRs
+        run: |
+          PRS='${{ steps.find-prs.outputs.prs }}'
+
+          for PR_NUM in $(echo "$PRS" | python3 -c "import sys,json; [print(n) for n in json.load(sys.stdin)]" 2>/dev/null); do
+            echo "Checking PR #${PR_NUM}..."
+
+            # Get PR details
+            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" \
+              --json headRefName,baseRefName,labels,reviews,statusCheckRollup,mergeable,state)
+
+            BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+            BASE=$(echo "$PR_JSON" | jq -r '.baseRefName')
+            STATE=$(echo "$PR_JSON" | jq -r '.state')
+
+            # Must be open, target devel, and be a fix/* branch (conviction PR)
+            if [ "$STATE" != "OPEN" ]; then
+              echo "  PR #${PR_NUM} is not open, skipping"
+              continue
+            fi
+            if [ "$BASE" != "devel" ]; then
+              echo "  PR #${PR_NUM} does not target devel (targets $BASE), skipping"
+              continue
+            fi
+            if ! echo "$BRANCH" | grep -qE '^fix/'; then
+              echo "  PR #${PR_NUM} is not a conviction PR (branch: $BRANCH), skipping"
+              continue
+            fi
+
+            # Check for at least one approving review
+            APPROVED=$(echo "$PR_JSON" | jq '[.reviews[] | select(.state == "APPROVED")] | length')
+            if [ "$APPROVED" -lt 1 ]; then
+              echo "  PR #${PR_NUM} has no approving reviews ($APPROVED), skipping"
+              continue
+            fi
+
+            # Check all status checks passed
+            ALL_PASSED=$(echo "$PR_JSON" | jq '
+              .statusCheckRollup as $checks |
+              if ($checks | length) == 0 then false
+              else ($checks | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
+              end
+            ')
+            if [ "$ALL_PASSED" != "true" ]; then
+              echo "  PR #${PR_NUM} has failing or pending checks, skipping"
+              continue
+            fi
+
+            # Check mergeable
+            MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+            if [ "$MERGEABLE" != "MERGEABLE" ]; then
+              echo "  PR #${PR_NUM} is not mergeable ($MERGEABLE), skipping"
+              continue
+            fi
+
+            echo "  PR #${PR_NUM} is eligible for auto-merge!"
+            gh pr merge "$PR_NUM" --repo "${{ github.repository }}" --squash --auto \
+              --body "Auto-merged by conviction-automerge workflow after CI passed and review approved."
+            echo "  Enabled auto-merge for PR #${PR_NUM}"
+          done

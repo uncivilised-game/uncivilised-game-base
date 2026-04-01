@@ -1,0 +1,47 @@
+name: Release Vote
+
+on:
+  schedule:
+    # Weekly on Monday at 12pm UTC
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - check    # Tally votes on existing issue, merge if threshold met
+          - create   # Force-create a new vote issue (even if one exists)
+        default: check
+      threshold:
+        description: 'Vote threshold override (default: 3)'
+        required: false
+        type: string
+        default: '3'
+
+jobs:
+  release-vote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      VOTE_THRESHOLD: ${{ inputs.threshold || '3' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main branch
+        run: git fetch origin main
+
+      - name: Run release vote script
+        env:
+          ACTION: ${{ inputs.action || 'check' }}
+        run: python3 scripts/release-vote.py
