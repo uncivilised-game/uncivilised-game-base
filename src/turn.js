@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, CITY_DEFENSE } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
@@ -396,6 +396,39 @@ function endTurn() {
           if (game.turn - lastAttacked >= 2) {
             ec.wallHP = Math.min(ec.wallMaxHP, ec.wallHP + 5);
           }
+        }
+      }
+    }
+  }
+
+  // --- Player City Ranged Strikes ---
+  // Player cities fire at nearby non-player units (same as AI cities do)
+  if (game.cities) {
+    for (const city of game.cities) {
+      if (!city.hp || city.hp <= 0) continue;
+      const range = CITY_DEFENSE.RANGED_STRIKE_RANGE;
+      let bestTarget = null, bestDist = Infinity;
+      // Find closest non-player unit within range
+      for (const unit of game.units) {
+        if (unit.owner === 'player') continue;
+        const d = hexDistance(unit.col, unit.row, city.col, city.row);
+        if (d <= range && d < bestDist) { bestDist = d; bestTarget = unit; }
+      }
+      if (bestTarget) {
+        // Damage scales with city HP, base is RANGED_STRIKE_STRENGTH
+        const cityHPRatio = city.hp !== undefined ? city.hp / CITY_DEFENSE.BASE_HP : 1;
+        let strikeDmg = Math.max(3, Math.floor(CITY_DEFENSE.RANGED_STRIKE_STRENGTH * cityHPRatio));
+        // Add wall bonus if city has walls
+        if (city.wallHP !== undefined && city.wallHP > 0) {
+          strikeDmg += 5;
+        }
+        bestTarget.hp -= strikeDmg;
+        const targetType = UNIT_TYPES[bestTarget.type];
+        const targetName = targetType ? targetType.name : 'unit';
+        addEvent(city.name + ' bombards the ' + targetName + '! (-' + strikeDmg + ' HP)', 'combat');
+        if (bestTarget.hp <= 0) {
+          game.units = game.units.filter(u => u.id !== bestTarget.id);
+          addEvent('Enemy ' + targetName + ' destroyed by ' + city.name + "'s defenses!", 'combat');
         }
       }
     }
