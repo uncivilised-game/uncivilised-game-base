@@ -21,11 +21,14 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
-  // Civilian capture — attacker takes ownership instead of fighting
+  // Civilian capture — attacker takes ownership and moves onto the tile
   if (dType.class === 'civilian') {
     const prevOwner = defender.owner;
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
+    // Move attacker onto captured unit's tile (military + civilian can stack)
+    attacker.col = defender.col;
+    attacker.row = defender.row;
     const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
     const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
     if (prevOwner === 'player') {
