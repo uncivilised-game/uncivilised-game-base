@@ -301,17 +301,29 @@ function attackFactionCity(attacker, factionId) {
 // CITY DEFENSE SYSTEM (Civ-style)
 // ============================================
 function computeCityDefense(city, factionId) {
-  // Cities cannot bombard or defend without walls
   const hasActiveWalls = city.wallHP !== undefined && city.wallHP > 0;
+  const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
+
   if (!hasActiveWalls) {
-    // No walls — city has no ranged strike and no combat defense
-    // Garrison units still contribute if present
-    const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
+    // No walls — minor defense only (no ranged bombardment)
+    // Takes a few turns to capture but much weaker than walled cities
+    let strength = CITY_DEFENSE.UNWALLED_STRENGTH;
+
+    // Terrain bonus — hills still help
+    const tile = game.map[city.row] && game.map[city.row][city.col];
+    if (tile && tile.feature === 'hills') strength += CITY_DEFENSE.TERRAIN_HILLS_BONUS;
+
+    // Population scaling — larger cities are slightly tougher
+    const pop = city.population || 500;
+    strength += Math.floor(pop / 1000);
+
+    // Garrison bonus
     if (garrison.length > 0) {
       const bestGarrison = Math.max(...garrison.map(g => (UNIT_TYPES[g.type]?.combat || 0)));
-      return { strength: Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER), garrison, hasWalls: false };
+      strength += Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER);
     }
-    return { strength: 0, garrison: [], hasWalls: false };
+
+    return { strength, garrison, hasWalls: false };
   }
 
   let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
@@ -327,7 +339,6 @@ function computeCityDefense(city, factionId) {
   if (tile && tile.feature === 'hills') strength += CITY_DEFENSE.TERRAIN_HILLS_BONUS;
 
   // Garrison bonus — strongest garrison unit contributes
-  const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
   if (garrison.length > 0) {
     const bestGarrison = Math.max(...garrison.map(g => (UNIT_TYPES[g.type]?.combat || 0)));
     strength += Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER);
@@ -385,7 +396,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   // Cities without walls cannot deal return damage (garrison units still fight separately)
-  const defDamage = (!hasWalls || aType.rangedCombat > 0) ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(hasWalls ? 3 : 1, Math.floor((hasWalls ? 20 : 10) * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (ec.wallHP === undefined) ec.wallHP = 0;
@@ -563,7 +574,7 @@ function executeCityAttack(attacker, factionId, tactic) {
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
   // Cities without walls cannot deal return damage (garrison units still fight separately)
-  const defDamage = (!hasWalls || aType.rangedCombat > 0) ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(hasWalls ? 3 : 1, Math.floor((hasWalls ? 20 : 10) * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (fc.wallHP === undefined) fc.wallHP = 0;
