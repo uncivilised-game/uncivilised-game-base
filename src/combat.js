@@ -895,20 +895,54 @@ function processZOCCaptures() {
     });
 
     if (!hasEscort) {
-      captured.push({ type: unit.type, owner: unit.owner, col: unit.col, row: unit.row });
-      game.units.splice(i, 1);
+      // Find which faction's military unit is creating the ZOC
+      let capturedBy = null;
+      const neighbors = getHexNeighbors(unit.col, unit.row);
+      for (const nb of neighbors) {
+        const zocUnit = game.units.find(u =>
+          u.col === nb.col && u.row === nb.row &&
+          u.owner !== unit.owner &&
+          UNIT_TYPES[u.type] && !ZOC_EXEMPT_CLASSES.includes(UNIT_TYPES[u.type].class)
+        );
+        if (zocUnit) { capturedBy = zocUnit.owner; break; }
+      }
+
+      captured.push({ type: unit.type, prevOwner: unit.owner, col: unit.col, row: unit.row, capturedBy });
+
+      // Transfer to capturing faction instead of deleting
+      if (capturedBy) {
+        unit.owner = capturedBy;
+        unit.moveLeft = 0;
+        unit.sleeping = false;
+        unit.fortified = false;
+        unit.alert = false;
+        unit.waypoint = null;
+        // Cancel any in-progress improvement
+        const tile = game.map[unit.row]?.[unit.col];
+        if (tile && tile.improvementBuilder && tile.improvementBuilder.unitId === unit.id) {
+          tile.improvementBuilder = null;
+        }
+      } else {
+        // Fallback: no captor found, remove unit
+        game.units.splice(i, 1);
+      }
     }
   }
 
   for (const c of captured) {
     const name = UNIT_TYPES[c.type]?.name || c.type;
-    if (c.owner === 'player') {
-      addEvent(`${name} captured in enemy Zone of Control at (${c.col},${c.row})!`, 'combat');
-      showToast('Unit Captured!', `Your ${name} was captured — no military escort nearby.`);
+    const captorName = c.capturedBy ? (FACTIONS[c.capturedBy]?.name || c.capturedBy) : 'unknown';
+    if (c.prevOwner === 'player') {
+      addEvent(`${name} captured by ${captorName} in their Zone of Control!`, 'combat');
+      showToast('Unit Captured!', `Your ${name} was captured by ${captorName} — no military escort nearby.`);
+    } else if (c.capturedBy === 'player') {
+      const prevName = FACTIONS[c.prevOwner]?.name || c.prevOwner;
+      addEvent(`Captured ${prevName}'s ${name} in your Zone of Control!`, 'combat');
+      showToast('Unit Captured!', `${prevName}'s ${name} is now yours!`);
     } else {
-      addEvent(`Enemy ${name} captured in your Zone of Control!`, 'combat');
+      addEvent(`${name} captured in Zone of Control`, 'combat');
     }
-    logAction('combat', `${name} captured in ZOC`, { owner: c.owner, col: c.col, row: c.row });
+    logAction('combat', `${name} captured in ZOC`, { prevOwner: c.prevOwner, capturedBy: c.capturedBy, col: c.col, row: c.row });
   }
 
   return captured;
