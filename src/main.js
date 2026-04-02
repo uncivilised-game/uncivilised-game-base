@@ -89,6 +89,7 @@ window.establishTradeRoute = establishTradeRoute;
 window.cancelTradeRoute = cancelTradeRoute;
 window.clearTechGoal = clearTechGoal;
 window.showWorkerActions = showWorkerActions;
+window.renderVictoryPanel = renderVictoryPanel;
 
 // --- Expose testing/debug functions ---
 window.triggerEureka = triggerEureka;
