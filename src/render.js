@@ -971,10 +971,16 @@ function render() {
 
     // Determine unit colors based on owner
     let discBg, borderColor, iconColor;
+    const isBarbUnit = unit.owner === 'barbarian';
     if (isPlayer) {
       discBg = isSelected ? '#f0ebe0' : 'rgba(20,20,20,0.75)';
       borderColor = isSelected ? '#c9a84c' : '#c9a84c';
       iconColor = isSelected ? '#1a1400' : '#c9a84c';
+    } else if (isBarbUnit) {
+      // Barbarian units — red highlight
+      discBg = isSelected ? '#d44' : 'rgba(20,20,20,0.75)';
+      borderColor = '#d44';
+      iconColor = isSelected ? '#1a1400' : '#d44';
     } else {
       // Faction units — use faction color
       const faction = FACTIONS[unit.owner];
@@ -996,12 +1002,17 @@ function render() {
     // Faction color band at bottom of unit disc (for non-player units)
     if (!isPlayer) {
       const faction = FACTIONS[unit.owner];
-      if (faction) {
+      const bandColor = isBarbUnit ? '#d44' : (faction ? faction.color : null);
+      if (bandColor) {
         ctx.beginPath();
         ctx.arc(sx, uy, 11, Math.PI * 0.3, Math.PI * 0.7);
-        ctx.strokeStyle = faction.color;
+        ctx.strokeStyle = bandColor;
         ctx.lineWidth = 3;
         ctx.stroke();
+      }
+      // Draw red glowing hex ring around barbarian units
+      if (isBarbUnit) {
+        drawFactionRing(ctx, sx, sy, '#d44');
       }
     }
 

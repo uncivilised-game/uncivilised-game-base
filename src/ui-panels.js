@@ -1,6 +1,6 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3 } from './constants.js';
 import { getNextUnitId } from './state.js';
-import { game } from './state.js';
+import { game, canvasW, canvasH, gameZoom } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
 import { getTileYields, getTileName, isResourceRevealed } from './map.js';
 import { render } from './render.js';
@@ -8,7 +8,7 @@ import { addEvent, logAction, showToast, showCompletionNotification } from './ev
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { getModCombatBonus } from './diplomacy-api.js';
-import { isAtWarWith, declareSurpriseWar } from './combat.js';
+import { isAtWarWith, declareSurpriseWar, confirmAndDeclareWar } from './combat.js';
 import { showWorkerActions, showSettlerActions } from './improvements.js';
 import { updateUI, updateEnvoyUI } from './leaderboard.js';
 import { autoSelectNext, computeAttackRange } from './units.js';
@@ -64,6 +64,7 @@ function showSelectionPanel(unit) {
     // Status
     if (unit.fortified) html += `<div class="sel-status fortified">\u{1F6E1} Fortified (+20% defense)</div>`;
     if (unit.sleeping) html += `<div class="sel-status sleeping">\u{1F4A4} Sleeping</div>`;
+    if (unit.waypoint) html += `<div class="sel-status" style="color:#c9a84c">\u{1F6A9} En route to (${unit.waypoint.col},${unit.waypoint.row})</div>`;
 
     // XP & Promotions
     const xpStr = (unit.xp || 0) + ' XP';
@@ -87,12 +88,20 @@ function showSelectionPanel(unit) {
 
     // Action buttons
     html += `<div class="sel-actions">`;
+    // Cancel waypoint journey
+    if (unit.waypoint) {
+      html += `<button class="sel-btn" style="border-color:#c9a84c" onclick="unitAction('cancelWaypoint')"><span>\u{1F6A9} Cancel Journey</span></button>`;
+    }
     // Unit upgrade button
     const upg = UNIT_UPGRADES[unit.type];
     if (upg && game.techs.includes(upg.requires)) {
       const canAfford = game.gold >= upg.cost;
       const newDef = UNIT_TYPES[upg.to];
       html += '<button class="sel-btn" style="border-color:' + (canAfford ? '#4a9' : '#666') + ';opacity:' + (canAfford ? '1' : '0.5') + '" ' + (canAfford ? 'onclick="upgradeUnit(' + unit.id + ')"' : 'disabled') + '><span>' + (newDef ? newDef.icon : '') + ' Upgrade to ' + (newDef ? newDef.name : upg.to) + ' (' + upg.cost + 'g)</span></button>';
+    }
+    // Activate button for fortified/sleeping units
+    if (unit.fortified || unit.sleeping) {
+      html += `<button class="sel-btn" style="border-color:#6aab5c" onclick="unitAction('activate')"><span>\u{26A1} Activate</span><span class="sel-key">W</span></button>`;
     }
     if (unit.moveLeft > 0) {
       html += `<button class="sel-btn" onclick="unitAction('skip')"><span>Skip</span><span class="sel-key">S</span></button>`;
@@ -483,18 +492,30 @@ function renderUnitsPanel() {
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
     const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
+    const gCost = goldCost(ut.cost);
+    const canBuy = canRecruit && game.gold >= gCost;
+    const turns = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
 
     const div = document.createElement('div');
-    div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    const disabled = !canRecruit && !canBuy;
+    div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!canRecruit && canBuy ? ' has-gold-option' : '');
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
         <div class="item-desc">${ut.desc}${reason ? ` — ${reason}` : ''}</div>
       </div>
-      <div class="item-cost">${Math.ceil(ut.cost / Math.max(1, game.productionPerTurn))}T</div>
+      <div class="item-cost-group">
+        <span class="cost-prod${canRecruit && !prodBusy ? '' : ' cost-na'}">${prodBusy && canRecruit ? 'Busy' : turns + 'T'}</span>
+        ${canRecruit ? `<span class="cost-gold${canBuy ? '' : ' cost-na'}" title="Buy instantly with gold">${gCost}g</span>` : ''}
+      </div>
     `;
-    if (canRecruit) {
+    if (canBuy) {
+      div.addEventListener('click', ((uid) => (e) => { e.stopPropagation(); purchaseUnit(uid); })(typeId));
+    } else if (canRecruit && !prodBusy) {
       div.addEventListener('click', () => recruitUnit(typeId));
+    } else if (canRecruit && prodBusy) {
+      div.addEventListener('click', () => addEvent('Production busy — need ' + gCost + 'g to buy with gold (have ' + game.gold + 'g)', 'gold'));
     }
     container.appendChild(div);
   }
@@ -525,6 +546,19 @@ function switchProduction(startFn) {
   startFn();
 }
 
+function getNearestCityIndex() {
+  if (game.cities.length <= 1) return 0;
+  // Find city closest to camera center
+  const camCenterCol = Math.floor((game.cameraX + (canvasW / 2) / gameZoom) / (HEX_SIZE * SQRT3));
+  const camCenterRow = Math.floor((game.cameraY + (canvasH / 2) / gameZoom) / (HEX_SIZE * 1.5));
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < game.cities.length; i++) {
+    const d = hexDistance(camCenterCol, camCenterRow, game.cities[i].col, game.cities[i].row);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 function recruitUnit(typeId) {
   const ut = UNIT_TYPES[typeId];
   if (typeId === 'settler' && game.population < 2000) {
@@ -534,9 +568,12 @@ function recruitUnit(typeId) {
   const doRecruit = () => {
     game.currentUnitBuild = typeId;
     game.unitBuildProgress = 0;
+    // Track which city is building (closest to camera center)
+    game.unitBuildCityIdx = getNearestCityIndex();
     const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
-    logAction('build', 'Started training ' + ut.name, { unitType: typeId });
-    addEvent('Training ' + ut.name + ' (' + turnsNeeded + ' turns)', 'combat');
+    const buildCityName = game.cities[game.unitBuildCityIdx]?.name || 'city';
+    logAction('build', 'Started training ' + ut.name + ' in ' + buildCityName, { unitType: typeId });
+    addEvent('Training ' + ut.name + ' in ' + buildCityName + ' (' + turnsNeeded + ' turns)', 'combat');
     if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
     updateUI();
     closeAllPanels();
@@ -768,7 +805,8 @@ function renderBuildPanel() {
     const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
     const needsPop = tid === 'settler' && game.population < 2000;
     const prereqMet = techOk && (!needsBarr || hasBarracks) && !needsPop;
-    const can = prereqMet;
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
+    const canProd = prereqMet && !prodBusy;
     const gCost = goldCost(ut.cost);
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
@@ -778,26 +816,26 @@ function renderBuildPanel() {
     else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
-    const unitDisabled = !can && !canBuy;
-    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    const unitDisabled = !prereqMet && !canBuy;
+    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!canProd && canBuy && !unitDisabled ? ' has-gold-option' : '');
     if (unitDisabled && reason) div.title = reason;
     const popNote = tid === 'settler' ? ' (-500 pop)' : '';
     const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
+    const prodLabel = prodBusy && prereqMet ? 'Busy' : turns + 'T';
     div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
       + '<div class="item-desc">' + ut.desc + popNote + maintNote + (reason ? ' \u2014 ' + reason : '') + '</div></div>'
       + '<div class="item-cost-group">'
-      + (can ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
+      + (canProd ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + prodLabel + '</span>')
       + (prereqMet ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
       + '</div>';
-    if (can) div.addEventListener('click', () => recruitUnit(tid));
-    container.appendChild(div);
     if (canBuy) {
-      const goldBtn = div.querySelector('.cost-gold');
-      if (goldBtn) {
-        goldBtn.style.cursor = 'pointer';
-        goldBtn.addEventListener('click', (e) => { e.stopPropagation(); purchaseUnit(tid); });
-      }
+      div.addEventListener('click', ((unitId) => (e) => { e.stopPropagation(); purchaseUnit(unitId); })(tid));
+    } else if (canProd) {
+      div.addEventListener('click', () => recruitUnit(tid));
+    } else if (prereqMet && !canBuy) {
+      div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
     }
+    container.appendChild(div);
   }
 
   // --- Government Section ---
@@ -1351,6 +1389,20 @@ window.unitAction = function(action) {
   const ut = UNIT_TYPES[unit.type];
 
   switch (action) {
+    case 'activate':
+      unit.fortified = false;
+      unit.sleeping = false;
+      unit.alert = false;
+      addEvent(`${ut.name} activated`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
+    case 'cancelWaypoint':
+      unit.waypoint = null;
+      addEvent(`${ut.name} journey cancelled`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
     case 'skip':
       unit.moveLeft = 0;
       addEvent(`${ut.name} skipped`, '');
@@ -1399,36 +1451,7 @@ window.unitAction = function(action) {
       if (tileOwner) {
         const ownerName = FACTIONS[tileOwner] ? FACTIONS[tileOwner].name : tileOwner;
         if (!isAtWarWith(tileOwner)) {
-          const hasPeace = game.ceasefires[tileOwner] || game.nonAggressionPacts[tileOwner] ||
-                           game.activeAlliances[tileOwner] || game.defensePacts[tileOwner];
-          if (hasPeace) {
-            const agreements = [];
-            if (game.activeAlliances[tileOwner]) agreements.push('Alliance');
-            if (game.defensePacts[tileOwner]) agreements.push('Defense Pact');
-            if (game.nonAggressionPacts[tileOwner]) agreements.push('Non-Aggression Pact');
-            if (game.ceasefires[tileOwner]) agreements.push('Ceasefire');
-            const agreed = confirm(
-              'Pillaging here will BREAK your agreements with ' + ownerName + ':\n\n' +
-              '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
-              'This constitutes a surprise attack and declares war on ' + ownerName + '.\n\nProceed?'
-            );
-            if (!agreed) break;
-            delete game.ceasefires[tileOwner];
-            delete game.nonAggressionPacts[tileOwner];
-            delete game.activeAlliances[tileOwner];
-            delete game.defensePacts[tileOwner];
-            delete game.openBorders[tileOwner];
-            game.relationships[tileOwner] = Math.min(-50, (game.relationships[tileOwner] || 0) - 50);
-            for (const fid of Object.keys(game.relationships)) {
-              if (fid !== tileOwner) game.relationships[fid] = (game.relationships[fid] || 0) - 10;
-            }
-            addEvent('\u{26A0} Peace broken with ' + ownerName + '! (-50 relations, -10 with all others)', 'diplomacy');
-            logAction('diplomacy', 'Broke peace with ' + ownerName + ' by pillaging', { factionId: tileOwner });
-          } else {
-            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + ownerName + '.');
-            if (!agreed) break;
-          }
-          declareSurpriseWar(tileOwner, ownerName);
+          if (!confirmAndDeclareWar(tileOwner)) break;
         }
       }
       let reward = '';

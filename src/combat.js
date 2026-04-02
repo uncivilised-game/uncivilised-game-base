@@ -21,11 +21,14 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
-  // Civilian capture — attacker takes ownership instead of fighting
+  // Civilian capture — attacker takes ownership and moves onto the tile
   if (dType.class === 'civilian') {
     const prevOwner = defender.owner;
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
+    // Move attacker onto captured unit's tile (military + civilian can stack)
+    attacker.col = defender.col;
+    attacker.row = defender.row;
     const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
     const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
     if (prevOwner === 'player') {
@@ -187,11 +190,88 @@ function isAtWarWith(factionId) {
 
 function declareSurpriseWar(factionId, factionName) {
   if (!game.aiWars) game.aiWars = [];
+  // Don't double-declare
+  if (isAtWarWith(factionId)) return;
   game.aiWars.push({ attacker: 'player', defender: factionId, startTurn: game.turn, turnsActive: 0 });
   const msg = `War declared on ${factionName}! (Surprise attack)`;
   addEvent(msg, 'diplomacy');
   showToast('War Declared', msg, 5000);
   logAction('diplomacy', msg, { type: 'player_surprise_attack', defender: factionId });
+
+  // Break all agreements with this faction
+  if (game.activeAlliances) delete game.activeAlliances[factionId];
+  if (game.tradeDeals) delete game.tradeDeals[factionId];
+  if (game.defensePacts) delete game.defensePacts[factionId];
+  if (game.marriages) delete game.marriages[factionId];
+  if (game.openBorders) delete game.openBorders[factionId];
+  if (game.ceasefires) delete game.ceasefires[factionId];
+  if (game.nonAggressionPacts) delete game.nonAggressionPacts[factionId];
+
+  // Pull in their formal allies (AI-AI alliances where the defender is a member)
+  const allies = (game.aiAlliances || [])
+    .filter(al => al.factions.includes(factionId))
+    .flatMap(al => al.factions.filter(f => f !== factionId && f !== 'player'));
+  for (const allyId of allies) {
+    if (isAtWarWith(allyId)) continue;
+    const allyFaction = FACTIONS[allyId];
+    const allyName = allyFaction ? allyFaction.name : allyId;
+    game.aiWars.push({ attacker: allyId, defender: 'player', startTurn: game.turn, turnsActive: 0 });
+    // Break agreements with ally too
+    if (game.activeAlliances) delete game.activeAlliances[allyId];
+    if (game.tradeDeals) delete game.tradeDeals[allyId];
+    if (game.defensePacts) delete game.defensePacts[allyId];
+    if (game.marriages) delete game.marriages[allyId];
+    if (game.openBorders) delete game.openBorders[allyId];
+    if (game.ceasefires) delete game.ceasefires[allyId];
+    if (game.nonAggressionPacts) delete game.nonAggressionPacts[allyId];
+    game.relationships[allyId] = Math.min(-50, (game.relationships[allyId] || 0) - 40);
+    addEvent(`${allyName} has joined the war against you! (Allied with ${factionName})`, 'diplomacy');
+    showToast('War Escalation', `${allyName} joins the war!`, 5000);
+  }
+}
+
+// Unified war confirmation — returns true if war was confirmed (or already at war)
+function confirmAndDeclareWar(factionId) {
+  if (isAtWarWith(factionId)) return true;
+
+  const faction = FACTIONS[factionId];
+  const factionName = faction ? faction.name : 'Unknown';
+
+  // Build list of agreements that would be broken
+  const agreements = [];
+  if (game.activeAlliances?.[factionId]) agreements.push('Alliance');
+  if (game.defensePacts?.[factionId]) agreements.push('Defense Pact');
+  if (game.nonAggressionPacts?.[factionId]) agreements.push('Non-Aggression Pact');
+  if (game.ceasefires?.[factionId]) agreements.push('Ceasefire');
+
+  // Build list of allies who would join the war
+  const allies = (game.aiAlliances || [])
+    .filter(al => al.factions.includes(factionId))
+    .flatMap(al => al.factions.filter(f => f !== factionId && f !== 'player'))
+    .filter(f => !isAtWarWith(f))
+    .map(f => FACTIONS[f]?.name || f);
+
+  let message = '';
+  if (agreements.length > 0) {
+    message = 'This will BREAK your agreements with ' + factionName + ':\n\n' +
+      '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n';
+  }
+  message += 'This constitutes a surprise attack and declares war on ' + factionName + '.';
+  if (allies.length > 0) {
+    message += '\n\nTheir allies will also declare war on you:\n\u2022 ' + allies.join('\n\u2022 ');
+  }
+  message += '\n\nProceed?';
+
+  const agreed = confirm(message);
+  if (!agreed) return false;
+
+  game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
+  if (agreements.length > 0) {
+    addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
+  }
+
+  declareSurpriseWar(factionId, factionName);
+  return true;
 }
 
 function attackFactionCity(attacker, factionId) {
@@ -201,33 +281,7 @@ function attackFactionCity(attacker, factionId) {
   const factionName = faction ? faction.name : 'Unknown';
 
   // If not already at war, require confirmation and declare war first
-  if (!isAtWarWith(factionId)) {
-    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                     game.activeAlliances[factionId] || game.defensePacts[factionId];
-    if (hasPeace) {
-      const agreements = [];
-      if (game.activeAlliances[factionId]) agreements.push('Alliance');
-      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
-      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
-      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
-      const agreed = confirm(
-        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
-        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
-        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
-      );
-      if (!agreed) return;
-      delete game.ceasefires[factionId];
-      delete game.nonAggressionPacts[factionId];
-      delete game.activeAlliances[factionId];
-      delete game.defensePacts[factionId];
-      game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
-      addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-    } else {
-      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
-      if (!agreed) return;
-    }
-    declareSurpriseWar(factionId, factionName);
-  }
+  if (!confirmAndDeclareWar(factionId)) return;
 
   showBattlePanel(attacker, {
     type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
@@ -247,19 +301,37 @@ function attackFactionCity(attacker, factionId) {
 // CITY DEFENSE SYSTEM (Civ-style)
 // ============================================
 function computeCityDefense(city, factionId) {
-  let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
-
-  // Walls bonus — check wall HP or military stat fallback
   const hasActiveWalls = city.wallHP !== undefined && city.wallHP > 0;
-  const fStats = game.factionStats[factionId];
-  if (hasActiveWalls) {
-    strength += CITY_DEFENSE.WALLS_BONUS;
-    strength += 5; // City ranged strike enhanced by walls
-  } else if (fStats && fStats.military > 20) {
-    strength += CITY_DEFENSE.WALLS_BONUS;
+  const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
+
+  if (!hasActiveWalls) {
+    // No walls — minor defense only (no ranged bombardment)
+    // Takes a few turns to capture but much weaker than walled cities
+    let strength = CITY_DEFENSE.UNWALLED_STRENGTH;
+
+    // Terrain bonus — hills still help
+    const tile = game.map[city.row] && game.map[city.row][city.col];
+    if (tile && tile.feature === 'hills') strength += CITY_DEFENSE.TERRAIN_HILLS_BONUS;
+
+    // Population scaling — larger cities are slightly tougher
+    const pop = city.population || 500;
+    strength += Math.floor(pop / 1000);
+
+    // Garrison bonus
+    if (garrison.length > 0) {
+      const bestGarrison = Math.max(...garrison.map(g => (UNIT_TYPES[g.type]?.combat || 0)));
+      strength += Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER);
+    }
+
+    return { strength, garrison, hasWalls: false };
   }
 
+  let strength = CITY_DEFENSE.BASE_COMBAT_STRENGTH;
+  strength += CITY_DEFENSE.WALLS_BONUS;
+  strength += 5; // City ranged strike enhanced by walls
+
   // Fortress bonus
+  const fStats = game.factionStats[factionId];
   if (fStats && fStats.military > 40) strength += CITY_DEFENSE.FORTRESS_BONUS;
 
   // Terrain bonus — hills
@@ -267,7 +339,6 @@ function computeCityDefense(city, factionId) {
   if (tile && tile.feature === 'hills') strength += CITY_DEFENSE.TERRAIN_HILLS_BONUS;
 
   // Garrison bonus — strongest garrison unit contributes
-  const garrison = game.units.filter(u => u.col === city.col && u.row === city.row && u.owner === factionId);
   if (garrison.length > 0) {
     const bestGarrison = Math.max(...garrison.map(g => (UNIT_TYPES[g.type]?.combat || 0)));
     strength += Math.floor(bestGarrison * CITY_DEFENSE.GARRISON_MULTIPLIER);
@@ -277,7 +348,7 @@ function computeCityDefense(city, factionId) {
   const pop = city.population || 500;
   strength += Math.floor(pop / 500);
 
-  return { strength, garrison };
+  return { strength, garrison, hasWalls: true };
 }
 
 function attackExpansionCity(attacker, factionId, cityIdx) {
@@ -288,33 +359,7 @@ function attackExpansionCity(attacker, factionId, cityIdx) {
   const factionName = faction ? faction.name : 'Unknown';
 
   // If not already at war, require confirmation and declare war first
-  if (!isAtWarWith(factionId)) {
-    const hasPeace = game.ceasefires[factionId] || game.nonAggressionPacts[factionId] ||
-                     game.activeAlliances[factionId] || game.defensePacts[factionId];
-    if (hasPeace) {
-      const agreements = [];
-      if (game.activeAlliances[factionId]) agreements.push('Alliance');
-      if (game.defensePacts[factionId]) agreements.push('Defense Pact');
-      if (game.nonAggressionPacts[factionId]) agreements.push('Non-Aggression Pact');
-      if (game.ceasefires[factionId]) agreements.push('Ceasefire');
-      const agreed = confirm(
-        'Attacking here will BREAK your agreements with ' + factionName + ':\n\n' +
-        '\u2022 ' + agreements.join('\n\u2022 ') + '\n\n' +
-        'This constitutes a surprise attack and declares war on ' + factionName + '.\n\nProceed?'
-      );
-      if (!agreed) return;
-      delete game.ceasefires[factionId];
-      delete game.nonAggressionPacts[factionId];
-      delete game.activeAlliances[factionId];
-      delete game.defensePacts[factionId];
-      game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
-      addEvent('Peace broken with ' + factionName + '! (-50 relations)', 'diplomacy');
-    } else {
-      const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
-      if (!agreed) return;
-    }
-    declareSurpriseWar(factionId, factionName);
-  }
+  if (!confirmAndDeclareWar(factionId)) return;
 
   showBattlePanel(attacker, {
     type: 'city_garrison', hp: ec.hp || CITY_DEFENSE.BASE_HP, col: ec.col, row: ec.row, owner: factionId,
@@ -340,7 +385,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
 
   if (!ec.hp) ec.hp = CITY_DEFENSE.BASE_HP;
 
-  const { strength: cityDefence, garrison } = computeCityDefense(ec, factionId);
+  const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(ec, factionId);
 
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
@@ -350,7 +395,8 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   atkPower = Math.floor(atkPower * (tacticResult.atkMod || 1));
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
-  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  // Cities without walls cannot deal return damage (garrison units still fight separately)
+  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(hasWalls ? 3 : 1, Math.floor((hasWalls ? 20 : 10) * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (ec.wallHP === undefined) ec.wallHP = 0;
@@ -516,7 +562,7 @@ function executeCityAttack(attacker, factionId, tactic) {
   if (!fc.hp) fc.hp = CITY_DEFENSE.BASE_HP;
 
   // Use proper Civ-style defense computation
-  const { strength: cityDefence, garrison } = computeCityDefense(fc, factionId);
+  const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(fc, factionId);
 
   // Apply tactic modifier
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
@@ -527,7 +573,8 @@ function executeCityAttack(attacker, factionId, tactic) {
   atkPower = Math.floor(atkPower * (tacticResult.atkMod || 1));
 
   const atkDamage = Math.max(5, Math.floor(30 * (atkPower / Math.max(1, cityDefence)) * (attacker.hp / 100)));
-  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(3, Math.floor(20 * (cityDefence / Math.max(1, atkPower))));
+  // Cities without walls cannot deal return damage (garrison units still fight separately)
+  const defDamage = aType.rangedCombat > 0 ? 0 : Math.max(hasWalls ? 3 : 1, Math.floor((hasWalls ? 20 : 10) * (cityDefence / Math.max(1, atkPower))));
 
   // Initialize wall fields if missing
   if (fc.wallHP === undefined) fc.wallHP = 0;
@@ -871,6 +918,7 @@ export {
   resolveCombat,
   isAtWarWith,
   declareSurpriseWar,
+  confirmAndDeclareWar,
   attackFactionCity,
   computeCityDefense,
   attackExpansionCity,

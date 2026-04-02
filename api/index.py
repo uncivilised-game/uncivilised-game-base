@@ -211,7 +211,8 @@ def _sb_select(table: str, select: str = "*", filters: str = "",
         return []
     url = f"{_SB_REST}/{table}?select={quote(select)}"
     if filters:
-        url += f"&{filters}"
+        # URL-encode + signs in filter values (e.g. timezone +00:00)
+        url += f"&{filters.replace('+', '%2B')}"
     if order:
         url += f"&order={order}"
     if limit:
