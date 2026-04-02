@@ -500,25 +500,17 @@ function applyRelationDrift(factionIds) {
 function processRumourQueue() {
   if (!game.rumourQueue || game.rumourQueue.length === 0) return;
 
-  const revealed = [];
-  const remaining = [];
-
+  let newlyRevealed = 0;
   for (const rumour of game.rumourQueue) {
-    if (game.turn >= rumour.revealTurn) {
-      revealed.push(rumour);
-    } else {
-      remaining.push(rumour);
+    if (!rumour.revealed && game.turn >= rumour.revealTurn) {
+      rumour.revealed = true;
+      newlyRevealed++;
+      addEvent(rumour.text, rumour.type || 'diplomacy');
     }
   }
 
-  game.rumourQueue = remaining;
-
-  for (const rumour of revealed) {
-    addEvent(rumour.text, rumour.type || 'diplomacy');
-  }
-
-  if (revealed.length > 0) {
-    showToast('Rumours & Whispers', `${revealed.length} new rumour${revealed.length > 1 ? 's' : ''} heard`, 4000);
+  if (newlyRevealed > 0) {
+    showToast('Rumours & Whispers', `${newlyRevealed} new rumour${newlyRevealed > 1 ? 's' : ''} heard`, 4000);
   }
 }
 
