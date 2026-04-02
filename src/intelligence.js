@@ -368,17 +368,8 @@ function renderRelationsMap() {
 function renderRumoursTab() {
   let html = '';
   const rumours = game.rumourQueue || [];
-  const revealed = rumours.filter(r => r.revealTurn < game.turn);
-  const pending = rumours.filter(r => r.revealTurn >= game.turn);
-
-  if (revealed.length > 0) {
-    html += `<div style="${S.card}">`;
-    html += '<div style="font-weight:bold;color:#ffd700;margin-bottom:4px;">\uD83D\uDCAC Confirmed Reports</div>';
-    for (const r of [...revealed].reverse().slice(0, 12)) {
-      html += `<div style="padding:3px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.03);"><span style="color:#888;">Turn ${r.revealTurn}:</span> ${r.text||r.summary||'Unknown event'}</div>`;
-    }
-    html += '</div>';
-  }
+  const revealed = rumours.filter(r => r.revealed || r.revealTurn < game.turn);
+  const pending = rumours.filter(r => !r.revealed && r.revealTurn >= game.turn);
 
   if (pending.length > 0) {
     html += `<div style="${S.card}">`;
@@ -386,6 +377,20 @@ function renderRumoursTab() {
     html += `<div style="color:#666;font-size:11px;margin-bottom:4px;">Your envoys investigate ${pending.length} rumour${pending.length>1?'s':''}...</div>`;
     for (const r of pending) {
       html += `<div style="padding:3px 0;font-size:12px;color:#888;font-style:italic;">${r.vagueSummary||'Something stirs in distant lands...'}</div>`;
+    }
+    html += '</div>';
+  }
+
+  if (revealed.length > 0) {
+    html += `<div style="${S.card}">`;
+    html += `<div style="font-weight:bold;color:#ffd700;margin-bottom:4px;">\uD83D\uDCAC All Reports (${revealed.length})</div>`;
+    for (const r of [...revealed].reverse()) {
+      const icon = r.text && r.text.includes('Paid informant') ? '\uD83D\uDCB0' :
+                   r.text && r.text.includes('Corroborated') ? '\uD83E\uDD1D' : '\uD83D\uDCAC';
+      html += `<div style="padding:4px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.03);">`;
+      html += `<span style="color:#666;font-size:10px;">Turn ${r.revealTurn || r.turn || '?'}</span> `;
+      html += `<span>${icon} ${r.text||r.summary||'Unknown event'}</span>`;
+      html += `</div>`;
     }
     html += '</div>';
   }

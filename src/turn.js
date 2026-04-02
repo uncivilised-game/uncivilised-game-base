@@ -1011,44 +1011,7 @@ function endTurn() {
     }
   }
 
-  // --- Gold spending: rush-buy units if gold is piling up AND production is idle ---
-  if (game.gold > 100 && !game.currentBuild && !game.currentUnitBuild && game.units.filter(u => u.owner === 'player').length < 6) {
-    // Buy a unit near the capital — check two rings of hexes
-    const city = game.cities[0];
-    if (city) {
-      const ring1 = getHexNeighbors(city.col, city.row);
-      const ring2 = [];
-      for (const nb of ring1) {
-        for (const nb2 of getHexNeighbors(nb.col, nb.row)) {
-          if (nb2.col !== city.col || nb2.row !== city.row) ring2.push(nb2);
-        }
-      }
-      const candidates = [...ring1, ...ring2];
-      const open = candidates.find(nb => {
-        const tile = game.map[nb.row][nb.col];
-        return isTilePassable(tile) && !getUnitAt(nb.col, nb.row);
-      });
-      if (open) {
-        // Pick unit based on what we need
-        let unitType = 'warrior';
-        const playerUnits = game.units.filter(u => u.owner === 'player');
-        const hasArcher = playerUnits.some(u => u.type === 'archer');
-        const hasSpearman = playerUnits.some(u => u.type === 'spearman');
-        if (game.techs.includes('archery') && !hasArcher) unitType = 'archer';
-        else if (game.techs.includes('bronze_working') && !hasSpearman) unitType = 'spearman';
-        else if (game.gold > 150 && game.techs.includes('the_wheel')) unitType = 'chariot';
-        const cost = UNIT_TYPES[unitType].cost;
-        if (game.gold >= cost * 2) { // Gold-buy at 2x cost
-          game.gold -= cost * 2;
-          const newUnit = createUnit(unitType, open.col, open.row, 'player');
-          game.units.push(newUnit);
-          game.military += UNIT_TYPES[unitType].combat;
-          addEvent(`Recruited ${UNIT_TYPES[unitType].name} (gold purchase)`, 'combat');
-          showCompletionNotification('unit', UNIT_TYPES[unitType].name, `${UNIT_TYPES[unitType].combat} combat, ${UNIT_TYPES[unitType].movePoints} moves`);
-        }
-      }
-    }
-  }
+  // Player unit purchases are manual only — no auto-buy
 
   _turnSection = 'fog_and_score';
   // --- Expand fog around cities and units ---
