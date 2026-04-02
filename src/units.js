@@ -779,7 +779,15 @@ function handleHexClick(col, row) {
     if (bc) { interactWithBarbarianCamp(bc.id); return; }
   }
 
-  // Check what's here — city takes priority over unit (BUG-16)
+  // Check for player units on this tile first — they take priority over city panel
+  const unitsAtHex = game.units.filter(u => u.col === col && u.row === row);
+  const playerUnitsAtHex = unitsAtHex.filter(u => u.owner === 'player');
+  if (playerUnitsAtHex.length > 0) {
+    selectUnit(playerUnitsAtHex[0]);
+    return;
+  }
+
+  // City panel (only if no player units on tile)
   const cityHere = getCityAt(col, row);
   if (cityHere) {
     game.selectedHex = { col, row };
@@ -787,14 +795,9 @@ function handleHexClick(col, row) {
     return;
   }
 
-  const unitsAtHex = game.units.filter(u => u.col === col && u.row === row);
+  // Non-player units
   if (unitsAtHex.length > 0) {
-    if (unitsAtHex.length === 1) {
-      selectUnit(unitsAtHex[0]);
-    } else {
-      const other = unitsAtHex.find(u => u.id !== game.selectedUnitId);
-      selectUnit(other || unitsAtHex[0]);
-    }
+    selectUnit(unitsAtHex[0]);
     return;
   }
 
