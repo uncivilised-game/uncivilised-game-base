@@ -1,4 +1,4 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
@@ -362,6 +362,18 @@ function render() {
           ctx.globalAlpha = 0.75;
           const impS = HEX_SIZE * 2.3;
           ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+        }
+      }
+      // Draw district sprites (rendered on top of terrain, below units)
+      if (tile.district) {
+        const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
+        if (distImg && distImg.complete && distImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          const distS = HEX_SIZE * 2.3;
+          ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
           ctx.globalAlpha = 1.0;
           ctx.restore();
         }
@@ -1281,6 +1293,10 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   if (tile.improvement && TILE_IMPROVEMENTS[tile.improvement]) {
     const imp = TILE_IMPROVEMENTS[tile.improvement];
     lines.push({ text: `${imp.icon} ${imp.name}`, bold: true, color: '#c9a84c' });
+  }
+  if (tile.district && DISTRICTS[tile.district]) {
+    const dist = DISTRICTS[tile.district];
+    lines.push({ text: `${dist.icon} ${dist.name} District`, bold: true, color: '#f0c848' });
   }
   if (tile.road) lines.push({ text: '\u{1F6E4}\uFE0F Road (half move cost)', color: '#8a7a5a' });
   if (tile.improvementBuilder) {

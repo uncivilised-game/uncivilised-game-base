@@ -195,6 +195,72 @@ export const PANTHEONS = [
   { id: 'monument_gods', name: 'Monument to the Gods', desc: '+15% Production towards Wonders', icon: '\u{1F3DB}' },
 ];
 
+// ============================================
+// DISTRICTS — placed on tiles within city borders
+// ============================================
+export const DISTRICTS = {
+  campus: {
+    name: 'Campus',
+    icon: '\u{1F4DC}',
+    desc: 'Centre of learning. +Science from adjacent mountains and woods.',
+    cost: 40,
+    buildings: ['library', 'academy', 'university'],
+    yields: { science: 1 },
+    adjacency: { mountain: { science: 2 }, woods: { science: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert', 'tundra'] },
+  },
+  holy_site: {
+    name: 'Holy Site',
+    icon: '\u{1F6D5}',
+    desc: 'Sacred ground. +Culture near natural wonders and woods.',
+    cost: 40,
+    buildings: ['temple', 'monument'],
+    yields: { culture: 1 },
+    adjacency: { natural_wonder: { culture: 2 }, woods: { culture: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert', 'tundra'] },
+  },
+  commercial_hub: {
+    name: 'Commercial Hub',
+    icon: '\u{2696}',
+    desc: 'Marketplace and trade. +Gold near rivers.',
+    cost: 50,
+    buildings: ['market', 'bank', 'bath'],
+    yields: { gold: 2 },
+    adjacency: { river: { gold: 2 }, harbor: { gold: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert'] },
+  },
+  encampment: {
+    name: 'Encampment',
+    icon: '\u{2694}',
+    desc: 'Military training grounds. +Military near hills.',
+    cost: 45,
+    buildings: ['barracks', 'blacksmith', 'fortress'],
+    yields: { military: 2 },
+    adjacency: { hills: { military: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'tundra'], notAdjacentToCity: true },
+  },
+  harbor: {
+    name: 'Harbor',
+    icon: '\u{2693}',
+    desc: 'Coastal trade and fishing. +Gold and Food from coast tiles.',
+    cost: 50,
+    buildings: ['harbor', 'lighthouse'],
+    yields: { gold: 1, food: 1 },
+    adjacency: { coast: { gold: 1 } },
+    placement: { requiresAdjacentWater: true },
+  },
+  garden_quarter: {
+    name: 'Garden Quarter',
+    icon: '\u{1F33F}',
+    desc: 'Fertile gardens and granaries. +Food near rivers and farms.',
+    cost: 35,
+    buildings: ['granary', 'garden', 'arena'],
+    yields: { food: 1 },
+    adjacency: { river: { food: 1 }, farm: { food: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'floodplains'] },
+  },
+};
+
 export const UNIT_UNLOCKS = {
   scout: null,     // available immediately
   warrior: null,   // available immediately

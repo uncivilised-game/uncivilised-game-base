@@ -55,8 +55,22 @@ export function preloadSettlementImages() {
   }
 }
 
+export function preloadDistrictImages() {
+  const districtNames = [
+    'district_campus', 'district_holy_site', 'district_commercial_hub',
+    'district_encampment', 'district_harbor', 'district_garden_quarter',
+  ];
+  for (const name of districtNames) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = './assets/hex/' + name + '.png';
+    IMPROVEMENT_IMAGES[name] = img;
+  }
+}
+
 // Start preloading immediately
 preloadImprovementImages();
+preloadDistrictImages();
 preloadTerrainTiles();
 preloadPortraits();
 preloadSettlementImages();
