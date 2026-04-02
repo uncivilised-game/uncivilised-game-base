@@ -874,9 +874,6 @@ function endTurn() {
   // --- AI worker auto-improve & settler auto-found ---
   processAIWorkerImprovements();
 
-  // --- Barbarian camp spawning and aggression ---
-  processBarbarianSpawning();
-
   // --- Embassy turn processing (gossip accumulation) ---
   ensureEmbassyState();
   processEmbassyTurn();
@@ -1454,119 +1451,6 @@ function moveAISettlerTowardSite(settler, fid) {
     if (d < closestDist) { closestDist = d; closest = nb; }
   }
   if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
-}
-
-// ============================================
-// BARBARIAN CAMP SPAWNING & AGGRESSION
-// ============================================
-
-function processBarbarianSpawning() {
-  if (!game.barbarianCamps) game.barbarianCamps = [];
-
-  // Spawn new camps every 5 turns (after turn 5)
-  if (game.turn > 5 && game.turn % 5 === 0) {
-    const activeCamps = game.barbarianCamps.filter(bc => !bc.destroyed).length;
-    const minorCamps = (game.minorFactions || []).filter(m => m.type === 'barbarian_camp' && !m.defeated).length;
-    const totalCamps = activeCamps + minorCamps;
-
-    // Spawn 1-2 new camps if below cap (scales with turn — more camps as game progresses)
-    const maxCamps = 4 + Math.floor(game.turn / 15);
-    if (totalCamps < maxCamps) {
-      const numToSpawn = 1 + (Math.random() < 0.4 ? 1 : 0);
-      for (let s = 0; s < numToSpawn; s++) {
-        const camp = spawnBarbarianCamp();
-        if (camp) {
-          game.barbarianCamps.push(camp);
-          // Notify if in revealed territory
-          if (game.fogOfWar[camp.row]?.[camp.col]) {
-            addEvent(`Barbarian camp spotted at (${camp.col},${camp.row})!`, 'combat');
-          }
-        }
-      }
-    }
-  }
-
-  // Barbarian aggression: each active camp spawns a warrior every 4 turns
-  for (const bc of game.barbarianCamps) {
-    if (bc.destroyed) continue;
-    if (game.turn % 4 !== 0) continue;
-
-    // Count existing barbarian units near this camp
-    const nearbyBarbs = game.units.filter(u =>
-      u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 4
-    ).length;
-    if (nearbyBarbs >= 2) continue; // Max 2 barb units per camp
-
-    const spawnTile = findSpawnTile(bc.col, bc.row, 'barbarian');
-    if (spawnTile) {
-      const barb = createUnit('warrior', spawnTile.col, spawnTile.row, 'barbarian');
-      barb.barbName = 'Barbarian';
-      game.units.push(barb);
-    }
-  }
-
-  // Barbarian unit movement: move toward nearest player/AI unit or city
-  const barbUnits = game.units.filter(u => u.owner === 'barbarian');
-  for (const barb of barbUnits) {
-    if (barb.moveLeft <= 0) continue;
-
-    // Find nearest target (player unit, player city, or AI city)
-    let bestTarget = null, bestDist = Infinity;
-    for (const u of game.units) {
-      if (u.owner === 'barbarian') continue;
-      const d = hexDistance(barb.col, barb.row, u.col, u.row);
-      if (d < bestDist && d <= 6) { bestDist = d; bestTarget = { col: u.col, row: u.row }; }
-    }
-    for (const city of game.cities) {
-      const d = hexDistance(barb.col, barb.row, city.col, city.row);
-      if (d < bestDist && d <= 6) { bestDist = d; bestTarget = { col: city.col, row: city.row }; }
-    }
-
-    if (!bestTarget) continue;
-    if (bestDist <= 1) continue; // Already adjacent — will attack via combat
-
-    // Move one step toward target
-    const neighbors = getHexNeighbors(barb.col, barb.row);
-    let closest = null, closestDist = bestDist;
-    for (const nb of neighbors) {
-      const t = game.map[nb.row]?.[nb.col];
-      if (!t || !isTilePassable(t)) continue;
-      if (getUnitAt(nb.col, nb.row)) continue;
-      const d = hexDistance(nb.col, nb.row, bestTarget.col, bestTarget.row);
-      if (d < closestDist) { closestDist = d; closest = nb; }
-    }
-    if (closest) {
-      barb.col = closest.col;
-      barb.row = closest.row;
-      barb.moveLeft--;
-    }
-  }
-}
-
-function spawnBarbarianCamp() {
-  for (let att = 0; att < 60; att++) {
-    const c = 2 + Math.floor(Math.random() * (MAP_COLS - 4));
-    const r = 2 + Math.floor(Math.random() * (MAP_ROWS - 4));
-    const tile = game.map[r][c];
-    if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') continue;
-    if (tile.feature === 'mountain') continue;
-    // Not too close to player cities
-    if (game.cities.some(city => hexDistance(c, r, city.col, city.row) < 5)) continue;
-    // Not too close to faction cities
-    if (Object.values(game.factionCities).some(fc => hexDistance(c, r, fc.col, fc.row) < 4)) continue;
-    // Not too close to existing camps
-    if (game.barbarianCamps.some(bc => !bc.destroyed && hexDistance(c, r, bc.col, bc.row) < 4)) continue;
-    if ((game.minorFactions || []).some(mf => hexDistance(c, r, mf.col, mf.row) < 3)) continue;
-
-    return {
-      id: 'barb_camp_' + Date.now() + '_' + att,
-      col: c, row: r,
-      strength: 10 + Math.floor(Math.random() * 10),
-      destroyed: false,
-      spawnTurn: game.turn,
-    };
-  }
-  return null;
 }
 
 export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements };
