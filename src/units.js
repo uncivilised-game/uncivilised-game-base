@@ -631,9 +631,12 @@ function handleHexClick(col, row) {
             const prevOwner = target.owner;
             target.owner = 'player';
             target.moveLeft = 0;
-            // Move attacker onto the captured unit's tile (military + civilian can stack)
-            unit.col = target.col;
-            unit.row = target.row;
+            // Only melee units move onto the captured unit's tile
+            const attackerType = UNIT_TYPES[unit.type];
+            if (!attackerType || attackerType.rangedCombat <= 0 || attackerType.range <= 0) {
+              unit.col = target.col;
+              unit.row = target.row;
+            }
             const ownerName = FACTIONS[prevOwner] ? FACTIONS[prevOwner].name : prevOwner;
             addEvent(`Captured ${targetType.name} from ${ownerName}!`, 'combat');
             showToast('Unit Captured', `${targetType.name} captured from ${ownerName}!`);

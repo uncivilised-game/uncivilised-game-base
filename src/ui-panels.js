@@ -958,19 +958,36 @@ function purchaseUnit(typeId) {
     addEvent('Need population 2,000+ to buy Settler', 'combat'); return;
   }
   game.gold -= cost;
-  const city = game.cities[0];
+  const cityIdx = getNearestCityIndex();
+  const city = game.cities[cityIdx] || game.cities[0];
+  // Place on adjacent tile (not on city tile) — same as production-built units
+  let spawnCol = city.col, spawnRow = city.row;
+  const neighbors = getHexNeighbors(city.col, city.row);
+  for (const nb of neighbors) {
+    const t = game.map[nb.row]?.[nb.col];
+    if (!t) continue;
+    const bi = BASE_TERRAIN[t.base];
+    if (!bi || !bi.movable) continue;
+    if (t.feature === 'mountain') continue;
+    const occupied = game.units.some(u => u.col === nb.col && u.row === nb.row && u.owner === 'player' && UNIT_TYPES[u.type]?.combat > 0);
+    if (occupied) continue;
+    spawnCol = nb.col;
+    spawnRow = nb.row;
+    break;
+  }
   const unitId = getNextUnitId();
   const newUnit = {
-    id: unitId, type: typeId, col: city.col, row: city.row,
+    id: unitId, type: typeId, col: spawnCol, row: spawnRow,
     owner: 'player', hp: 100, moveLeft: 0,
     xp: 0, level: 1, fortified: false, sleeping: false
   };
   game.units.push(newUnit);
   if (typeId === 'settler') {
     game.population = Math.max(500, game.population - 500);
+    city.population = Math.max(500, (city.population || game.population) - 500);
   }
-  logAction('build', 'Purchased ' + ut.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
-  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
+  logAction('build', 'Purchased ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
+  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
   updateUI(); renderBuildPanel(); render();
 }
 

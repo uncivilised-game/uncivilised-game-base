@@ -21,14 +21,16 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
-  // Civilian capture — attacker takes ownership and moves onto the tile
+  // Civilian capture — attacker takes ownership
   if (dType.class === 'civilian') {
     const prevOwner = defender.owner;
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
-    // Move attacker onto captured unit's tile (military + civilian can stack)
-    attacker.col = defender.col;
-    attacker.row = defender.row;
+    // Only melee units move onto the captured unit's tile (ranged stay put)
+    if (aType.rangedCombat <= 0 || aType.range <= 0) {
+      attacker.col = defender.col;
+      attacker.row = defender.row;
+    }
     const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
     const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
     if (prevOwner === 'player') {
@@ -157,8 +159,12 @@ function resolveCombat(attacker, defender) {
     }
   }
 
-  // Use movement points
-  attacker.moveLeft = 0;
+  // Use movement points — ranged units can still move after attacking
+  if (aType.rangedCombat > 0 && aType.range > 0) {
+    attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
+  } else {
+    attacker.moveLeft = 0;
+  }
   attacker.hasAttackedThisTurn = true;
 
   // --- XP and Promotion ---
