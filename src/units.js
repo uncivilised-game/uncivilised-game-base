@@ -801,7 +801,7 @@ function handleHexClick(col, row) {
 }
 
 function autoSelectNext() {
-  const movable = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified);
+  const movable = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified && !u.alert);
   if (movable.length > 0) {
     selectUnit(movable[0]);
   } else {
@@ -850,7 +850,7 @@ window.upgradeUnit = upgradeUnit;
 
 function selectNextUnit() {
   if (!game || !game.units.length) return;
-  const movableUnits = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified);
+  const movableUnits = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified && !u.alert);
   if (movableUnits.length === 0) {
     deselectUnit();
     return;
