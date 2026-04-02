@@ -958,7 +958,8 @@ function purchaseUnit(typeId) {
     addEvent('Need population 2,000+ to buy Settler', 'combat'); return;
   }
   game.gold -= cost;
-  const city = game.cities[0];
+  const cityIdx = getNearestCityIndex();
+  const city = game.cities[cityIdx] || game.cities[0];
   const unitId = getNextUnitId();
   const newUnit = {
     id: unitId, type: typeId, col: city.col, row: city.row,
@@ -968,9 +969,10 @@ function purchaseUnit(typeId) {
   game.units.push(newUnit);
   if (typeId === 'settler') {
     game.population = Math.max(500, game.population - 500);
+    city.population = Math.max(500, (city.population || game.population) - 500);
   }
-  logAction('build', 'Purchased ' + ut.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
-  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
+  logAction('build', 'Purchased ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
+  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
   updateUI(); renderBuildPanel(); render();
 }
 
