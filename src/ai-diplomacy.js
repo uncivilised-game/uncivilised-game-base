@@ -413,6 +413,10 @@ function checkWarEndings() {
 
   for (let i = game.aiWars.length - 1; i >= 0; i--) {
     const war = game.aiWars[i];
+
+    // Player wars do NOT auto-end — only explicit peace deals can end them
+    if (war.attacker === 'player' || war.defender === 'player') continue;
+
     const statsA = game.factionStats[war.attacker];
     const statsB = game.factionStats[war.defender];
     const relation = game.aiRelations[war.attacker]?.[war.defender] || -50;
