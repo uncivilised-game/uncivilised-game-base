@@ -1,0 +1,36 @@
+name: Feedback Digest
+
+on:
+  schedule:
+    # Every morning at 8am UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Hours to look back (default: 24)'
+        required: false
+        default: '24'
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run feedback digest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
+        run: python scripts/feedback-digest.py
