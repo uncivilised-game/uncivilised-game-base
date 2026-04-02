@@ -227,15 +227,61 @@ function endTurn() {
       }
     }
 
-    // Alert: wake up if enemy within 3 hexes
+    // Alert: wake up if threat detected nearby
     if (unit.alert) {
+      const ALERT_RANGE = 4;
+      let wakeReason = '';
+
+      // 1. Enemy or barbarian unit within alert range
       const nearbyEnemy = game.units.find(u =>
-        u.owner !== 'player' && hexDistance(u.col, u.row, unit.col, unit.row) <= 3
+        u.owner !== 'player' && u.owner !== unit.owner &&
+        hexDistance(u.col, u.row, unit.col, unit.row) <= ALERT_RANGE
       );
       if (nearbyEnemy) {
+        const enemyType = UNIT_TYPES[nearbyEnemy.type];
+        const ownerName = FACTIONS[nearbyEnemy.owner]?.name || nearbyEnemy.owner;
+        wakeReason = `spotted ${ownerName} ${enemyType?.name || 'unit'} nearby!`;
+      }
+
+      // 2. New enemy expansion city founded within alert range
+      if (!wakeReason) {
+        for (const [fid, cities] of Object.entries(game.aiFactionCities || {})) {
+          for (const ec of cities) {
+            if (hexDistance(ec.col, ec.row, unit.col, unit.row) <= ALERT_RANGE) {
+              const fName = FACTIONS[fid]?.name || fid;
+              wakeReason = `${fName} founded a city nearby!`;
+              break;
+            }
+          }
+          if (wakeReason) break;
+        }
+      }
+
+      // 3. Barbarian camp within alert range
+      if (!wakeReason && game.barbarianCamps) {
+        const nearbyCamp = game.barbarianCamps.find(bc =>
+          !bc.destroyed && hexDistance(bc.col, bc.row, unit.col, unit.row) <= ALERT_RANGE
+        );
+        if (nearbyCamp) {
+          wakeReason = 'barbarian camp detected nearby!';
+        }
+      }
+
+      // 4. War declared against player this turn
+      if (!wakeReason) {
+        const newWar = (game.aiWars || []).find(w =>
+          w.defender === 'player' && w.startTurn === game.turn
+        );
+        if (newWar) {
+          const aggressorName = FACTIONS[newWar.attacker]?.name || newWar.attacker;
+          wakeReason = `${aggressorName} declared war!`;
+        }
+      }
+
+      if (wakeReason) {
         unit.alert = false;
         unit.sleeping = false;
-        addEvent(`${ut.name} spotted an enemy!`, 'combat');
+        addEvent(`${ut.name} woke up — ${wakeReason}`, 'combat');
       }
     }
   }
