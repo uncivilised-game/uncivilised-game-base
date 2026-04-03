@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, RESOURCES, TECHNOLOGIES, BUILDINGS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, RESOURCES, TECHNOLOGIES, BUILDINGS, FACTIONS } from './constants.js';
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { isTilePassable } from './map.js';
@@ -214,7 +214,22 @@ function interactWithBarbarianCamp(campId) {
   if (convertReqs.length > 0) html += `<br><small style="color:#d9534f">Requires: ${convertReqs.join(', ')}</small>`;
   html += `</button>`;
 
-  // 6. Raid / Attack — direct combat
+  // 6. Bribe to Attack — redirect barbarians to attack a specific opponent
+  const knownFactions = Object.keys(game.factionCities || {}).filter(fid => game.metFactions && game.metFactions[fid]);
+  if (knownFactions.length > 0 && !bc.pacified) {
+    const bribeCost = 40 + Math.floor(bc.strength * 2);
+    const currentTarget = bc.bribeTarget || null;
+    html += `<p style="color:#d9534f;margin-top:8px;font-size:11px;font-weight:600">Direct Raids Against:</p>`;
+    for (const fid of knownFactions) {
+      const fn = FACTIONS[fid] ? FACTIONS[fid].name : fid;
+      const fc = FACTIONS[fid] ? FACTIONS[fid].color : '#888';
+      const isActive = currentTarget === fid;
+      html += `<button class="minor-btn${isActive ? ' minor-btn-special' : ''}" onclick="barbCampAction('${campId}','bribe_attack_${fid}')" ${game.gold < bribeCost && !isActive ? 'disabled style="opacity:0.5"' : ''}>`;
+      html += `\u{1F5E1}\u{FE0F} ${isActive ? '(Active) ' : ''}Attack <span style="color:${fc}">${fn}</span> (${bribeCost}g)</button>`;
+    }
+  }
+
+  // 7. Raid / Attack — direct combat
   html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','attack')">`;
   html += `\u{1F525} Attack Camp — Destroy and loot (need adjacent unit)</button>`;
 
@@ -360,6 +375,29 @@ window.barbCampAction = function(campId, action) {
         addEvent(`Your ${attackerType.name} was killed attacking the camp!`, 'combat');
       }
       bc.disposition -= 15; // Attacking makes them hostile
+      break;
+    }
+    default: {
+      // Handle bribe_attack_<factionId> actions
+      if (action.startsWith('bribe_attack_')) {
+        const targetFaction = action.replace('bribe_attack_', '');
+        // If already targeting this faction, cancel the bribe
+        if (bc.bribeTarget === targetFaction) {
+          bc.bribeTarget = null;
+          const fn = FACTIONS[targetFaction] ? FACTIONS[targetFaction].name : targetFaction;
+          addEvent(`Barbarians are no longer directed against ${fn}.`, 'diplomacy');
+          showToast('Bribe Cancelled', 'The barbarians resume raiding freely.');
+          break;
+        }
+        const bribeCost = 40 + Math.floor(bc.strength * 2);
+        if (game.gold < bribeCost) { addEvent(`Not enough gold. Need ${bribeCost}g.`, 'gold'); return; }
+        game.gold -= bribeCost;
+        bc.bribeTarget = targetFaction;
+        bc.disposition += 5; // Bribing improves relations
+        const fn = FACTIONS[targetFaction] ? FACTIONS[targetFaction].name : targetFaction;
+        addEvent(`\u{1F5E1}\u{FE0F} Bribed barbarians to attack ${fn}! Their raiders will target ${fn}'s territory.`, 'diplomacy');
+        showToast('Barbarians Redirected', `The camp's raiders now target ${fn}.`);
+      }
       break;
     }
   }

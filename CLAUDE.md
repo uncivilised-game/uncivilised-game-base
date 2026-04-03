@@ -89,6 +89,7 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 - **Always run `npm test` before committing, pushing, or creating a PR.** Tests must pass. If tests fail, fix the issue before proceeding.
 - Tests live in `tests/` with fixtures in `tests/fixtures.js` and browser global stubs in `tests/setup.js`
 - Test naming: use `test()` (not `it()`), add `()` after function names in `describe()`, use dummy faction names (`faction_a`, `faction_b`) not real ones
+- When fixing bugs or changing game logic, add a test that covers the fix when practical. Pure UI changes, render tweaks, and trivial one-liners don't need tests.
 
 ## Backend (Python FastAPI)
 
@@ -137,6 +138,7 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | `scripts/newsletter.py` | Sends newsletter emails to active players via Resend API |
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
+| `scripts/release-vote.py` | Manages release vote issues: creates changelog, tallies reactions, creates devel→main PR |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
@@ -181,6 +183,9 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-close.yml` — nightly (6am UTC) scan that auto-closes conviction issues resolved by merged PRs. Uses direct PR cross-referencing + Claude semantic matching. Supports `dry_run` input via manual dispatch.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/pr-review.yml` — comment `/review` on any PR for Claude Code review. Auto-triggers on conviction PRs (`fix/*` branches targeting `devel`). Submits GitHub APPROVE or REQUEST_CHANGES reviews to gate auto-merge.
+- `.github/workflows/conviction-automerge.yml` — auto-merges conviction PRs (`fix/*` → `devel`) after all CI checks pass and at least one approving review. Triggered by `pull_request_review` and `check_suite` events.
+- `.github/workflows/release-vote.yml` — weekly (Monday 12pm UTC) + manual. Creates a "Release Vote" GitHub issue listing changes on `devel` since `main`. Players vote with reactions (thumbs up/down). At 3 net upvotes, a `devel` → `main` PR is created automatically. Runs `scripts/release-vote.py`.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.

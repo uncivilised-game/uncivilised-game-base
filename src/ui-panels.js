@@ -1,6 +1,6 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3, DISTRICTS, TERRAIN_FEATURES } from './constants.js';
 import { getNextUnitId } from './state.js';
-import { game } from './state.js';
+import { game, canvasW, canvasH, gameZoom } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
 import { getTileYields, getTileName, isResourceRevealed } from './map.js';
 import { render } from './render.js';
@@ -64,6 +64,7 @@ function showSelectionPanel(unit) {
     // Status
     if (unit.fortified) html += `<div class="sel-status fortified">\u{1F6E1} Fortified (+20% defense)</div>`;
     if (unit.sleeping) html += `<div class="sel-status sleeping">\u{1F4A4} Sleeping</div>`;
+    if (unit.waypoint) html += `<div class="sel-status" style="color:#c9a84c">\u{1F6A9} En route to (${unit.waypoint.col},${unit.waypoint.row})</div>`;
 
     // XP & Promotions
     const xpStr = (unit.xp || 0) + ' XP';
@@ -87,12 +88,20 @@ function showSelectionPanel(unit) {
 
     // Action buttons
     html += `<div class="sel-actions">`;
+    // Cancel waypoint journey
+    if (unit.waypoint) {
+      html += `<button class="sel-btn" style="border-color:#c9a84c" onclick="unitAction('cancelWaypoint')"><span>\u{1F6A9} Cancel Journey</span></button>`;
+    }
     // Unit upgrade button
     const upg = UNIT_UPGRADES[unit.type];
     if (upg && game.techs.includes(upg.requires)) {
       const canAfford = game.gold >= upg.cost;
       const newDef = UNIT_TYPES[upg.to];
       html += '<button class="sel-btn" style="border-color:' + (canAfford ? '#4a9' : '#666') + ';opacity:' + (canAfford ? '1' : '0.5') + '" ' + (canAfford ? 'onclick="upgradeUnit(' + unit.id + ')"' : 'disabled') + '><span>' + (newDef ? newDef.icon : '') + ' Upgrade to ' + (newDef ? newDef.name : upg.to) + ' (' + upg.cost + 'g)</span></button>';
+    }
+    // Activate button for fortified/sleeping units
+    if (unit.fortified || unit.sleeping) {
+      html += `<button class="sel-btn" style="border-color:#6aab5c" onclick="unitAction('activate')"><span>\u{26A1} Activate</span><span class="sel-key">W</span></button>`;
     }
     if (unit.moveLeft > 0) {
       html += `<button class="sel-btn" onclick="unitAction('skip')"><span>Skip</span><span class="sel-key">S</span></button>`;
@@ -483,18 +492,30 @@ function renderUnitsPanel() {
     const needsPop = typeId === 'settler' && game.population < 2000;
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
     const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
+    const gCost = goldCost(ut.cost);
+    const canBuy = canRecruit && game.gold >= gCost;
+    const turns = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
 
     const div = document.createElement('div');
-    div.className = `build-item ${!canRecruit ? 'item-disabled' : ''}`;
+    const disabled = !canRecruit && !canBuy;
+    div.className = 'build-item' + (disabled ? ' item-disabled' : '') + (!canRecruit && canBuy ? ' has-gold-option' : '');
     div.innerHTML = `
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
         <div class="item-desc">${ut.desc}${reason ? ` — ${reason}` : ''}</div>
       </div>
-      <div class="item-cost">${Math.ceil(ut.cost / Math.max(1, game.productionPerTurn))}T</div>
+      <div class="item-cost-group">
+        <span class="cost-prod${canRecruit && !prodBusy ? '' : ' cost-na'}">${prodBusy && canRecruit ? 'Busy' : turns + 'T'}</span>
+        ${canRecruit ? `<span class="cost-gold${canBuy ? '' : ' cost-na'}" title="Buy instantly with gold">${gCost}g</span>` : ''}
+      </div>
     `;
-    if (canRecruit) {
+    if (canBuy) {
+      div.addEventListener('click', ((uid) => (e) => { e.stopPropagation(); purchaseUnit(uid); })(typeId));
+    } else if (canRecruit && !prodBusy) {
       div.addEventListener('click', () => recruitUnit(typeId));
+    } else if (canRecruit && prodBusy) {
+      div.addEventListener('click', () => addEvent('Production busy — need ' + gCost + 'g to buy with gold (have ' + game.gold + 'g)', 'gold'));
     }
     container.appendChild(div);
   }
@@ -525,6 +546,19 @@ function switchProduction(startFn) {
   startFn();
 }
 
+function getNearestCityIndex() {
+  if (game.cities.length <= 1) return 0;
+  // Find city closest to camera center
+  const camCenterCol = Math.floor((game.cameraX + (canvasW / 2) / gameZoom) / (HEX_SIZE * SQRT3));
+  const camCenterRow = Math.floor((game.cameraY + (canvasH / 2) / gameZoom) / (HEX_SIZE * 1.5));
+  let bestIdx = 0, bestDist = Infinity;
+  for (let i = 0; i < game.cities.length; i++) {
+    const d = hexDistance(camCenterCol, camCenterRow, game.cities[i].col, game.cities[i].row);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 function recruitUnit(typeId) {
   const ut = UNIT_TYPES[typeId];
   if (typeId === 'settler' && game.population < 2000) {
@@ -534,9 +568,12 @@ function recruitUnit(typeId) {
   const doRecruit = () => {
     game.currentUnitBuild = typeId;
     game.unitBuildProgress = 0;
+    // Track which city is building (closest to camera center)
+    game.unitBuildCityIdx = getNearestCityIndex();
     const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
-    logAction('build', 'Started training ' + ut.name, { unitType: typeId });
-    addEvent('Training ' + ut.name + ' (' + turnsNeeded + ' turns)', 'combat');
+    const buildCityName = game.cities[game.unitBuildCityIdx]?.name || 'city';
+    logAction('build', 'Started training ' + ut.name + ' in ' + buildCityName, { unitType: typeId });
+    addEvent('Training ' + ut.name + ' in ' + buildCityName + ' (' + turnsNeeded + ' turns)', 'combat');
     if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
     updateUI();
     closeAllPanels();
@@ -661,7 +698,7 @@ function getBuildingUnlockTech(buildingId) {
 function renderBuildPanel() {
   const container = document.getElementById('build-options');
   container.innerHTML = '';
-  const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild;
+  const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
   const prodRate = Math.max(1, game.productionPerTurn);
 
   // Current production status
@@ -696,6 +733,19 @@ function renderBuildPanel() {
       s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(255,215,0,0.08);border:1px solid var(--color-border);border-radius:6px';
       s.innerHTML = '<p style="color:#ffd700;margin-bottom:6px">Wonder: <strong>' + wd.icon + ' ' + wd.name + '</strong></p>'
         + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:#ffd700;height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
+        + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
+        + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
+      container.appendChild(s);
+    }
+  } else if (game.currentDistrictBuild) {
+    const dd = DISTRICTS[game.currentDistrictBuild];
+    if (dd) {
+      const pct = Math.floor((game.districtBuildProgress / dd.cost) * 100);
+      const tl = Math.ceil((dd.cost - game.districtBuildProgress) / prodRate);
+      const s = document.createElement('div');
+      s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(240,200,72,0.08);border:1px solid var(--color-border);border-radius:6px';
+      s.innerHTML = '<p style="color:#f0c848;margin-bottom:6px">District: <strong>' + dd.icon + ' ' + dd.name + '</strong></p>'
+        + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:#f0c848;height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
         + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
         + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
       container.appendChild(s);
@@ -768,7 +818,8 @@ function renderBuildPanel() {
     const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
     const needsPop = tid === 'settler' && game.population < 2000;
     const prereqMet = techOk && (!needsBarr || hasBarracks) && !needsPop;
-    const can = prereqMet;
+    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
+    const canProd = prereqMet && !prodBusy;
     const gCost = goldCost(ut.cost);
     const canBuy = prereqMet && game.gold >= gCost;
     const maint = UNIT_MAINTENANCE[tid] || 0;
@@ -778,26 +829,26 @@ function renderBuildPanel() {
     else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
     const turns = Math.ceil(ut.cost / prodRate);
     const div = document.createElement('div');
-    const unitDisabled = !can && !canBuy;
-    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!can && canBuy ? ' item-disabled has-gold-option' : '');
+    const unitDisabled = !prereqMet && !canBuy;
+    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!canProd && canBuy && !unitDisabled ? ' has-gold-option' : '');
     if (unitDisabled && reason) div.title = reason;
     const popNote = tid === 'settler' ? ' (-500 pop)' : '';
     const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
+    const prodLabel = prodBusy && prereqMet ? 'Busy' : turns + 'T';
     div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
       + '<div class="item-desc">' + ut.desc + popNote + maintNote + (reason ? ' \u2014 ' + reason : '') + '</div></div>'
       + '<div class="item-cost-group">'
-      + (can ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
+      + (canProd ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + prodLabel + '</span>')
       + (prereqMet ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
       + '</div>';
-    if (can) div.addEventListener('click', () => recruitUnit(tid));
-    container.appendChild(div);
     if (canBuy) {
-      const goldBtn = div.querySelector('.cost-gold');
-      if (goldBtn) {
-        goldBtn.style.cursor = 'pointer';
-        goldBtn.addEventListener('click', (e) => { e.stopPropagation(); purchaseUnit(tid); });
-      }
+      div.addEventListener('click', ((unitId) => (e) => { e.stopPropagation(); purchaseUnit(unitId); })(tid));
+    } else if (canProd) {
+      div.addEventListener('click', () => recruitUnit(tid));
+    } else if (prereqMet && !canBuy) {
+      div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
     }
+    container.appendChild(div);
   }
 
   // --- Government Section ---
@@ -886,6 +937,62 @@ function renderBuildPanel() {
     container.appendChild(div);
   }
 
+  // --- Districts Section ---
+  const dh = document.createElement('p');
+  dh.style.cssText = 'color:#f0c848;margin-top:14px;margin-bottom:8px;font-size:13px;font-weight:600;border-bottom:1px solid var(--color-border);padding-bottom:4px';
+  dh.textContent = '\u{1F3D8} Districts (' + (game.playerDistricts || []).length + ' placed)';
+  container.appendChild(dh);
+
+  // Show current district in production
+  if (game.currentDistrictBuild) {
+    const dd = DISTRICTS[game.currentDistrictBuild];
+    if (dd) {
+      const dpct = Math.floor((game.districtBuildProgress / dd.cost) * 100);
+      const dtl = Math.ceil((dd.cost - game.districtBuildProgress) / prodRate);
+      const ds = document.createElement('div');
+      ds.style.cssText = 'margin-bottom:8px;padding:8px;background:rgba(240,200,72,0.08);border:1px solid var(--color-border);border-radius:6px';
+      ds.innerHTML = '<p style="color:#f0c848;margin-bottom:4px">District: <strong>' + dd.icon + ' ' + dd.name + '</strong></p>'
+        + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:#f0c848;height:100%;width:' + dpct + '%;transition:width 0.3s"></div></div>'
+        + '<p style="color:var(--color-text-muted);font-size:11px">' + dpct + '% \u2014 ' + dtl + ' turn' + (dtl!==1?'s':'') + ' left</p>'
+        + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
+      container.appendChild(ds);
+    }
+  }
+
+  for (const [did, dd] of Object.entries(DISTRICTS)) {
+    const alreadyPlaced = (game.playerDistricts || []).includes(did);
+    const currentlyBuilding = game.currentDistrictBuild === did;
+    const canPlace = !alreadyPlaced && !currentlyBuilding;
+    const turns = Math.ceil(dd.cost / prodRate);
+    const gCostD = goldCost(dd.cost);
+    const canBuyD = canPlace && game.gold >= gCostD;
+    const div = document.createElement('div');
+    div.className = 'build-item' + (!canPlace ? ' item-disabled' : '');
+    let dReason = '';
+    if (alreadyPlaced) dReason = 'Already placed';
+    else if (currentlyBuilding) dReason = 'Under construction';
+    if (!canPlace && dReason) div.title = dReason;
+    // Build yield string
+    const yieldStr = Object.entries(dd.yields).map(([k, v]) => '+' + v + ' ' + k).join(', ');
+    div.innerHTML = '<div class="item-info"><div class="item-name">' + dd.icon + ' ' + dd.name + (alreadyPlaced ? ' \u2713' : '') + '</div>'
+      + '<div class="item-desc">' + dd.desc + ' <span style="color:#8f8">(' + yieldStr + ')</span></div></div>'
+      + '<div class="item-cost-group">'
+      + (canPlace ? '<span class="cost-prod" title="Build with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + turns + 'T</span>')
+      + (canPlace ? '<span class="cost-gold' + (canBuyD ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCostD + 'g</span>' : '')
+      + '</div>';
+    if (canPlace) {
+      div.addEventListener('click', ((distId) => () => { startDistrictBuild(distId); })(did));
+    }
+    if (canBuyD) {
+      const goldBtn = div.querySelector('.cost-gold');
+      if (goldBtn) {
+        goldBtn.style.cursor = 'pointer';
+        goldBtn.addEventListener('click', ((distId) => (e) => { e.stopPropagation(); purchaseDistrict(distId); })(did));
+      }
+    }
+    container.appendChild(div);
+  }
+
 }
 
 // ---- Gold Purchase Functions ----
@@ -920,19 +1027,36 @@ function purchaseUnit(typeId) {
     addEvent('Need population 2,000+ to buy Settler', 'combat'); return;
   }
   game.gold -= cost;
-  const city = game.cities[0];
+  const cityIdx = getNearestCityIndex();
+  const city = game.cities[cityIdx] || game.cities[0];
+  // Place on adjacent tile (not on city tile) — same as production-built units
+  let spawnCol = city.col, spawnRow = city.row;
+  const neighbors = getHexNeighbors(city.col, city.row);
+  for (const nb of neighbors) {
+    const t = game.map[nb.row]?.[nb.col];
+    if (!t) continue;
+    const bi = BASE_TERRAIN[t.base];
+    if (!bi || !bi.movable) continue;
+    if (t.feature === 'mountain') continue;
+    const occupied = game.units.some(u => u.col === nb.col && u.row === nb.row && u.owner === 'player' && UNIT_TYPES[u.type]?.combat > 0);
+    if (occupied) continue;
+    spawnCol = nb.col;
+    spawnRow = nb.row;
+    break;
+  }
   const unitId = getNextUnitId();
   const newUnit = {
-    id: unitId, type: typeId, col: city.col, row: city.row,
+    id: unitId, type: typeId, col: spawnCol, row: spawnRow,
     owner: 'player', hp: 100, moveLeft: 0,
     xp: 0, level: 1, fortified: false, sleeping: false
   };
   game.units.push(newUnit);
   if (typeId === 'settler') {
     game.population = Math.max(500, game.population - 500);
+    city.population = Math.max(500, (city.population || game.population) - 500);
   }
-  logAction('build', 'Purchased ' + ut.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
-  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
+  logAction('build', 'Purchased ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
+  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
   updateUI(); renderBuildPanel(); render();
 }
 
@@ -966,8 +1090,178 @@ function cancelProduction() {
     const wd = WONDERS.find(w => w.id === game.currentWonderBuild);
     addEvent('Cancelled ' + (wd ? wd.name : 'wonder'), 'gold');
     game.currentWonderBuild = null; game.wonderBuildProgress = 0;
+  } else if (game.currentDistrictBuild) {
+    const dd = DISTRICTS[game.currentDistrictBuild];
+    addEvent('Cancelled ' + (dd ? dd.name : 'district'), 'gold');
+    game.currentDistrictBuild = null; game.districtBuildProgress = 0; game.districtBuildTarget = null;
   }
   updateUI(); renderBuildPanel();
+}
+
+// --- District placement helpers ---
+
+/** Find a valid tile to place a district near a player city. */
+function findDistrictPlacement(districtId) {
+  const dd = DISTRICTS[districtId];
+  if (!dd) return null;
+  const placement = dd.placement || {};
+
+  // Search tiles within border radius of each player city
+  for (const city of game.cities) {
+    const radius = city.borderRadius || 2;
+    for (let ring = 1; ring <= radius; ring++) {
+      for (let r = city.row - ring; r <= city.row + ring; r++) {
+        for (let c = city.col - ring; c <= city.col + ring; c++) {
+          if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
+          const tile = game.map[r][c];
+          if (!tile) continue;
+          // Skip water, mountains, existing districts/improvements
+          if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') continue;
+          if (tile.feature === 'mountain') continue;
+          if (tile.district || tile.improvement) continue;
+          // Skip city centre tiles
+          if (game.cities.some(ct => ct.col === c && ct.row === r)) continue;
+          if (Object.values(game.factionCities || {}).some(fc => fc.col === c && fc.row === r)) continue;
+
+          // Check placement rules
+          if (placement.requiresTerrain && !placement.requiresTerrain.includes(tile.base)) continue;
+          if (placement.requiresAdjacentWater) {
+            const nbs = getHexNeighbors(c, r);
+            const hasW = nbs.some(nb => {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              return nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake');
+            });
+            if (!hasW) continue;
+          }
+          if (placement.notAdjacentToCity) {
+            const nbs = getHexNeighbors(c, r);
+            const adjCity = nbs.some(nb => game.cities.some(ct => ct.col === nb.col && ct.row === nb.row));
+            if (adjCity) continue;
+          }
+
+          // Must be within city territory (within border radius)
+          if (hexDistance(c, r, city.col, city.row) > radius) continue;
+
+          return { col: c, row: r };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function startDistrictBuild(districtId) {
+  const dd = DISTRICTS[districtId];
+  if (!dd) return;
+  if ((game.playerDistricts || []).includes(districtId)) { addEvent(dd.name + ' already placed', 'gold'); return; }
+
+  const target = findDistrictPlacement(districtId);
+  if (!target) {
+    addEvent('No valid tile for ' + dd.name + ' near your cities', 'gold');
+    showToast('Cannot Place', 'No valid tile for ' + dd.name + '. Check city borders and placement rules.');
+    return;
+  }
+
+  const doBuild = () => {
+    game.currentDistrictBuild = districtId;
+    game.districtBuildProgress = 0;
+    game.districtBuildTarget = target;
+    // Clear other production
+    game.currentBuild = null; game.buildProgress = 0;
+    game.currentUnitBuild = null; game.unitBuildProgress = 0;
+    game.currentWonderBuild = null; game.wonderBuildProgress = 0;
+    const tl = Math.ceil(dd.cost / Math.max(1, game.productionPerTurn));
+    logAction('district', 'Started building ' + dd.name + ' district', { districtId });
+    addEvent(dd.icon + ' Building ' + dd.name + ' (' + tl + ' turns)', 'gold');
+    closeAllPanels();
+  };
+
+  if (game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild) {
+    switchProduction(doBuild);
+  } else {
+    doBuild();
+  }
+}
+
+function purchaseDistrict(districtId) {
+  const dd = DISTRICTS[districtId];
+  if (!dd) return;
+  if ((game.playerDistricts || []).includes(districtId)) { addEvent(dd.name + ' already placed', 'gold'); return; }
+  const gCostD = goldCost(dd.cost);
+  if (game.gold < gCostD) { addEvent('Not enough gold (' + gCostD + 'g needed)', 'gold'); return; }
+
+  const target = findDistrictPlacement(districtId);
+  if (!target) {
+    addEvent('No valid tile for ' + dd.name + ' near your cities', 'gold');
+    return;
+  }
+
+  game.gold -= gCostD;
+  placePlayerDistrict(districtId, target);
+  addEvent(dd.icon + ' ' + dd.name + ' district purchased and placed!', 'gold');
+  if (typeof showToast === 'function') showToast('\u{1F3D8} District Placed', dd.name + ' purchased with gold!');
+  updateUI(); renderBuildPanel();
+}
+
+/** Place a completed player district on the map and apply yields. */
+function placePlayerDistrict(districtId, target) {
+  const dd = DISTRICTS[districtId];
+  if (!dd) return;
+  const tile = game.map[target.row][target.col];
+  tile.district = districtId;
+  if (!game.playerDistricts) game.playerDistricts = [];
+  game.playerDistricts.push(districtId);
+
+  // Apply base yields (culture is recalculated per turn in turn.js, so skip it here)
+  if (dd.yields.science) game.sciencePerTurn += dd.yields.science;
+  if (dd.yields.gold) game.goldPerTurn += dd.yields.gold;
+  if (dd.yields.food) game.foodPerTurn += dd.yields.food;
+  if (dd.yields.military) game.military += dd.yields.military;
+
+  // Apply adjacency bonuses (culture handled per-turn)
+  const adjBonus = computeAdjacencyBonus(districtId, target.col, target.row);
+  if (adjBonus.science) game.sciencePerTurn += adjBonus.science;
+  if (adjBonus.gold) game.goldPerTurn += adjBonus.gold;
+  if (adjBonus.food) game.foodPerTurn += adjBonus.food;
+  if (adjBonus.military) game.military += adjBonus.military;
+}
+
+/** Compute adjacency bonus yields for a district at a given position. */
+function computeAdjacencyBonus(districtId, col, row) {
+  const dd = DISTRICTS[districtId];
+  if (!dd || !dd.adjacency) return {};
+  const bonus = {};
+  const nbs = getHexNeighbors(col, row);
+
+  for (const nb of nbs) {
+    const tile = game.map[nb.row] && game.map[nb.row][nb.col];
+    if (!tile) continue;
+
+    for (const [adjType, yields] of Object.entries(dd.adjacency)) {
+      let match = false;
+      // Terrain features
+      if (adjType === 'mountain' && tile.feature === 'mountain') match = true;
+      else if (adjType === 'woods' && (tile.feature === 'woods' || tile.feature === 'rainforest')) match = true;
+      else if (adjType === 'hills' && tile.feature === 'hills') match = true;
+      // Terrain base types
+      else if (adjType === 'coast' && (tile.base === 'coast' || tile.base === 'ocean')) match = true;
+      // Tile properties
+      else if (adjType === 'river' && tile.hasRiver) match = true;
+      // Improvements
+      else if (adjType === 'farm' && tile.improvement === 'farm') match = true;
+      // Districts
+      else if (adjType === 'harbor' && tile.district === 'harbor') match = true;
+      // Natural wonders
+      else if (adjType === 'natural_wonder' && tile.naturalWonder) match = true;
+
+      if (match) {
+        for (const [yieldType, amount] of Object.entries(yields)) {
+          bonus[yieldType] = (bonus[yieldType] || 0) + amount;
+        }
+      }
+    }
+  }
+  return bonus;
 }
 
 function startWonderBuild(wonderId) {
@@ -1334,6 +1628,10 @@ export {
   startBuild,
   cancelProduction,
   startWonderBuild,
+  startDistrictBuild,
+  findDistrictPlacement,
+  placePlayerDistrict,
+  computeAdjacencyBonus,
   ensureCivicsPanel,
   renderCivicsPanel,
   toggleCivicsPanel,
@@ -1351,6 +1649,20 @@ window.unitAction = function(action) {
   const ut = UNIT_TYPES[unit.type];
 
   switch (action) {
+    case 'activate':
+      unit.fortified = false;
+      unit.sleeping = false;
+      unit.alert = false;
+      addEvent(`${ut.name} activated`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
+    case 'cancelWaypoint':
+      unit.waypoint = null;
+      addEvent(`${ut.name} journey cancelled`, '');
+      showSelectionPanel(unit);
+      render();
+      return;
     case 'skip':
       unit.moveLeft = 0;
       addEvent(`${ut.name} skipped`, '');
