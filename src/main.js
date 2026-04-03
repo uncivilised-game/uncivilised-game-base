@@ -589,7 +589,7 @@ async function handleSignup(e) {
     if (data.status === 'active') {
       content.innerHTML = '<div class="auth-success-icon">\u2694\uFE0F</div>'
         + '<h2 class="auth-success-title">You\'re In!</h2>'
-        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 1,000, <strong>' + username + '</strong>.</p>'
+        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 10,000, <strong>' + username + '</strong>.</p>'
         + '<button class="btn btn-primary auth-success-btn" onclick="closeAuthModals()">Got It</button>';
     } else {
       content.innerHTML = '<div class="auth-success-icon">\u23F3</div>'
