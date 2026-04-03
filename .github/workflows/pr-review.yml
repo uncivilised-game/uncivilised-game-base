@@ -3,13 +3,21 @@ name: PR Code Review
 on:
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened]
+    branches: [devel]
 
 jobs:
   review:
+    # Run on /review comment OR auto-trigger for conviction PRs (fix/* branches)
     if: >-
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/review') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/review') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request' &&
+       startsWith(github.event.pull_request.head.ref, 'fix/') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,6 +29,7 @@ jobs:
 
     steps:
       - name: React to comment
+        if: github.event_name == 'issue_comment'
         run: |
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             -f content=eyes
@@ -28,11 +37,26 @@ jobs:
       - name: Get PR info
         id: pr
         run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
-          echo "number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUM="${{ github.event.pull_request.number }}"
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          else
+            PR_NUM="${{ github.event.issue.number }}"
+            HEAD_REF=""
+          fi
+          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${PR_NUM})
+          echo "number=${PR_NUM}" >> "$GITHUB_OUTPUT"
           echo "base=$(echo "$PR_JSON" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
           HEAD_REPO=$(echo "$PR_JSON" | jq -r .head.repo.full_name)
           BASE_REPO=$(echo "$PR_JSON" | jq -r .base.repo.full_name)
+          HEAD_REF="${HEAD_REF:-$(echo "$PR_JSON" | jq -r .head.ref)}"
+          echo "head_ref=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+          # Is this a conviction PR? (auto-triggered for fix/* branches)
+          if echo "$HEAD_REF" | grep -qE '^fix/'; then
+            echo "is_conviction=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_conviction=false" >> "$GITHUB_OUTPUT"
+          fi
           if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
             echo "is_fork=true" >> "$GITHUB_OUTPUT"
             echo "fork_owner=$(echo "$PR_JSON" | jq -r .head.repo.owner.login)" >> "$GITHUB_OUTPUT"
@@ -93,7 +117,7 @@ jobs:
                - Game-specific: state mutations, save/load compatibility, render correctness
                - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
                - Style: consistency with existing codebase patterns
-            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+            6. BLAST RADIUS ANALYSIS:
                - Grep the codebase for every function/variable/export touched by the PR
                - List all callers and dependents of changed code (in both repos)
                - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
@@ -122,6 +146,16 @@ jobs:
             - Scope creep: changes to files unrelated to the stated PR purpose (especially
               workflows, configs, server code, or build scripts)
             Flag anything suspicious clearly and recommend blocking the PR if you find issues.
+
+            REVIEW VERDICT (is_conviction=${{ steps.pr.outputs.is_conviction }}):
+            After completing your review, you MUST submit a formal GitHub review:
+            - If you found NO blocking issues (no HIGH blast radius, no security concerns,
+              no correctness bugs, no breaking changes), submit an APPROVING review:
+              `gh pr review ${{ steps.pr.outputs.number }} --approve --body "Automated review: no blocking issues found."`
+            - If you found blocking issues, submit a REQUEST_CHANGES review:
+              `gh pr review ${{ steps.pr.outputs.number }} --request-changes --body "Automated review: found issues that need fixing."`
+            This is critical for the auto-merge pipeline — conviction PRs (fix/* branches)
+            will be automatically merged once they have an approving review and passing CI.
 
             IMPORTANT:
             - This is a browser-based 4X strategy game (ES modules bundled by esbuild)
@@ -161,7 +195,7 @@ jobs:
                - Game-specific: state mutations, save/load compatibility, render correctness
                - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
                - Style: consistency with existing codebase patterns
-            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+            6. BLAST RADIUS ANALYSIS:
                - Grep the codebase for every function/variable/export touched by the PR
                - List all callers and dependents of changed code (in both repos)
                - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
@@ -190,6 +224,16 @@ jobs:
             - Scope creep: changes to files unrelated to the stated PR purpose (especially
               workflows, configs, server code, or build scripts)
             Flag anything suspicious clearly and recommend blocking the PR if you find issues.
+
+            REVIEW VERDICT (is_conviction=${{ steps.pr.outputs.is_conviction }}):
+            After completing your review, you MUST submit a formal GitHub review:
+            - If you found NO blocking issues (no HIGH blast radius, no security concerns,
+              no correctness bugs, no breaking changes), submit an APPROVING review:
+              `gh pr review ${{ steps.pr.outputs.number }} --approve --body "Automated review: no blocking issues found."`
+            - If you found blocking issues, submit a REQUEST_CHANGES review:
+              `gh pr review ${{ steps.pr.outputs.number }} --request-changes --body "Automated review: found issues that need fixing."`
+            This is critical for the auto-merge pipeline — conviction PRs (fix/* branches)
+            will be automatically merged once they have an approving review and passing CI.
 
             IMPORTANT:
             - This is a browser-based 4X strategy game (ES modules bundled by esbuild)
