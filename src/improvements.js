@@ -46,9 +46,20 @@ export function getAvailableImprovements(col, row) {
     if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && id !== 'fishing_boats') continue;
     // Can't build on mountains
     if (tile.feature === 'mountain') continue;
-    // Must be within city borders
-    const inTerritory = game.cities.some(city => hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2));
-    if (!inTerritory) continue;
+    // Must be within city borders (player OR AI faction cities)
+    const inPlayerTerritory = game.cities.some(city => hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2));
+    const inFactionTerritory = (() => {
+      for (const fc of Object.values(game.factionCities || {})) {
+        if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
+      }
+      for (const cities of Object.values(game.aiFactionCities || {})) {
+        for (const fc of cities) {
+          if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
+        }
+      }
+      return false;
+    })();
+    if (!inPlayerTerritory && !inFactionTerritory) continue;
 
     available.push({ id, ...imp });
   }
@@ -156,8 +167,14 @@ export function processImprovements() {
           if (worker.buildCharges !== undefined) {
             worker.buildCharges--;
             if (worker.buildCharges <= 0) {
-              game.units = game.units.filter(u => u.id !== worker.id);
-              if (isPlayer) addEvent('Worker has used all build charges and was consumed', 'warning');
+              if (isPlayer) {
+                // Player workers are consumed after exhausting charges
+                game.units = game.units.filter(u => u.id !== worker.id);
+                addEvent('Worker has used all build charges and was consumed', 'warning');
+              } else {
+                // AI workers refresh charges — AI has no unit recruitment UI
+                worker.buildCharges = 2;
+              }
             }
           }
         }

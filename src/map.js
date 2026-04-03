@@ -837,12 +837,14 @@ function updateFactionStats() {
   if (!game.factionStats) game.factionStats = {};
   for (const [fid, stats] of Object.entries(game.factionStats)) {
     const traits = FACTION_TRAITS[fid] || { expansion:0.5, military:0.5, culture:0.5, science:0.5, diplomacy:0.5 };
+    // REBALANCED: Halved AI stat growth rates to match player progression
+    // (was ~2x player rates for gold, military, population, territory, techs)
     const gm = 0.8 + Math.random() * 0.4;
-    stats.gold += Math.floor((4 + traits.diplomacy * 6) * gm);
-    stats.military += Math.floor(traits.military * 3 * gm);
-    stats.population += Math.floor((30 + traits.expansion * 40) * gm);
-    stats.territory = Math.min(40, stats.territory + (Math.random() < 0.05 + traits.expansion * 0.1 ? 1 : 0));
-    if (Math.random() < 0.03 + traits.science * 0.1) stats.techs++;
+    stats.gold += Math.floor((2 + traits.diplomacy * 3) * gm);
+    stats.military += Math.floor(traits.military * 1.5 * gm);
+    stats.population += Math.floor((15 + traits.expansion * 20) * gm);
+    stats.territory = Math.min(40, stats.territory + (Math.random() < 0.03 + traits.expansion * 0.06 ? 1 : 0));
+    if (Math.random() < 0.02 + traits.science * 0.06) stats.techs++;
     stats.score = Math.floor(stats.gold * 0.1 + stats.military * 2 + stats.population * 0.01 + stats.techs * 10 + stats.territory * 3);
     if (Math.random() < 0.05) { stats.military = Math.max(5, stats.military - 3); stats.gold = Math.max(0, stats.gold - 15); }
     stats.lastUpdated = game.turn;

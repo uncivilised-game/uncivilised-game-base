@@ -14,6 +14,7 @@ export const SQRT3 = Math.sqrt(3);
 export const CITY_DEFENSE = {
   BASE_HP: 100,
   BASE_COMBAT_STRENGTH: 15,
+  UNWALLED_STRENGTH: 8,
   WALLS_BONUS: 8,
   FORTRESS_BONUS: 5,
   GARRISON_MULTIPLIER: 0.5,
@@ -55,7 +56,7 @@ export const TERRAIN_FEATURES = {
 export let UNIT_TYPES = {
   scout:     { name: 'Scout',         cost: 15, combat: 10, rangedCombat: 0, range: 0, movePoints: 3, icon: '👁', class: 'recon',    desc: 'Fast explorer, weak in combat' },
   warrior:   { name: 'Warrior',       cost: 20, combat: 20, rangedCombat: 0, range: 0, movePoints: 2, icon: '⚔', class: 'melee',    desc: 'Basic melee infantry' },
-  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 1, movePoints: 2, icon: '◎', class: 'ranged',   desc: 'Cheap ranged unit' },
+  slinger:   { name: 'Slinger',       cost: 20, combat: 5,  rangedCombat: 15,range: 2, movePoints: 2, icon: '◎', class: 'ranged',   desc: 'Cheap ranged unit, range 2' },
   archer:    { name: 'Archer',        cost: 30, combat: 15, rangedCombat: 25,range: 2, movePoints: 2, icon: '🏹', class: 'ranged',   desc: 'Strong ranged attacker, range 2' },
   spearman:  { name: 'Spearman',      cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 2, icon: '🔱', class: 'anti-cav', desc: '+10 vs cavalry units' },
   chariot:   { name: 'Heavy Chariot', cost: 40, combat: 28, rangedCombat: 0, range: 0, movePoints: 2, icon: '🐎', class: 'cavalry',  desc: 'Powerful mobile unit' },
@@ -194,6 +195,72 @@ export const PANTHEONS = [
   { id: 'monument_gods', name: 'Monument to the Gods', desc: '+15% Production towards Wonders', icon: '\u{1F3DB}' },
 ];
 
+// ============================================
+// DISTRICTS — placed on tiles within city borders
+// ============================================
+export const DISTRICTS = {
+  campus: {
+    name: 'Campus',
+    icon: '\u{1F4DC}',
+    desc: 'Centre of learning. +Science from adjacent mountains and woods.',
+    cost: 40,
+    buildings: ['library', 'academy', 'university'],
+    yields: { science: 1 },
+    adjacency: { mountain: { science: 2 }, woods: { science: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert', 'tundra'] },
+  },
+  holy_site: {
+    name: 'Holy Site',
+    icon: '\u{1F6D5}',
+    desc: 'Sacred ground. +Culture near natural wonders and woods.',
+    cost: 40,
+    buildings: ['temple', 'monument'],
+    yields: { culture: 1 },
+    adjacency: { natural_wonder: { culture: 2 }, woods: { culture: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert', 'tundra'] },
+  },
+  commercial_hub: {
+    name: 'Commercial Hub',
+    icon: '\u{2696}',
+    desc: 'Marketplace and trade. +Gold near rivers.',
+    cost: 50,
+    buildings: ['market', 'bank', 'bath'],
+    yields: { gold: 2 },
+    adjacency: { river: { gold: 2 }, harbor: { gold: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'desert'] },
+  },
+  encampment: {
+    name: 'Encampment',
+    icon: '\u{2694}',
+    desc: 'Military training grounds. +Military near hills.',
+    cost: 45,
+    buildings: ['barracks', 'blacksmith', 'fortress'],
+    yields: { military: 2 },
+    adjacency: { hills: { military: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'tundra'], notAdjacentToCity: true },
+  },
+  harbor: {
+    name: 'Harbor',
+    icon: '\u{2693}',
+    desc: 'Coastal trade and fishing. +Gold and Food from coast tiles.',
+    cost: 50,
+    buildings: ['harbor', 'lighthouse'],
+    yields: { gold: 1, food: 1 },
+    adjacency: { coast: { gold: 1 } },
+    placement: { requiresAdjacentWater: true },
+  },
+  garden_quarter: {
+    name: 'Garden Quarter',
+    icon: '\u{1F33F}',
+    desc: 'Fertile gardens and granaries. +Food near rivers and farms.',
+    cost: 35,
+    buildings: ['granary', 'garden', 'arena'],
+    yields: { food: 1 },
+    adjacency: { river: { food: 1 }, farm: { food: 1 } },
+    placement: { requiresTerrain: ['grassland', 'plains', 'floodplains'] },
+  },
+};
+
 export const UNIT_UNLOCKS = {
   scout: null,     // available immediately
   warrior: null,   // available immediately
@@ -316,7 +383,7 @@ export const TILE_IMPROVEMENTS = {
   // Production & Mining
   mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], yields: { prod: 2 }, desc: '+2 Production' },
   quarry:      { name: 'Quarry',       icon: '🪨', turns: 4, requires: 'masonry',     validOn: ['hills','plains'], yields: { prod: 1, gold: 1 }, requiresResource: ['stone'], desc: '+1 Prod, +1 Gold (on Stone)' },
-  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'mining',      validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest)' },
+  lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'construction', validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest, requires Construction)' },
 
   // Infrastructure
   road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },

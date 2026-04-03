@@ -1,4 +1,4 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
@@ -362,6 +362,57 @@ function render() {
           ctx.globalAlpha = 0.75;
           const impS = HEX_SIZE * 2.3;
           ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+        }
+      }
+      // Draw district sprites (rendered on top of terrain, below units)
+      if (tile.district) {
+        const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
+        if (distImg && distImg.complete && distImg.naturalWidth > 0) {
+          ctx.save();
+          // Clip to hex shape
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 180 * (60 * i - 30);
+            const hx = sx + HEX_SIZE * Math.cos(angle);
+            const hy = sy + HEX_SIZE * Math.sin(angle);
+            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath();
+          ctx.clip();
+          ctx.globalAlpha = 0.85;
+          const distS = HEX_SIZE * 2.3;
+
+          // Harbour: rotate sprite to face adjacent water
+          let distRotation = 0;
+          if (tile.district === 'harbor') {
+            const nbs = getHexNeighbors(c, r);
+            // Average the direction vectors toward all adjacent water tiles
+            let wx = 0, wy = 0, waterCount = 0;
+            for (const nb of nbs) {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              if (nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake')) {
+                const { x: nbx, y: nby } = hexToPixel(nb.col, nb.row);
+                wx += nbx - sx; wy += nby - sy;
+                waterCount++;
+              }
+            }
+            if (waterCount > 0) {
+              // Sprite default faces south (π/2 rad = down).
+              // Rotate so the dock side points toward water.
+              const waterAngle = Math.atan2(wy, wx);
+              distRotation = waterAngle - Math.PI / 2; // offset from default south-facing
+            }
+          }
+
+          if (distRotation !== 0) {
+            ctx.translate(sx, sy);
+            ctx.rotate(distRotation);
+            ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
+          } else {
+            ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
+          }
           ctx.globalAlpha = 1.0;
           ctx.restore();
         }
@@ -971,10 +1022,16 @@ function render() {
 
     // Determine unit colors based on owner
     let discBg, borderColor, iconColor;
+    const isBarbUnit = unit.owner === 'barbarian';
     if (isPlayer) {
       discBg = isSelected ? '#f0ebe0' : 'rgba(20,20,20,0.75)';
       borderColor = isSelected ? '#c9a84c' : '#c9a84c';
       iconColor = isSelected ? '#1a1400' : '#c9a84c';
+    } else if (isBarbUnit) {
+      // Barbarian units — red highlight
+      discBg = isSelected ? '#d44' : 'rgba(20,20,20,0.75)';
+      borderColor = '#d44';
+      iconColor = isSelected ? '#1a1400' : '#d44';
     } else {
       // Faction units — use faction color
       const faction = FACTIONS[unit.owner];
@@ -996,12 +1053,17 @@ function render() {
     // Faction color band at bottom of unit disc (for non-player units)
     if (!isPlayer) {
       const faction = FACTIONS[unit.owner];
-      if (faction) {
+      const bandColor = isBarbUnit ? '#d44' : (faction ? faction.color : null);
+      if (bandColor) {
         ctx.beginPath();
         ctx.arc(sx, uy, 11, Math.PI * 0.3, Math.PI * 0.7);
-        ctx.strokeStyle = faction.color;
+        ctx.strokeStyle = bandColor;
         ctx.lineWidth = 3;
         ctx.stroke();
+      }
+      // Draw red glowing hex ring around barbarian units
+      if (isBarbUnit) {
+        drawFactionRing(ctx, sx, sy, '#d44');
       }
     }
 
@@ -1270,6 +1332,10 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   if (tile.improvement && TILE_IMPROVEMENTS[tile.improvement]) {
     const imp = TILE_IMPROVEMENTS[tile.improvement];
     lines.push({ text: `${imp.icon} ${imp.name}`, bold: true, color: '#c9a84c' });
+  }
+  if (tile.district && DISTRICTS[tile.district]) {
+    const dist = DISTRICTS[tile.district];
+    lines.push({ text: `${dist.icon} ${dist.name} District`, bold: true, color: '#f0c848' });
   }
   if (tile.road) lines.push({ text: '\u{1F6E4}\uFE0F Road (half move cost)', color: '#8a7a5a' });
   if (tile.improvementBuilder) {

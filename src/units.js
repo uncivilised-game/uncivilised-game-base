@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOC
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
-import { resolveCombat, isAtWarWith, declareSurpriseWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
+import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
@@ -615,11 +615,7 @@ function handleHexClick(col, row) {
         if (target) {
           // Surprise attack check: non-barbarian units belonging to a faction we're not at war with
           if (target.owner !== 'barbarian' && !isAtWarWith(target.owner)) {
-            const faction = FACTIONS[target.owner];
-            const factionName = faction ? faction.name : target.owner;
-            const agreed = confirm('Are you sure? This will constitute a surprise attack and declare war on ' + factionName + '.');
-            if (!agreed) return;
-            declareSurpriseWar(target.owner, factionName);
+            if (!confirmAndDeclareWar(target.owner)) return;
           }
           // Civilian units (workers, settlers) are captured, not fought
           const targetType = UNIT_TYPES[target.type];
@@ -627,6 +623,12 @@ function handleHexClick(col, row) {
             const prevOwner = target.owner;
             target.owner = 'player';
             target.moveLeft = 0;
+            // Only melee units move onto the captured unit's tile
+            const attackerType = UNIT_TYPES[unit.type];
+            if (!attackerType || attackerType.rangedCombat <= 0 || attackerType.range <= 0) {
+              unit.col = target.col;
+              unit.row = target.row;
+            }
             const ownerName = FACTIONS[prevOwner] ? FACTIONS[prevOwner].name : prevOwner;
             addEvent(`Captured ${targetType.name} from ${ownerName}!`, 'combat');
             showToast('Unit Captured', `${targetType.name} captured from ${ownerName}!`);
@@ -705,19 +707,34 @@ function handleHexClick(col, row) {
 
     // Check what's at this hex — cycle through stacked units on repeat clicks
     const unitsHere = game.units.filter(u => u.col === col && u.row === row);
-    if (unitsHere.length > 0) {
-      if (unitsHere.length === 1) {
-        selectUnit(unitsHere[0]);
+    const playerUnitsHere = unitsHere.filter(u => u.owner === 'player');
+    const cityHere = getCityAt(col, row);
+
+    if (playerUnitsHere.length > 0) {
+      // If a player unit is already selected here, cycle: next unit or city
+      const currentlySelected = playerUnitsHere.find(u => u.id === game.selectedUnitId);
+      if (currentlySelected) {
+        const nextUnit = playerUnitsHere.find(u => u.id !== game.selectedUnitId);
+        if (nextUnit) {
+          selectUnit(nextUnit);
+        } else if (cityHere && cityHere.owner === 'player') {
+          // Cycled through all units — show city panel
+          deselectUnit();
+          game.selectedHex = { col, row };
+          showCityPanel(cityHere);
+        } else {
+          selectUnit(playerUnitsHere[0]);
+        }
       } else {
-        // Multiple units stacked — cycle: pick the one that ISN'T currently selected
-        const other = unitsHere.find(u => u.id !== game.selectedUnitId);
-        selectUnit(other || unitsHere[0]);
+        selectUnit(playerUnitsHere[0]);
       }
+      return;
+    } else if (unitsHere.length > 0) {
+      selectUnit(unitsHere[0]);
       return;
     }
 
-    // Check for city
-    const cityHere = getCityAt(col, row);
+    // Check for city (no player units on tile)
     if (cityHere) {
       deselectUnit();
       game.selectedHex = { col, row };
@@ -754,7 +771,15 @@ function handleHexClick(col, row) {
     if (bc) { interactWithBarbarianCamp(bc.id); return; }
   }
 
-  // Check what's here — city takes priority over unit (BUG-16)
+  // Check for player units on this tile first — they take priority over city panel
+  const unitsAtHex = game.units.filter(u => u.col === col && u.row === row);
+  const playerUnitsAtHex = unitsAtHex.filter(u => u.owner === 'player');
+  if (playerUnitsAtHex.length > 0) {
+    selectUnit(playerUnitsAtHex[0]);
+    return;
+  }
+
+  // City panel (only if no player units on tile)
   const cityHere = getCityAt(col, row);
   if (cityHere) {
     game.selectedHex = { col, row };
@@ -762,14 +787,9 @@ function handleHexClick(col, row) {
     return;
   }
 
-  const unitsAtHex = game.units.filter(u => u.col === col && u.row === row);
+  // Non-player units
   if (unitsAtHex.length > 0) {
-    if (unitsAtHex.length === 1) {
-      selectUnit(unitsAtHex[0]);
-    } else {
-      const other = unitsAtHex.find(u => u.id !== game.selectedUnitId);
-      selectUnit(other || unitsAtHex[0]);
-    }
+    selectUnit(unitsAtHex[0]);
     return;
   }
 
@@ -779,7 +799,7 @@ function handleHexClick(col, row) {
 }
 
 function autoSelectNext() {
-  const movable = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified);
+  const movable = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified && !u.alert);
   if (movable.length > 0) {
     selectUnit(movable[0]);
   } else {
@@ -828,7 +848,7 @@ window.upgradeUnit = upgradeUnit;
 
 function selectNextUnit() {
   if (!game || !game.units.length) return;
-  const movableUnits = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified);
+  const movableUnits = game.units.filter(u => u.owner === 'player' && u.moveLeft > 0 && !u.sleeping && !u.fortified && !u.alert);
   if (movableUnits.length === 0) {
     deselectUnit();
     return;
