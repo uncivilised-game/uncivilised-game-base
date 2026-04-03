@@ -439,7 +439,7 @@ function togglePanel(id) {
 
 function closeAllPanels() {
   if (isAdvisorChatActive()) closeAdvisorChat();
-  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'].forEach(id => {
+  ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'game-over', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel', 'government-panel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -847,36 +847,6 @@ function renderBuildPanel() {
       div.addEventListener('click', () => recruitUnit(tid));
     } else if (prereqMet && !canBuy) {
       div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
-    }
-    container.appendChild(div);
-  }
-
-  // --- Government Section ---
-  const govH = document.createElement('p');
-  govH.style.cssText = 'color:#d4a0ff;margin-top:14px;margin-bottom:8px;font-size:13px;font-weight:600;border-bottom:1px solid var(--color-border);padding-bottom:4px';
-  const curGov = GOVERNMENTS[game.government] || GOVERNMENTS.chiefdom;
-  govH.textContent = '\u{1F3DB} Government: ' + (curGov.icon || '') + ' ' + curGov.name;
-  container.appendChild(govH);
-
-  for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
-    if (gid === game.government) continue;
-    const techOk = !gov.unlockTech || game.techs.includes(gov.unlockTech);
-    const div = document.createElement('div');
-    div.className = 'build-item ' + (!techOk ? 'item-disabled' : '');
-    const govTechName = !techOk ? getTechNameById(gov.unlockTech) : '';
-    if (!techOk) div.title = 'Requires ' + govTechName;
-    div.innerHTML = '<div class="item-info"><div class="item-name">' + (gov.icon || '') + ' ' + gov.name + '</div>'
-      + '<div class="item-desc">' + gov.desc + (!techOk ? ' (Requires ' + govTechName + ')' : '') + '</div></div>'
-      + '<div class="item-cost" style="color:#d4a0ff;font-size:11px">Switch</div>';
-    if (techOk) {
-      div.addEventListener('click', ((gidCopy) => () => {
-        if (game.governmentCooldown > 0) { addEvent('Government cooldown: ' + game.governmentCooldown + ' turns remaining', 'gold'); return; }
-        game.government = gidCopy;
-        game.governmentCooldown = 10;
-        addEvent('Government changed to ' + GOVERNMENTS[gidCopy].name, 'gold');
-        renderBuildPanel();
-        updateUI();
-      })(gid));
     }
     container.appendChild(div);
   }
@@ -1451,6 +1421,178 @@ function toggleCivicsPanel() {
   }
 }
 
+// --- Government Panel ---
+
+function getGovernmentCivicReq(govId) {
+  // Map government IDs to their civic unlock keys
+  const govUnlockMap = { despotism: 'despotism_gov', classical_republic: 'republic_gov', oligarchy: 'oligarchy_gov' };
+  const unlockKey = govUnlockMap[govId];
+  if (!unlockKey) return null;
+  return CIVICS.find(c => c.unlocks && c.unlocks.includes(unlockKey)) || null;
+}
+
+function isGovernmentUnlocked(govId) {
+  const gov = GOVERNMENTS[govId];
+  if (!gov) return false;
+  // Chiefdom is always available
+  if (!gov.unlockTech) return true;
+  // Need the tech
+  if (!game.techs.includes(gov.unlockTech)) return false;
+  // Need the civic
+  const civicReq = getGovernmentCivicReq(govId);
+  if (civicReq && !game.civics.includes(civicReq.id)) return false;
+  return true;
+}
+
+function ensureGovernmentPanel() {
+  let panel = document.getElementById('government-panel');
+  if (panel) return panel;
+  panel = document.createElement('div');
+  panel.id = 'government-panel';
+  panel.className = 'panel';
+  panel.style.cssText = 'display:none;position:fixed;top:60px;right:10px;width:340px;max-height:70vh;overflow-y:auto;background:var(--color-panel-bg,#1a1a2e);border:1px solid var(--color-border,#333);border-radius:8px;padding:16px;z-index:200;color:#e0e0e0;font-size:13px';
+  panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#d4a0ff;font-size:15px">\u{1F3DB} Government</h3><button class="panel-close" style="background:none;border:none;color:#aaa;font-size:18px;cursor:pointer" onclick="this.closest(\'.panel\').style.display=\'none\'">\u2715</button></div><div id="government-options"></div>';
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function renderGovernmentPanel() {
+  const panel = ensureGovernmentPanel();
+  const container = panel.querySelector('#government-options');
+  container.innerHTML = '';
+
+  const curGov = GOVERNMENTS[game.government] || GOVERNMENTS.chiefdom;
+
+  // Current government section
+  const curDiv = document.createElement('div');
+  curDiv.style.cssText = 'margin-bottom:14px;padding:12px;background:rgba(212,160,255,0.1);border:1px solid rgba(212,160,255,0.3);border-radius:6px';
+  const bonusLines = [];
+  if (curGov.bonuses) {
+    if (curGov.bonuses.scienceBonus) bonusLines.push('+' + Math.round(curGov.bonuses.scienceBonus * 100) + '% Science');
+    if (curGov.bonuses.militaryProdBonus) bonusLines.push('+' + Math.round(curGov.bonuses.militaryProdBonus * 100) + '% Military Production');
+    if (curGov.bonuses.cultureBonus) bonusLines.push('+' + Math.round(curGov.bonuses.cultureBonus * 100) + '% Culture');
+    if (curGov.bonuses.wonderProdBonus) bonusLines.push('+' + Math.round(curGov.bonuses.wonderProdBonus * 100) + '% Wonder Production');
+    if (curGov.bonuses.foodBonus) bonusLines.push('+' + Math.round(curGov.bonuses.foodBonus * 100) + '% Food');
+    if (curGov.bonuses.buildingProdBonus) bonusLines.push('+' + Math.round(curGov.bonuses.buildingProdBonus * 100) + '% Building Production');
+  }
+  const bonusHtml = bonusLines.length > 0
+    ? '<div style="margin-top:6px;font-size:11px;color:#b0ffb0">' + bonusLines.map(b => '<div>' + b + '</div>').join('') + '</div>'
+    : '<div style="margin-top:4px;font-size:11px;color:var(--color-text-muted)">No bonuses</div>';
+  const slotsHtml = '<div style="margin-top:4px;font-size:11px;color:#aaa">Policy slots: ' + (curGov.slots || 0) + '</div>';
+  const cooldownHtml = game.governmentCooldown > 0
+    ? '<div style="margin-top:4px;font-size:11px;color:#ffd700">Cooldown: ' + game.governmentCooldown + ' turns remaining</div>'
+    : '';
+  curDiv.innerHTML = '<div style="font-size:14px;font-weight:600;color:#d4a0ff">' + (curGov.icon || '') + ' ' + curGov.name + ' <span style="font-size:11px;color:#aaa;font-weight:normal">(current)</span></div>'
+    + '<div style="font-size:12px;color:#ccc;margin-top:4px">' + curGov.desc + '</div>'
+    + bonusHtml + slotsHtml + cooldownHtml;
+  container.appendChild(curDiv);
+
+  // Available governments header
+  const availH = document.createElement('p');
+  availH.style.cssText = 'color:#b0ffb0;margin-top:4px;margin-bottom:8px;font-size:12px;font-weight:600;border-bottom:1px solid rgba(176,255,176,0.2);padding-bottom:3px';
+  availH.textContent = 'Available Governments';
+  container.appendChild(availH);
+
+  let hasAvailable = false;
+  for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
+    if (gid === game.government) continue;
+    if (!isGovernmentUnlocked(gid)) continue;
+    hasAvailable = true;
+
+    const div = document.createElement('div');
+    div.className = 'build-item';
+    div.style.cursor = 'pointer';
+    const gBonuses = [];
+    if (gov.bonuses) {
+      if (gov.bonuses.scienceBonus) gBonuses.push('+' + Math.round(gov.bonuses.scienceBonus * 100) + '% Science');
+      if (gov.bonuses.militaryProdBonus) gBonuses.push('+' + Math.round(gov.bonuses.militaryProdBonus * 100) + '% Military Prod');
+      if (gov.bonuses.cultureBonus) gBonuses.push('+' + Math.round(gov.bonuses.cultureBonus * 100) + '% Culture');
+      if (gov.bonuses.wonderProdBonus) gBonuses.push('+' + Math.round(gov.bonuses.wonderProdBonus * 100) + '% Wonder Prod');
+      if (gov.bonuses.foodBonus) gBonuses.push('+' + Math.round(gov.bonuses.foodBonus * 100) + '% Food');
+      if (gov.bonuses.buildingProdBonus) gBonuses.push('+' + Math.round(gov.bonuses.buildingProdBonus * 100) + '% Building Prod');
+    }
+    div.innerHTML = '<div class="item-info"><div class="item-name" style="color:#d4a0ff">' + (gov.icon || '') + ' ' + gov.name + '</div>'
+      + '<div class="item-desc">' + gov.desc + '</div>'
+      + (gBonuses.length > 0 ? '<div style="font-size:10px;color:#b0ffb0;margin-top:2px">' + gBonuses.join(' | ') + '</div>' : '')
+      + '<div style="font-size:10px;color:#aaa;margin-top:1px">Policy slots: ' + (gov.slots || 0) + '</div>'
+      + '</div>'
+      + '<div class="item-cost" style="color:#d4a0ff;font-size:11px">Switch</div>';
+    div.addEventListener('click', ((gidCopy) => () => {
+      if (game.governmentCooldown > 0) {
+        addEvent('Government cooldown: ' + game.governmentCooldown + ' turns remaining', 'gold');
+        return;
+      }
+      game.government = gidCopy;
+      game.governmentCooldown = 10;
+      addEvent('Government changed to ' + GOVERNMENTS[gidCopy].name, 'gold');
+      renderGovernmentPanel();
+      updateUI();
+    })(gid));
+    container.appendChild(div);
+  }
+
+  if (!hasAvailable) {
+    const noAvail = document.createElement('p');
+    noAvail.style.cssText = 'color:var(--color-text-muted);font-size:11px;font-style:italic;margin-bottom:8px';
+    noAvail.textContent = 'No other governments available yet';
+    container.appendChild(noAvail);
+  }
+
+  // Locked governments header
+  const lockedGovs = Object.entries(GOVERNMENTS).filter(([gid]) => gid !== game.government && !isGovernmentUnlocked(gid));
+  if (lockedGovs.length > 0) {
+    const lockedH = document.createElement('p');
+    lockedH.style.cssText = 'color:#ff8080;margin-top:14px;margin-bottom:8px;font-size:12px;font-weight:600;border-bottom:1px solid rgba(255,128,128,0.2);padding-bottom:3px';
+    lockedH.textContent = 'Locked Governments';
+    container.appendChild(lockedH);
+
+    for (const [gid, gov] of lockedGovs) {
+      const techOk = !gov.unlockTech || game.techs.includes(gov.unlockTech);
+      const civicReq = getGovernmentCivicReq(gid);
+      const civicOk = !civicReq || game.civics.includes(civicReq.id);
+
+      const reqs = [];
+      if (!techOk) {
+        const techName = getTechNameById(gov.unlockTech);
+        reqs.push('Research: ' + techName);
+      }
+      if (!civicOk) {
+        reqs.push('Civic: ' + civicReq.name);
+      }
+
+      const div = document.createElement('div');
+      div.className = 'build-item item-disabled';
+      div.style.pointerEvents = 'auto';
+      div.style.cursor = 'default';
+      div.title = 'Requires: ' + reqs.join(', ');
+      div.innerHTML = '<div class="item-info"><div class="item-name" style="color:#888">' + (gov.icon || '') + ' ' + gov.name + '</div>'
+        + '<div class="item-desc">' + gov.desc + '</div>'
+        + '<div style="font-size:10px;color:#ff8080;margin-top:2px">' + reqs.join(' | ') + '</div>'
+        + '</div>'
+        + '<div class="item-cost" style="color:#666;font-size:10px">\u{1F512}</div>';
+      container.appendChild(div);
+    }
+  }
+}
+
+function toggleGovernmentPanel() {
+  const panel = ensureGovernmentPanel();
+  if (panel.style.display === 'none' || !panel.style.display) {
+    closeAllPanels();
+    panel.style.display = 'block';
+    renderGovernmentPanel();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function openGovernmentPanel() {
+  closeAllPanels();
+  const panel = ensureGovernmentPanel();
+  panel.style.display = 'block';
+  renderGovernmentPanel();
+}
+
 function renderResearchPanel() {
   const container = document.getElementById('research-options');
   container.innerHTML = '';
@@ -1635,6 +1777,11 @@ export {
   ensureCivicsPanel,
   renderCivicsPanel,
   toggleCivicsPanel,
+  ensureGovernmentPanel,
+  renderGovernmentPanel,
+  toggleGovernmentPanel,
+  openGovernmentPanel,
+  isGovernmentUnlocked,
   renderResearchPanel,
   setTechGoal,
   clearTechGoal,

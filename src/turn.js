@@ -8,7 +8,7 @@ import { addEvent, logAction, showToast, showCompletionNotification, generateFac
 import { processAIWonderTurns, cancelAIWonderBuilders, processAIDistrictTurns } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
-import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement } from './ui-panels.js';
+import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement, openGovernmentPanel, isGovernmentUnlocked } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { discoverVisibleFactions, revealAround } from './discovery.js';
@@ -656,6 +656,8 @@ function endTurn() {
     if (!tdata) { game.currentResearch = null; game.researchProgress = 0; }
     else if (game.researchProgress >= tdata.cost) {
       const completedTechId = game.currentResearch;
+      // Snapshot unlocked governments before adding tech
+      const govsBefore = new Set(Object.keys(GOVERNMENTS).filter(gid => isGovernmentUnlocked(gid)));
       game.techs.push(completedTechId);
       events.push(`${tdata.name} discovered!`);
       addEvent(`Technology: ${tdata.name} discovered!`, 'science');
@@ -664,6 +666,15 @@ function endTurn() {
       // Show completion notification with prompt
       showCompletionNotification('research', tdata.name, tdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F4A1} Research Complete', tdata.name + ' researched!');
+      // Check if this tech unlocked a new government
+      for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
+        if (gid === game.government) continue;
+        if (!govsBefore.has(gid) && isGovernmentUnlocked(gid)) {
+          showToast('\u{1F3DB} New Government', (gov.icon || '') + ' ' + gov.name + ' is now available!', 5000);
+          addEvent('New government unlocked: ' + gov.name, 'gold');
+          setTimeout(() => openGovernmentPanel(), 600);
+        }
+      }
 
       // --- Reveal strategic resources gated by this tech ---
       const newlyRevealed = Object.entries(RESOURCES)
@@ -745,12 +756,23 @@ function endTurn() {
     game.civicProgress += game.culturePerTurn;
     const cdata = CIVICS.find(c => c.id === game.currentCivic);
     if (cdata && game.civicProgress >= cdata.cost) {
+      // Snapshot unlocked governments before adding civic
+      const govsBefore = new Set(Object.keys(GOVERNMENTS).filter(gid => isGovernmentUnlocked(gid)));
       game.civics.push(game.currentCivic);
       events.push('Civic: ' + cdata.name + ' adopted!');
       addEvent('Civic: ' + cdata.name + ' adopted!', 'gold');
       // Check if unlocks pantheon
       if (cdata.unlocks && cdata.unlocks.includes('pantheon') && !game.pantheon) {
         setTimeout(() => showPantheonPicker(), 500);
+      }
+      // Check if this civic unlocked a new government
+      for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
+        if (gid === game.government) continue;
+        if (!govsBefore.has(gid) && isGovernmentUnlocked(gid)) {
+          showToast('\u{1F3DB} New Government', (gov.icon || '') + ' ' + gov.name + ' is now available!', 5000);
+          addEvent('New government unlocked: ' + gov.name, 'gold');
+          setTimeout(() => openGovernmentPanel(), 600);
+        }
       }
       game.currentCivic = null;
       game.civicProgress = 0;
