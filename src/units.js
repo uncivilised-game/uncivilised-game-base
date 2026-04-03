@@ -282,6 +282,15 @@ function computeRiverCrossings() {
   return riverTiles;
 }
 
+// When multiple enemy units share a tile, prefer the combat unit over civilians
+// so that attackers must defeat the military escort before capturing civilians.
+function getBestAttackTarget(col, row, ownerPredicate) {
+  const candidates = game.units.filter(u => u.col === col && u.row === row && ownerPredicate(u));
+  if (candidates.length === 0) return null;
+  const combatUnit = candidates.find(u => UNIT_TYPES[u.type]?.class !== 'civilian');
+  return combatUnit || candidates[0];
+}
+
 function computeAttackRange() {
   if (!game || !game.selectedUnitId) return null;
   const unit = game.units.find(u => u.id === game.selectedUnitId);
@@ -295,7 +304,7 @@ function computeAttackRange() {
     for (let r = 0; r < MAP_ROWS; r++) {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, unit.col, unit.row) <= ut.range) {
-          const enemy = game.units.find(u => u.col === c && u.row === r && u.owner !== 'player');
+          const enemy = getBestAttackTarget(c, r, u => u.owner !== 'player');
           if (enemy) attackable.set(`${c},${r}`, enemy.id);
           // Also check for enemy cities
           for (const [fid, fc] of Object.entries(game.factionCities)) {
@@ -320,7 +329,7 @@ function computeAttackRange() {
   } else if (unit.moveLeft > 0 || !unit.hasAttackedThisTurn) {
     const neighbors = getHexNeighbors(unit.col, unit.row);
     for (const nb of neighbors) {
-      const enemy = game.units.find(u => u.col === nb.col && u.row === nb.row && u.owner !== 'player');
+      const enemy = getBestAttackTarget(nb.col, nb.row, u => u.owner !== 'player');
       if (enemy) {
         attackable.set(`${nb.col},${nb.row}`, enemy.id);
       } else {
@@ -875,6 +884,7 @@ export {
   computeMoveRange,
   computeRiverCrossings,
   computeAttackRange,
+  getBestAttackTarget,
   moveUnitTo,
   reconstructMovePath,
   selectUnit,
