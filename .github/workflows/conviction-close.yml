@@ -2,8 +2,8 @@ name: Conviction Close
 
 on:
   schedule:
-    # Daily at 6am UTC (offset from triage at 8am/8pm)
-    - cron: '0 6 * * *'
+    # Every 2 hours (even hours UTC, same as triage)
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

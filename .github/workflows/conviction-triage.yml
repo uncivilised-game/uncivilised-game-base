@@ -2,8 +2,8 @@ name: Conviction Triage
 
 on:
   schedule:
-    # Twice daily: 8am and 8pm UTC
-    - cron: '0 8,20 * * *'
+    # Every 2 hours (even hours UTC)
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * *'
   workflow_dispatch: # manual trigger
 
 jobs:
