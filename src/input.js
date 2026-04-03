@@ -4,7 +4,7 @@ import { hexToPixel, pixelToHex } from './hex.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
 import { handleHexClick, selectUnit, deselectUnit, selectNextUnit, autoSelectNext } from './units.js';
 import { endTurn } from './turn.js';
-import { togglePanel, closeAllPanels, renderBuildPanel, renderResearchPanel, renderUnitsPanel, toggleCivicsPanel, toggleVictoryPanel } from './ui-panels.js';
+import { togglePanel, closeAllPanels, renderBuildPanel, renderResearchPanel, renderUnitsPanel, toggleCivicsPanel, toggleVictoryPanel, toggleGovernmentPanel } from './ui-panels.js';
 import { renderDiplomacyPanel } from './diplomacy-api.js';
 import { updateUI } from './leaderboard.js';
 import { addEvent, showToast } from './events.js';
@@ -149,6 +149,7 @@ export function initInputHandlers() {
         else if (key === 'u') { e.preventDefault(); togglePanel('units-panel'); }
         else if (key === 't') { e.preventDefault(); toggleCivicsPanel(); }
         else if (key === 'v') { e.preventDefault(); toggleVictoryPanel(); }
+        else if (key === 'g') { e.preventDefault(); toggleGovernmentPanel(); }
         else if (key === 'a') { e.preventDefault(); togglePanel('advisor-panel'); }
         else if (key === 'c') {
           e.preventDefault();
@@ -178,7 +179,7 @@ export function initInputHandlers() {
     // Escape key closes any open panel or overlay
     if (e.key === 'Escape') {
       if (isAdvisorChatActive()) closeAdvisorChat();
-      const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel'];
+      const panels = ['diplomacy-panel', 'chat-panel', 'build-panel', 'research-panel', 'tile-info', 'turn-summary', 'units-panel', 'selection-panel', 'civics-panel', 'victory-panel', 'leaderboard-panel', 'advisor-panel', 'government-panel'];
       let closed = false;
       for (const id of panels) {
         const el = document.getElementById(id);
