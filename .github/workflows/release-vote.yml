@@ -1,9 +1,9 @@
 name: Release Vote
 
 on:
-  schedule:
-    # Weekly on Monday at 12pm UTC
-    - cron: '0 12 * * 1'
+  # schedule:
+  #   # Weekly on Monday at 12pm UTC
+  #   - cron: '0 12 * * 1'
   workflow_dispatch:
     inputs:
       action:
@@ -42,6 +42,11 @@ jobs:
         run: |
           git fetch origin main
           git fetch origin devel
+
+      - name: Ensure release-vote label exists
+        run: gh label create release-vote --description "Community release vote" --color 0E8A16 --force
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run release vote script
         env:

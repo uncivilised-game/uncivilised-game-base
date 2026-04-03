@@ -117,7 +117,7 @@ jobs:
                - Game-specific: state mutations, save/load compatibility, render correctness
                - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
                - Style: consistency with existing codebase patterns
-            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+            6. BLAST RADIUS ANALYSIS:
                - Grep the codebase for every function/variable/export touched by the PR
                - List all callers and dependents of changed code (in both repos)
                - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
@@ -195,7 +195,7 @@ jobs:
                - Game-specific: state mutations, save/load compatibility, render correctness
                - Plugin compatibility: changed/removed exports that diplomacy imports via @game/ aliases
                - Style: consistency with existing codebase patterns
-            6. BLAST RADIUS ANALYSIS (critical — this project has no test suite):
+            6. BLAST RADIUS ANALYSIS:
                - Grep the codebase for every function/variable/export touched by the PR
                - List all callers and dependents of changed code (in both repos)
                - Flag any shared-state mutations (the `game` object, window globals) that could have side effects
