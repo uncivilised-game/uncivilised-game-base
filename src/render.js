@@ -371,6 +371,16 @@ function render() {
         const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
         if (distImg && distImg.complete && distImg.naturalWidth > 0) {
           ctx.save();
+          // Clip to hex shape
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 180 * (60 * i - 30);
+            const hx = sx + HEX_SIZE * Math.cos(angle);
+            const hy = sy + HEX_SIZE * Math.sin(angle);
+            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath();
+          ctx.clip();
           ctx.globalAlpha = 0.85;
           const distS = HEX_SIZE * 2.3;
           ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
