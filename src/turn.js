@@ -1,14 +1,14 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
-import { processImprovements, getImprovementYields } from './improvements.js';
+import { processImprovements, getImprovementYields, getAvailableImprovements, startImprovement } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
-import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
+import { processAIWonderTurns, cancelAIWonderBuilders, processAIDistrictTurns } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
-import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
+import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { discoverVisibleFactions, revealAround } from './discovery.js';
@@ -227,15 +227,61 @@ function endTurn() {
       }
     }
 
-    // Alert: wake up if enemy within 3 hexes
+    // Alert: wake up if threat detected nearby
     if (unit.alert) {
+      const ALERT_RANGE = 4;
+      let wakeReason = '';
+
+      // 1. Enemy or barbarian unit within alert range
       const nearbyEnemy = game.units.find(u =>
-        u.owner !== 'player' && hexDistance(u.col, u.row, unit.col, unit.row) <= 3
+        u.owner !== 'player' && u.owner !== unit.owner &&
+        hexDistance(u.col, u.row, unit.col, unit.row) <= ALERT_RANGE
       );
       if (nearbyEnemy) {
+        const enemyType = UNIT_TYPES[nearbyEnemy.type];
+        const ownerName = FACTIONS[nearbyEnemy.owner]?.name || nearbyEnemy.owner;
+        wakeReason = `spotted ${ownerName} ${enemyType?.name || 'unit'} nearby!`;
+      }
+
+      // 2. New enemy expansion city founded within alert range
+      if (!wakeReason) {
+        for (const [fid, cities] of Object.entries(game.aiFactionCities || {})) {
+          for (const ec of cities) {
+            if (hexDistance(ec.col, ec.row, unit.col, unit.row) <= ALERT_RANGE) {
+              const fName = FACTIONS[fid]?.name || fid;
+              wakeReason = `${fName} founded a city nearby!`;
+              break;
+            }
+          }
+          if (wakeReason) break;
+        }
+      }
+
+      // 3. Barbarian camp within alert range
+      if (!wakeReason && game.barbarianCamps) {
+        const nearbyCamp = game.barbarianCamps.find(bc =>
+          !bc.destroyed && hexDistance(bc.col, bc.row, unit.col, unit.row) <= ALERT_RANGE
+        );
+        if (nearbyCamp) {
+          wakeReason = 'barbarian camp detected nearby!';
+        }
+      }
+
+      // 4. War declared against player this turn
+      if (!wakeReason) {
+        const newWar = (game.aiWars || []).find(w =>
+          w.defender === 'player' && w.startTurn === game.turn
+        );
+        if (newWar) {
+          const aggressorName = FACTIONS[newWar.attacker]?.name || newWar.attacker;
+          wakeReason = `${aggressorName} declared war!`;
+        }
+      }
+
+      if (wakeReason) {
         unit.alert = false;
         unit.sleeping = false;
-        addEvent(`${ut.name} spotted an enemy!`, 'combat');
+        addEvent(`${ut.name} woke up — ${wakeReason}`, 'combat');
       }
     }
   }
@@ -253,6 +299,9 @@ function endTurn() {
   try {
     processAIWonderTurns();
   } catch (e) { console.error('Error in processAIWonderTurns:', e); }
+  try {
+    processAIDistrictTurns();
+  } catch (e) { console.error('Error in processAIDistrictTurns:', e); }
 
   // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
   resetTurnActions();
@@ -401,6 +450,39 @@ function endTurn() {
     }
   }
 
+  // --- Player City Ranged Strikes ---
+  // Player cities fire at nearby non-player units (same as AI cities do)
+  if (game.cities) {
+    for (const city of game.cities) {
+      if (!city.hp || city.hp <= 0) continue;
+      const range = CITY_DEFENSE.RANGED_STRIKE_RANGE;
+      let bestTarget = null, bestDist = Infinity;
+      // Find closest non-player unit within range
+      for (const unit of game.units) {
+        if (unit.owner === 'player') continue;
+        const d = hexDistance(unit.col, unit.row, city.col, city.row);
+        if (d <= range && d < bestDist) { bestDist = d; bestTarget = unit; }
+      }
+      if (bestTarget) {
+        // Damage scales with city HP, base is RANGED_STRIKE_STRENGTH
+        const cityHPRatio = city.hp !== undefined ? city.hp / CITY_DEFENSE.BASE_HP : 1;
+        let strikeDmg = Math.max(3, Math.floor(CITY_DEFENSE.RANGED_STRIKE_STRENGTH * cityHPRatio));
+        // Add wall bonus if city has walls
+        if (city.wallHP !== undefined && city.wallHP > 0) {
+          strikeDmg += 5;
+        }
+        bestTarget.hp -= strikeDmg;
+        const targetType = UNIT_TYPES[bestTarget.type];
+        const targetName = targetType ? targetType.name : 'unit';
+        addEvent(city.name + ' bombards the ' + targetName + '! (-' + strikeDmg + ' HP)', 'combat');
+        if (bestTarget.hp <= 0) {
+          game.units = game.units.filter(u => u.id !== bestTarget.id);
+          addEvent('Enemy ' + targetName + ' destroyed by ' + city.name + "'s defenses!", 'combat');
+        }
+      }
+    }
+  }
+
   _turnSection = 'improvements';
   // --- Process tile improvements ---
   processImprovements();
@@ -463,36 +545,71 @@ function endTurn() {
     game.unitBuildProgress += prodThisTurn;
     const ut = UNIT_TYPES[game.currentUnitBuild];
     if (ut && game.unitBuildProgress >= ut.cost) {
-      const city = game.cities[0];
-      const neighbors = getHexNeighbors(city.col, city.row);
+      // Place unit near the city that started the build (fallback to any city with room)
+      const buildCityIdx = game.unitBuildCityIdx || 0;
+      const cityOrder = [...game.cities];
+      // Put the build city first, then try others
+      if (buildCityIdx > 0 && buildCityIdx < cityOrder.length) {
+        const buildCity = cityOrder.splice(buildCityIdx, 1)[0];
+        cityOrder.unshift(buildCity);
+      }
       let placed = false;
-      for (const nb of neighbors) {
-        const tile = game.map[nb.row][nb.col];
-        if (!isTilePassable(tile)) continue;
-        if (getUnitAt(nb.col, nb.row)) continue;
-        const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
-        newUnit.moveLeft = 0;
-        game.units.push(newUnit);
-        game.military += Math.floor(ut.combat / 4);
-        placed = true;
-        break;
+      let placedCity = null;
+      for (const city of cityOrder) {
+        const neighbors = getHexNeighbors(city.col, city.row);
+        for (const nb of neighbors) {
+          const tile = game.map[nb.row][nb.col];
+          if (!isTilePassable(tile)) continue;
+          if (getUnitAt(nb.col, nb.row)) continue;
+          const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
+          newUnit.moveLeft = 0;
+          game.units.push(newUnit);
+          game.military += Math.floor(ut.combat / 4);
+          placed = true;
+          placedCity = city;
+          break;
+        }
+        if (placed) break;
       }
       if (placed) {
         if (game.currentUnitBuild === 'settler') {
           game.population = Math.max(500, game.population - 500);
-          const mc = game.cities[0];
-          if (mc) mc.population = Math.max(500, (mc.population || game.population) - 500);
+          if (placedCity) placedCity.population = Math.max(500, (placedCity.population || game.population) - 500);
         }
         events.push(`${ut.name} trained!`);
-        addEvent(`${ut.name} trained!`, 'combat');
+        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!`, 'combat');
         game.currentUnitBuild = null;
         game.unitBuildProgress = 0;
+        game.unitBuildCityIdx = 0;
         showCompletionNotification('unit', ut.name, ut.desc);
         if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!');
       } else {
         addEvent(`${ut.name} ready but no room — clear tiles near city`, 'combat');
         game.unitBuildProgress = ut.cost;
       }
+    }
+  } else if (game.currentDistrictBuild) {
+    game.districtBuildProgress += prodThisTurn;
+    const ddata = DISTRICTS[game.currentDistrictBuild];
+    if (!ddata) { game.currentDistrictBuild = null; game.districtBuildProgress = 0; game.districtBuildTarget = null; }
+    else if (game.districtBuildProgress >= ddata.cost) {
+      // District completed — place it on the map
+      let target = game.districtBuildTarget;
+      // Re-validate: if the target tile already has a district, find a new spot
+      if (target && game.map[target.row] && game.map[target.row][target.col] &&
+          game.map[target.row][target.col].district) {
+        target = findDistrictPlacement(game.currentDistrictBuild);
+      }
+      if (target && game.map[target.row] && game.map[target.row][target.col]) {
+        placePlayerDistrict(game.currentDistrictBuild, target);
+      }
+      events.push(ddata.icon + ' ' + ddata.name + ' district completed!');
+      addEvent(ddata.icon + ' ' + ddata.name + ' district completed!', 'gold');
+      showCompletionNotification('district', ddata.name, ddata.desc);
+      if (typeof showToast === 'function') showToast('\u{1F3D8} District Complete', ddata.name + ' district placed!');
+      game.currentDistrictBuild = null;
+      game.districtBuildProgress = 0;
+      game.districtBuildTarget = null;
     }
   } else if (game.currentWonderBuild) {
     // Check if another faction already completed this wonder (AI scooped it)
@@ -589,6 +706,37 @@ function endTurn() {
   }
   // Pantheon bonus
   if (game.pantheon === 'earth_goddess') cpt += 1;
+  // District culture bonuses
+  if (game.playerDistricts) {
+    for (const did of game.playerDistricts) {
+      const dd = DISTRICTS[did];
+      if (dd && dd.yields && dd.yields.culture) cpt += dd.yields.culture;
+    }
+    // Add adjacency culture bonuses from placed districts
+    for (let r = 0; r < MAP_ROWS; r++) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        const tile = game.map[r][c];
+        if (tile.district && game.playerDistricts.includes(tile.district)) {
+          const dd = DISTRICTS[tile.district];
+          if (dd && dd.adjacency) {
+            const nbs = getHexNeighbors(c, r);
+            for (const nb of nbs) {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              if (!nt) continue;
+              for (const [adjType, yields] of Object.entries(dd.adjacency)) {
+                if (!yields.culture) continue;
+                let match = false;
+                if (adjType === 'mountain' && nt.feature === 'mountain') match = true;
+                else if (adjType === 'woods' && (nt.feature === 'woods' || nt.feature === 'rainforest')) match = true;
+                else if (adjType === 'natural_wonder' && nt.naturalWonder) match = true;
+                if (match) cpt += yields.culture;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   game.culturePerTurn = cpt;
   game.culture += cpt;
 
@@ -777,6 +925,12 @@ function endTurn() {
   // --- Update faction AI economies ---
   updateFactionStats();
 
+  // --- AI unit spawning (same costs as player) ---
+  processAIUnitSpawning();
+
+  // --- AI worker auto-improve & settler auto-found ---
+  processAIWorkerImprovements();
+
   // --- Embassy turn processing (gossip accumulation) ---
   ensureEmbassyState();
   processEmbassyTurn();
@@ -914,44 +1068,7 @@ function endTurn() {
     }
   }
 
-  // --- Gold spending: rush-buy units if gold is piling up AND production is idle ---
-  if (game.gold > 100 && !game.currentBuild && !game.currentUnitBuild && game.units.filter(u => u.owner === 'player').length < 6) {
-    // Buy a unit near the capital — check two rings of hexes
-    const city = game.cities[0];
-    if (city) {
-      const ring1 = getHexNeighbors(city.col, city.row);
-      const ring2 = [];
-      for (const nb of ring1) {
-        for (const nb2 of getHexNeighbors(nb.col, nb.row)) {
-          if (nb2.col !== city.col || nb2.row !== city.row) ring2.push(nb2);
-        }
-      }
-      const candidates = [...ring1, ...ring2];
-      const open = candidates.find(nb => {
-        const tile = game.map[nb.row][nb.col];
-        return isTilePassable(tile) && !getUnitAt(nb.col, nb.row);
-      });
-      if (open) {
-        // Pick unit based on what we need
-        let unitType = 'warrior';
-        const playerUnits = game.units.filter(u => u.owner === 'player');
-        const hasArcher = playerUnits.some(u => u.type === 'archer');
-        const hasSpearman = playerUnits.some(u => u.type === 'spearman');
-        if (game.techs.includes('archery') && !hasArcher) unitType = 'archer';
-        else if (game.techs.includes('bronze_working') && !hasSpearman) unitType = 'spearman';
-        else if (game.gold > 150 && game.techs.includes('the_wheel')) unitType = 'chariot';
-        const cost = UNIT_TYPES[unitType].cost;
-        if (game.gold >= cost * 2) { // Gold-buy at 2x cost
-          game.gold -= cost * 2;
-          const newUnit = createUnit(unitType, open.col, open.row, 'player');
-          game.units.push(newUnit);
-          game.military += UNIT_TYPES[unitType].combat;
-          addEvent(`Recruited ${UNIT_TYPES[unitType].name} (gold purchase)`, 'combat');
-          showCompletionNotification('unit', UNIT_TYPES[unitType].name, `${UNIT_TYPES[unitType].combat} combat, ${UNIT_TYPES[unitType].movePoints} moves`);
-        }
-      }
-    }
-  }
+  // Player unit purchases are manual only — no auto-buy
 
   _turnSection = 'fog_and_score';
   // --- Expand fog around cities and units ---
@@ -1118,4 +1235,242 @@ function showGameOver(victory) {
   document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory };
+// ============================================
+// AI UNIT SPAWNING (same costs as player)
+// ============================================
+
+function processAIUnitSpawning() {
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    const stats = game.factionStats?.[fid];
+    if (!stats) continue;
+    const traits = FACTION_TRAITS[fid] || {};
+
+    const factionUnits = game.units.filter(u => u.owner === fid);
+    const workerCount = factionUnits.filter(u => u.type === 'worker').length;
+    const settlerCount = factionUnits.filter(u => u.type === 'settler').length;
+    const militaryCount = factionUnits.filter(u => UNIT_TYPES[u.type]?.combat > 0).length;
+
+    const spawnTile = findSpawnTile(fc.col, fc.row, fid);
+    if (!spawnTile) continue;
+
+    // Worker spawning (cost: 30, max 1 at a time)
+    if (workerCount === 0 && stats.gold >= UNIT_TYPES.worker.cost) {
+      stats.gold -= UNIT_TYPES.worker.cost;
+      game.units.push(createUnit('worker', spawnTile.col, spawnTile.row, fid));
+      continue;
+    }
+
+    // Settler spawning (cost: 60, pop >= threshold, -500 pop, max 1 expansion city)
+    const expansionCities = game.aiFactionCities[fid] || [];
+    const settlerThreshold = traits.settlerThreshold || 2000;
+    if (settlerCount === 0 && expansionCities.length < 1 &&
+        stats.population >= settlerThreshold &&
+        stats.gold >= UNIT_TYPES.settler.cost) {
+      stats.gold -= UNIT_TYPES.settler.cost;
+      stats.population -= 500;
+      fc.population = Math.max(500, (fc.population || 1000) - 500);
+      game.units.push(createUnit('settler', spawnTile.col, spawnTile.row, fid));
+      continue;
+    }
+
+    // Military unit spawning (same gold-buy cost as player: 2x unit cost)
+    // AI can have max ~4 military units (similar to player early-game capacity)
+    if (militaryCount < 4 && stats.gold >= 40) {
+      let unitType = 'warrior';
+      const cost = UNIT_TYPES[unitType].cost;
+      // Same 2x gold-buy cost as the player auto-buy system
+      if (stats.gold >= cost * 2) {
+        stats.gold -= cost * 2;
+        const milSpawn = findSpawnTile(fc.col, fc.row, fid);
+        if (milSpawn) {
+          game.units.push(createUnit(unitType, milSpawn.col, milSpawn.row, fid));
+        }
+      }
+    }
+  }
+}
+
+function findSpawnTile(col, row, factionId) {
+  const neighbors = getHexNeighbors(col, row);
+  for (const nb of neighbors) {
+    const tile = game.map[nb.row]?.[nb.col];
+    if (!tile) continue;
+    if (!isTilePassable(tile)) continue;
+    if (getUnitAt(nb.col, nb.row)) continue;
+    return nb;
+  }
+  return null;
+}
+
+// ============================================
+// AI WORKER AUTO-IMPROVEMENTS & SETTLER AUTO-FOUND
+// ============================================
+
+function processAIWorkerImprovements() {
+  // AI workers auto-improve
+  const aiWorkers = game.units.filter(u => u.type === 'worker' && u.owner !== 'player');
+  for (const worker of aiWorkers) {
+    if (worker.sleeping) continue;
+    if (worker.buildCharges !== undefined && worker.buildCharges <= 0) continue;
+
+    const fid = worker.owner;
+    const traits = FACTION_TRAITS[fid] || {};
+    const priority = traits.improvePriority || ['farm', 'mine', 'road'];
+
+    if (tryAIImprove(worker, priority)) continue;
+    moveAIWorkerTowardWork(worker, fid, priority);
+  }
+
+  // AI settlers auto-found
+  const aiSettlers = game.units.filter(u => u.type === 'settler' && u.owner !== 'player');
+  for (const settler of aiSettlers) {
+    const fid = settler.owner;
+    if (canAIFoundCityAt(settler.col, settler.row, fid)) {
+      foundAICity(settler, fid);
+    } else {
+      moveAISettlerTowardSite(settler, fid);
+    }
+  }
+}
+
+function tryAIImprove(worker, priority) {
+  const tile = game.map[worker.row]?.[worker.col];
+  if (!tile || tile.improvement || tile.road || tile.improvementBuilder) return false;
+  const isCity = game.cities.some(c => c.col === worker.col && c.row === worker.row) ||
+    Object.values(game.factionCities).some(fc => fc.col === worker.col && fc.row === worker.row);
+  if (isCity) return false;
+
+  for (const impId of priority) {
+    const imp = TILE_IMPROVEMENTS[impId];
+    if (!imp) continue;
+    if (impId !== 'road' && tile.improvement === impId) continue;
+    if (impId === 'road' && tile.road) continue;
+    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) continue;
+    if (imp.validFeature && !imp.validFeature.includes(tile.feature)) continue;
+    if (imp.requiresRiver && !tile.hasRiver) continue;
+    if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
+    if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && impId !== 'fishing_boats') continue;
+    if (tile.feature === 'mountain') continue;
+    if (imp.terraform) continue;
+
+    startImprovement(worker.id, impId);
+    return true;
+  }
+  return false;
+}
+
+function moveAIWorkerTowardWork(worker, fid, priority) {
+  if (worker.moveLeft <= 0) return;
+  const cities = [];
+  if (game.factionCities[fid]) cities.push(game.factionCities[fid]);
+  if (game.aiFactionCities[fid]) cities.push(...game.aiFactionCities[fid]);
+
+  let bestTile = null, bestDist = Infinity;
+  for (const city of cities) {
+    const radius = city.borderRadius || 2;
+    for (const nb of getHexNeighbors(city.col, city.row)) {
+      const t = game.map[nb.row]?.[nb.col];
+      if (!t || t.improvement || t.road || t.improvementBuilder) continue;
+      if (!isTilePassable(t)) continue;
+      if (t.feature === 'mountain') continue;
+      if (cities.some(c => c.col === nb.col && c.row === nb.row)) continue;
+      if (hexDistance(nb.col, nb.row, city.col, city.row) > radius) continue;
+      const dist = hexDistance(worker.col, worker.row, nb.col, nb.row);
+      if (dist < bestDist) { bestDist = dist; bestTile = nb; }
+    }
+  }
+
+  if (bestTile && bestDist > 0) {
+    const neighbors = getHexNeighbors(worker.col, worker.row);
+    let closest = null, closestDist = bestDist;
+    for (const nb of neighbors) {
+      const t = game.map[nb.row]?.[nb.col];
+      if (!t || !isTilePassable(t)) continue;
+      if (getUnitAt(nb.col, nb.row)) continue;
+      const d = hexDistance(nb.col, nb.row, bestTile.col, bestTile.row);
+      if (d < closestDist) { closestDist = d; closest = nb; }
+    }
+    if (closest) { worker.col = closest.col; worker.row = closest.row; worker.moveLeft--; }
+  }
+}
+
+function canAIFoundCityAt(col, row, fid) {
+  const tile = game.map[row]?.[col];
+  if (!tile) return false;
+  if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
+  if (tile.feature === 'mountain') return false;
+  for (const city of game.cities) {
+    if (hexDistance(col, row, city.col, city.row) < 4) return false;
+  }
+  for (const fc of Object.values(game.factionCities)) {
+    if (hexDistance(col, row, fc.col, fc.row) < 4) return false;
+  }
+  for (const cities of Object.values(game.aiFactionCities || {})) {
+    for (const ec of cities) {
+      if (hexDistance(col, row, ec.col, ec.row) < 4) return false;
+    }
+  }
+  return true;
+}
+
+function foundAICity(settler, fid) {
+  const faction = FACTIONS[fid];
+  const factionName = faction ? faction.name : 'Unknown';
+  const cityNames = ['Outpost', 'Forward Camp', 'Frontier', 'Haven', 'Garrison', 'Reach'];
+  const existing = (game.aiFactionCities[fid] || []).map(c => c.name);
+  const available = cityNames.filter(n => !existing.includes(factionName + ' ' + n));
+  const cityName = available.length > 0
+    ? factionName + ' ' + available[Math.floor(Math.random() * available.length)]
+    : factionName + ' Colony';
+
+  if (!game.aiFactionCities[fid]) game.aiFactionCities[fid] = [];
+  game.aiFactionCities[fid].push({
+    name: cityName, col: settler.col, row: settler.row,
+    color: faction?.color || '#888', hp: 100, population: 500,
+    borderRadius: 1, improvements: 0, wallHP: 0, wallMaxHP: 0, wallLastAttackedTurn: -99,
+  });
+
+  game.units = game.units.filter(u => u.id !== settler.id);
+  if (game.metFactions?.[fid]) {
+    addEvent(`${factionName} founded ${cityName}!`, 'world');
+  }
+}
+
+function moveAISettlerTowardSite(settler, fid) {
+  if (settler.moveLeft <= 0) return;
+  const capital = game.factionCities[fid];
+  if (!capital) return;
+
+  let bestSite = null, bestScore = -Infinity;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const c = Math.max(0, Math.min(MAP_COLS - 1, capital.col + Math.floor(Math.random() * 16) - 8));
+    const r = Math.max(0, Math.min(MAP_ROWS - 1, capital.row + Math.floor(Math.random() * 12) - 6));
+    if (!canAIFoundCityAt(c, r, fid)) continue;
+    const dist = hexDistance(c, r, capital.col, capital.row);
+    if (dist < 5 || dist > 12) continue;
+    let landNbs = 0;
+    for (const nb of getHexNeighbors(c, r)) {
+      const t = game.map[nb.row]?.[nb.col]?.base;
+      if (t && t !== 'ocean' && t !== 'coast') landNbs++;
+    }
+    const score = landNbs * 5 - Math.abs(dist - 8) + Math.random() * 3;
+    if (score > bestScore) { bestScore = score; bestSite = { col: c, row: r }; }
+  }
+
+  if (bestSite) settler._targetSite = bestSite;
+  const target = settler._targetSite;
+  if (!target) return;
+
+  const neighbors = getHexNeighbors(settler.col, settler.row);
+  let closest = null, closestDist = hexDistance(settler.col, settler.row, target.col, target.row);
+  for (const nb of neighbors) {
+    const t = game.map[nb.row]?.[nb.col];
+    if (!t || !isTilePassable(t)) continue;
+    if (getUnitAt(nb.col, nb.row)) continue;
+    const d = hexDistance(nb.col, nb.row, target.col, target.row);
+    if (d < closestDist) { closestDist = d; closest = nb; }
+  }
+  if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
+}
+
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements };
