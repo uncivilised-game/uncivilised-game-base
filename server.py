@@ -175,6 +175,23 @@ def _sb_count(table: str, filters: str = "") -> int:
     return len(r.json())
 
 
+def _verify_player(access_token: str, player_name: str | None = None) -> tuple[bool, str]:
+    """Verify access token and optionally check player_name matches."""
+    if not _sb_ok or not access_token:
+        return False, ""
+    try:
+        filters = f"access_token=eq.{quote(access_token)}"
+        rows = _sb_select("players", select="username", filters=filters, limit=1)
+        if not rows:
+            return False, ""
+        canonical = rows[0]["username"]
+        if player_name and canonical.lower() != player_name.strip().lower():
+            return False, ""
+        return True, canonical
+    except Exception:
+        return False, ""
+
+
 # Anthropic client
 _api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 print(f"[INFO] Anthropic API key: {'set (' + _api_key[:12] + '...)' if _api_key else 'NOT SET'}")
@@ -408,7 +425,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
-    competition_id: Optional[str] = None
+    competition_id: int | str | None = None
 
 
 class ClaimUsername(BaseModel):
@@ -788,11 +805,28 @@ async def save_game(data: SaveData, request: Request):
     visitor_id = request.headers.get("x-visitor-id", "anonymous")
     ts = time.time()
 
+    # Basic sanity checks on game state to reject obviously tampered saves
+    gs = data.game_state
+    if not isinstance(gs, dict):
+        return {"saved": False, "error": "Invalid game state"}
+    gold = gs.get("gold", 0)
+    turn = gs.get("turn", 1)
+    score = gs.get("score", 0)
+    if not isinstance(gold, (int, float)) or gold > 100000:
+        return {"saved": False, "error": "Invalid game state values"}
+    if not isinstance(turn, int) or turn < 1 or turn > 200:
+        return {"saved": False, "error": "Invalid turn value"}
+    if not isinstance(score, (int, float)) or score > 10000:
+        return {"saved": False, "error": "Invalid score value"}
+    state_json = json.dumps(gs)
+    if len(state_json) > 2_000_000:
+        return {"saved": False, "error": "Save data too large"}
+
     if _sb_ok:
         try:
             _sb_upsert("game_saves", {
                 "visitor_id": visitor_id,
-                "game_state": json.dumps(data.game_state),
+                "game_state": state_json,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }, on_conflict="visitor_id")
             return {"saved": True, "timestamp": ts}
@@ -835,9 +869,15 @@ async def load_game(request: Request):
 # ═══════════════════════════════════════════════════
 @app.post("/api/leaderboard")
 async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
+    access_token = request.headers.get("x-access-token", "")
     player_name = entry.player_name.strip()[:20]
-    if not player_name:
-        return {"success": False, "error": "Player name required"}
+    if not player_name or not access_token:
+        return {"success": False, "error": "Authentication required"}
+
+    valid, canonical = _verify_player(access_token, player_name)
+    if not valid:
+        return {"success": False, "error": "Invalid access token"}
+    player_name = canonical
 
     # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
     # 5000 gives plenty of headroom without relying on client-supplied inputs.
@@ -848,17 +888,24 @@ async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
     if entry.score < 10 or entry.turns_played < 2:
         return {"success": False, "error": "Score too low for leaderboard"}
 
+    if entry.turns_played > 200:
+        return {"success": False, "error": "Invalid turns count"}
+
+    # Clamp fields to valid ranges
+    factions_eliminated = max(0, min(entry.factions_eliminated, 20))
+    cities_count = max(1, min(entry.cities_count, 100))
+
     record = {
         "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
-        "factions_eliminated": entry.factions_eliminated,
-        "cities_count": entry.cities_count,
+        "factions_eliminated": factions_eliminated,
+        "cities_count": cities_count,
         "game_version": entry.game_version,
     }
     if entry.competition_id:
-        record["competition_id"] = entry.competition_id
+        record["competition_id"] = str(entry.competition_id)
 
     if _sb_ok:
         try:

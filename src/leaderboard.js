@@ -31,9 +31,12 @@ async function fetchCurrentCompetition() {
 async function checkSessionLimit(playerName) {
   if (!currentCompetition || !playerName) return { allowed: true, sessionsUsed: 0, reason: null };
   try {
-    const res = await sbFetch('active_games?player_name=eq.' + encodeURIComponent(playerName) + '&competition_id=eq.' + currentCompetition.id + '&finished=eq.false&order=started_at.desc&limit=1');
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+    const res = await fetch(API + '/api/active-games/current?player_name=' + encodeURIComponent(playerName) + '&competition_id=' + currentCompetition.id, {
+      headers: { 'x-access-token': accessToken },
+    });
     const rows = await res.json();
-    if (rows.length === 0) return { allowed: true, sessionsUsed: 0, reason: null, existing: null };
+    if (!Array.isArray(rows) || rows.length === 0) return { allowed: true, sessionsUsed: 0, reason: null, existing: null };
     const ag = rows[0];
     if (ag.sessions_used >= ag.max_sessions) {
       return { allowed: false, sessionsUsed: ag.sessions_used, reason: 'You have used all ' + ag.max_sessions + ' sessions for this week\'s competition. Your game has been submitted.', existing: ag };
@@ -46,20 +49,18 @@ async function checkSessionLimit(playerName) {
 async function registerActiveGame(playerName) {
   if (!currentCompetition || !playerName) return;
   try {
-    const res = await sbFetch('active_games', {
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+    const res = await fetch(API + '/api/active-games/register', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
       body: JSON.stringify({
         player_name: playerName.substring(0, 20),
         competition_id: currentCompetition.id,
         game_id: game.gameId || Date.now(),
-        sessions_used: 1,
-        max_sessions: 3,
-        turn: 1,
-        score: 0,
       }),
     });
     const data = await res.json();
-    if (data.length > 0) setActiveGameRecord(data[0]);
+    if (Array.isArray(data) && data.length > 0) setActiveGameRecord(data[0]);
   } catch (e) {}
 }
 
@@ -67,15 +68,16 @@ async function registerActiveGame(playerName) {
 async function incrementSession(existingRecord) {
   if (!existingRecord) return;
   try {
-    await sbFetch('active_games?id=eq.' + existingRecord.id, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        sessions_used: (existingRecord.sessions_used || 0) + 1,
-        last_session_at: new Date().toISOString(),
-      }),
-      headers: { 'Content-Type': 'application/json' },
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+    const res = await fetch(API + '/api/active-games/increment-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
+      body: JSON.stringify({ id: existingRecord.id }),
     });
-    setActiveGameRecord({ ...existingRecord, sessions_used: (existingRecord.sessions_used || 0) + 1 });
+    const data = await res.json();
+    if (data.success) {
+      setActiveGameRecord({ ...existingRecord, sessions_used: data.sessions_used });
+    }
   } catch (e) {}
 }
 
@@ -83,10 +85,11 @@ async function incrementSession(existingRecord) {
 async function updateActiveGameProgress() {
   if (!activeGameRecord || !game) return;
   try {
-    await sbFetch('active_games?id=eq.' + activeGameRecord.id, {
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+    await fetch(API + '/api/active-games/update', {
       method: 'PATCH',
-      body: JSON.stringify({ turn: game.turn, score: game.score }),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
+      body: JSON.stringify({ id: activeGameRecord.id, turn: game.turn, score: game.score }),
     });
   } catch (e) {}
 }
@@ -95,10 +98,11 @@ async function updateActiveGameProgress() {
 async function finishActiveGame() {
   if (!activeGameRecord) return;
   try {
-    await sbFetch('active_games?id=eq.' + activeGameRecord.id, {
+    const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+    await fetch(API + '/api/active-games/update', {
       method: 'PATCH',
-      body: JSON.stringify({ finished: true, turn: game.turn, score: game.score }),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
+      body: JSON.stringify({ id: activeGameRecord.id, finished: true, turn: game.turn, score: game.score }),
     });
   } catch (e) {}
 }
@@ -116,9 +120,10 @@ function submitToLeaderboard(playerName, victory) {
   };
   // Route through /api/leaderboard so the server can validate the score
   const accessToken = safeStorage.getItem('uncivilised_access_token') || '';
+  const visitorId = safeStorage.getItem('uncivilised_visitor_id') || '';
   fetch(API + '/api/leaderboard', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken },
+    headers: { 'Content-Type': 'application/json', 'x-access-token': accessToken, 'x-visitor-id': visitorId },
     body: JSON.stringify(payload),
   }).catch(() => {});
   finishActiveGame();

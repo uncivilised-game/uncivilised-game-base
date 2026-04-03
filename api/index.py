@@ -280,6 +280,27 @@ def _sb_count(table: str, filters: str = "") -> int:
     return len(r.json())
 
 
+def _verify_player(access_token: str, player_name: str | None = None) -> tuple[bool, str]:
+    """Verify access token and optionally check player_name matches.
+
+    Returns (valid: bool, canonical_username: str).
+    If player_name is provided, also verifies it matches the token owner.
+    """
+    if not _sb_ok or not access_token:
+        return False, ""
+    try:
+        filters = f"access_token=eq.{quote(access_token)}"
+        rows = _sb_select("players", select="username", filters=filters, limit=1)
+        if not rows:
+            return False, ""
+        canonical = rows[0]["username"]
+        if player_name and canonical.lower() != player_name.strip().lower():
+            return False, ""
+        return True, canonical
+    except Exception:
+        return False, ""
+
+
 def _check_rate_limit(caller_id: str) -> tuple[bool, str]:
     """Check and increment rate limit counter in Supabase.
 
@@ -408,7 +429,7 @@ class LeaderboardEntry(BaseModel):
     factions_eliminated: int = 0
     cities_count: int = 1
     game_version: int = GAME_VERSION
-    competition_id: str | None = None
+    competition_id: int | str | None = None
 
 
 class ClaimUsername(BaseModel):
@@ -1038,11 +1059,32 @@ async def save_game(data: SaveData, request: Request):
     visitor_id = request.headers.get("x-visitor-id", "anonymous")
     ts = time.time()
 
+    # Basic sanity checks on game state to reject obviously tampered saves
+    gs = data.game_state
+    if not isinstance(gs, dict):
+        return {"saved": False, "error": "Invalid game state"}
+
+    # Reject saves with impossible values
+    gold = gs.get("gold", 0)
+    turn = gs.get("turn", 1)
+    score = gs.get("score", 0)
+    if not isinstance(gold, (int, float)) or gold > 100000:
+        return {"saved": False, "error": "Invalid game state values"}
+    if not isinstance(turn, int) or turn < 1 or turn > 200:
+        return {"saved": False, "error": "Invalid turn value"}
+    if not isinstance(score, (int, float)) or score > 10000:
+        return {"saved": False, "error": "Invalid score value"}
+
+    # Reject oversized payloads (legitimate saves are <1MB)
+    state_json = json.dumps(gs)
+    if len(state_json) > 2_000_000:
+        return {"saved": False, "error": "Save data too large"}
+
     if _sb_ok:
         try:
             _sb_upsert("game_saves", {
                 "visitor_id": visitor_id,
-                "game_state": json.dumps(data.game_state),
+                "game_state": state_json,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }, on_conflict="visitor_id")
             return {"saved": True, "timestamp": ts}
@@ -1091,19 +1133,10 @@ async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
     if not player_name or not access_token:
         return {"success": False, "error": "Authentication required"}
 
-    if _sb_ok:
-        rows = _sb_select(
-            "players", select="username,access_token",
-            filters=f"username_lower=eq.{quote(player_name.lower())}",
-            limit=1,
-        )
-        if not rows:
-            return {"success": False, "error": "Player not registered"}
-        stored_token = rows[0].get("access_token") or ""
-        if not stored_token or stored_token != access_token:
-            return {"success": False, "error": "Invalid access token"}
-        # Use the canonical username from the DB
-        player_name = rows[0]["username"]
+    valid, canonical = _verify_player(access_token, player_name)
+    if not valid:
+        return {"success": False, "error": "Invalid access token"}
+    player_name = canonical
 
     # Hard cap: even a perfect 100-turn domination victory can't exceed ~3500.
     # 5000 gives plenty of headroom without relying on client-supplied inputs.
@@ -1114,17 +1147,49 @@ async def submit_leaderboard(entry: LeaderboardEntry, request: Request):
     if entry.score < 10 or entry.turns_played < 2:
         return {"success": False, "error": "Score too low for leaderboard"}
 
+    # Validate turns_played is within game limits
+    if entry.turns_played > 200:
+        return {"success": False, "error": "Invalid turns count"}
+
+    # Cross-validate score against saved game state when available
+    if _sb_ok:
+        visitor_id = request.headers.get("x-visitor-id", "")
+        if visitor_id:
+            try:
+                saves = _sb_select(
+                    "game_saves", select="game_state",
+                    filters=f"visitor_id=eq.{quote(visitor_id)}", limit=1,
+                )
+                if saves:
+                    gs = saves[0].get("game_state", {})
+                    if isinstance(gs, str):
+                        gs = json.loads(gs)
+                    saved_score = gs.get("score", 0)
+                    saved_turn = gs.get("turn", 0)
+                    # Allow some tolerance (score can increase on the final turn
+                    # after the last save) but reject wild discrepancies
+                    if entry.score > saved_score * 1.5 + 200:
+                        return {"success": False, "error": "Score doesn't match game state"}
+                    if entry.turns_played > saved_turn + 5:
+                        return {"success": False, "error": "Turns don't match game state"}
+            except Exception:
+                pass  # Don't block submission if cross-validation fails
+
+    # Clamp fields to valid ranges
+    factions_eliminated = max(0, min(entry.factions_eliminated, 20))
+    cities_count = max(1, min(entry.cities_count, 100))
+
     record = {
         "player_name": player_name,
         "score": entry.score,
         "turns_played": entry.turns_played,
         "victory_type": entry.victory_type,
-        "factions_eliminated": entry.factions_eliminated,
-        "cities_count": entry.cities_count,
+        "factions_eliminated": factions_eliminated,
+        "cities_count": cities_count,
         "game_version": entry.game_version,
     }
     if entry.competition_id:
-        record["competition_id"] = entry.competition_id
+        record["competition_id"] = str(entry.competition_id)
 
     if _sb_ok:
         try:
@@ -2050,14 +2115,175 @@ Respond with EXACTLY this JSON format (no other text):
 
 
 # ═══════════════════════════════════════════════════
+# /api/active-games — server-validated competition game tracking
+# Replaces raw active_games proxy writes to prevent IDOR & session bypass
+# ═══════════════════════════════════════════════════
+_MAX_SESSIONS_CAP = 3  # Server-enforced max sessions per competition game
+
+
+class ActiveGameRegister(BaseModel):
+    player_name: str
+    competition_id: int | str
+    game_id: int | str
+
+
+class ActiveGameUpdate(BaseModel):
+    turn: int | None = None
+    score: int | None = None
+    finished: bool | None = None
+
+
+@app.get("/api/active-games/current")
+async def get_active_game(request: Request):
+    """Get the current active game for the authenticated player in a competition."""
+    access_token = request.headers.get("x-access-token", "")
+    player_name = request.query_params.get("player_name", "")
+    competition_id = request.query_params.get("competition_id", "")
+
+    if not access_token or not player_name:
+        return {"error": "Authentication required", "rows": []}
+
+    valid, canonical = _verify_player(access_token, player_name)
+    if not valid:
+        return {"error": "Invalid credentials", "rows": []}
+
+    if not _sb_ok:
+        return {"rows": []}
+
+    try:
+        filters = (
+            f"player_name=eq.{quote(canonical)}"
+            f"&competition_id=eq.{quote(str(competition_id))}"
+            f"&finished=eq.false&order=started_at.desc"
+        )
+        rows = _sb_select("active_games", filters=filters, limit=1)
+        return rows  # Return as array for client compat
+    except Exception as e:
+        return {"error": str(e), "rows": []}
+
+
+@app.post("/api/active-games/register")
+async def register_active_game(data: ActiveGameRegister, request: Request):
+    """Register a new active game. Server enforces max_sessions."""
+    access_token = request.headers.get("x-access-token", "")
+    if not access_token:
+        return {"error": "Authentication required"}
+
+    valid, canonical = _verify_player(access_token, data.player_name)
+    if not valid:
+        return {"error": "Invalid credentials"}
+
+    if not _sb_ok:
+        return {"error": "Database unavailable"}
+
+    try:
+        record = {
+            "player_name": canonical[:20],
+            "competition_id": data.competition_id,
+            "game_id": data.game_id,
+            "sessions_used": 1,
+            "max_sessions": _MAX_SESSIONS_CAP,
+            "turn": 1,
+            "score": 0,
+        }
+        rows = _sb_insert("active_games", record, return_data=True)
+        return rows  # Return as array for client compat
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/active-games/increment-session")
+async def increment_session(request: Request):
+    """Increment session count. Server validates ownership and enforces cap."""
+    access_token = request.headers.get("x-access-token", "")
+    body = await request.json()
+    record_id = body.get("id")
+
+    if not access_token or not record_id:
+        return {"error": "Authentication required"}
+
+    valid, canonical = _verify_player(access_token)
+    if not valid:
+        return {"error": "Invalid credentials"}
+
+    if not _sb_ok:
+        return {"error": "Database unavailable"}
+
+    try:
+        # Fetch the record and verify ownership
+        rows = _sb_select("active_games", filters=f"id=eq.{quote(str(record_id))}", limit=1)
+        if not rows:
+            return {"error": "Record not found"}
+        record = rows[0]
+        if record["player_name"].lower() != canonical.lower():
+            return {"error": "Access denied"}
+        if record.get("finished"):
+            return {"error": "Game already finished"}
+
+        current = record.get("sessions_used", 0)
+        max_sess = min(record.get("max_sessions", _MAX_SESSIONS_CAP), _MAX_SESSIONS_CAP)
+        if current >= max_sess:
+            return {"error": "Session limit reached"}
+
+        _sb_update("active_games", {
+            "sessions_used": current + 1,
+            "last_session_at": datetime.now(timezone.utc).isoformat(),
+        }, f"id=eq.{quote(str(record_id))}")
+        return {"success": True, "sessions_used": current + 1}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.patch("/api/active-games/update")
+async def update_active_game(request: Request):
+    """Update game progress (turn/score/finished). Server validates ownership."""
+    access_token = request.headers.get("x-access-token", "")
+    body = await request.json()
+    record_id = body.get("id")
+
+    if not access_token or not record_id:
+        return {"error": "Authentication required"}
+
+    valid, canonical = _verify_player(access_token)
+    if not valid:
+        return {"error": "Invalid credentials"}
+
+    if not _sb_ok:
+        return {"error": "Database unavailable"}
+
+    try:
+        # Verify ownership
+        rows = _sb_select("active_games", filters=f"id=eq.{quote(str(record_id))}", limit=1)
+        if not rows:
+            return {"error": "Record not found"}
+        if rows[0]["player_name"].lower() != canonical.lower():
+            return {"error": "Access denied"}
+
+        # Only allow updating specific safe fields
+        update = {}
+        if "turn" in body and isinstance(body["turn"], int) and 1 <= body["turn"] <= 200:
+            update["turn"] = body["turn"]
+        if "score" in body and isinstance(body["score"], (int, float)) and 0 <= body["score"] <= 5000:
+            update["score"] = int(body["score"])
+        if "finished" in body and body["finished"] is True:
+            update["finished"] = True
+
+        if update:
+            _sb_update("active_games", update, f"id=eq.{quote(str(record_id))}")
+        return {"success": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ═══════════════════════════════════════════════════
 # /api/db — server-side proxy for client DB operations
 # Replaces direct Supabase anon key access from the browser
 # ═══════════════════════════════════════════════════
 # Allowlisted tables that the client can read/write via proxy
 _DB_PROXY_READ = {'competitions', 'active_games', 'leaderboard'}
+# active_games writes now go through dedicated /api/active-games/* endpoints
 # leaderboard and players writes go through dedicated endpoints (/api/leaderboard, /api/claim-username)
-# so they can be validated server-side before touching the DB
-_DB_PROXY_WRITE = {'active_games'}
+_DB_PROXY_WRITE = set()  # No direct proxy writes — all go through validated endpoints
 
 
 @app.api_route("/api/db/{path:path}", methods=["GET", "POST", "PATCH"])
