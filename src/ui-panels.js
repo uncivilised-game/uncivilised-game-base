@@ -1629,6 +1629,7 @@ export {
   cancelProduction,
   startWonderBuild,
   startDistrictBuild,
+  findDistrictPlacement,
   placePlayerDistrict,
   computeAdjacencyBonus,
   ensureCivicsPanel,

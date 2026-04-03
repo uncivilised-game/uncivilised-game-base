@@ -8,7 +8,7 @@ import { addEvent, logAction, showToast, showCompletionNotification, generateFac
 import { processAIWonderTurns, cancelAIWonderBuilders, processAIDistrictTurns } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
-import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict } from './ui-panels.js';
+import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { discoverVisibleFactions, revealAround } from './discovery.js';
@@ -594,7 +594,12 @@ function endTurn() {
     if (!ddata) { game.currentDistrictBuild = null; game.districtBuildProgress = 0; game.districtBuildTarget = null; }
     else if (game.districtBuildProgress >= ddata.cost) {
       // District completed — place it on the map
-      const target = game.districtBuildTarget;
+      let target = game.districtBuildTarget;
+      // Re-validate: if the target tile already has a district, find a new spot
+      if (target && game.map[target.row] && game.map[target.row][target.col] &&
+          game.map[target.row][target.col].district) {
+        target = findDistrictPlacement(game.currentDistrictBuild);
+      }
       if (target && game.map[target.row] && game.map[target.row][target.col]) {
         placePlayerDistrict(game.currentDistrictBuild, target);
       }
