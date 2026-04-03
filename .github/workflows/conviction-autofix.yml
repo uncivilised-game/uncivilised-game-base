@@ -2,8 +2,8 @@ name: Conviction Autofix
 
 on:
   schedule:
-    # Twice daily: 10am and 10pm UTC (2 hours after triage creates/updates issues)
-    - cron: '0 10,22 * * *'
+    # Every 2 hours (odd hours UTC, 1h after triage)
+    - cron: '0 1,3,5,7,9,11,13,15,17,19,21,23 * * *'
   workflow_dispatch: # manual trigger
 
 concurrency:

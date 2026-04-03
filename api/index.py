@@ -70,7 +70,7 @@ WELCOME_EMAIL_HTML = """
 <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
 <tr><td style="text-align:center;padding:0 0 8px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:700;color:#c9a84c;letter-spacing:3px">UNCIVILIZED</span> <span style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:600;color:#c9a84c;letter-spacing:2px;vertical-align:super">BETA</span></td></tr>
 <tr><td style="padding:0 0 32px"><div style="height:1px;background:linear-gradient(to right,transparent,#c9a84c40,transparent)"></div></td></tr>
-<tr><td style="color:#e8e0d0;font-size:16px;line-height:26px;padding:0 0 24px">Welcome, beta tester. You're one of the first 1,000 players helping us shape this game.</td></tr>
+<tr><td style="color:#e8e0d0;font-size:16px;line-height:26px;padding:0 0 24px">Welcome, beta tester. You're one of the first 10,000 players helping us shape this game.</td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 24px">Uncivilized is a free-to-play 4X strategy game where every faction leader is powered by AI. They think. They remember what you said three turns ago. They negotiate, betray, and form alliances through actual conversation &mdash; not scripted dialogue trees.</td></tr>
 <tr><td style="padding:0 0 20px"><span style="font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#c9a84c">What we're building</span></td></tr>
 <tr><td style="color:#b8b0a0;font-size:15px;line-height:25px;padding:0 0 8px">
@@ -1594,6 +1594,7 @@ async def spots_remaining():
 async def verify_access(request: Request):
     """Server-side gate: check if current player is allowed to start a game."""
     username = request.headers.get("x-player-name", "").strip()
+    access_token = request.headers.get("x-access-token", "")
     if not username or username == "anonymous":
         return {"allowed": False, "reason": "not_signed_up"}
 
@@ -1604,7 +1605,7 @@ async def verify_access(request: Request):
         try:
             rows = _sb_select(
                 "players",
-                select="status,email_verified,role",
+                select="status,email_verified,role,access_token",
                 filters=f"username_lower=eq.{quote(username.lower())}",
                 limit=1,
             )
@@ -1624,6 +1625,11 @@ async def verify_access(request: Request):
 
         player = rows[0]
         role = player.get("role", "user") or "user"
+
+        # Validate access token
+        stored_token = player.get("access_token") or ""
+        if not access_token or not stored_token or not _hmac_mod.compare_digest(stored_token, str(access_token)):
+            return {"allowed": False, "reason": "invalid_token"}
 
         # Admin/dev accounts always get access
         if role in ("admin", "dev"):
