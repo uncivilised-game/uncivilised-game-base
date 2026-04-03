@@ -677,7 +677,7 @@ function isResourceRevealed(resourceId, revealedList) {
   return revealed.includes(resourceId);
 }
 
-function getTileYields(tile) {
+function getTileYields(tile, factionId = 'player') {
   const bInfo = BASE_TERRAIN[tile.base];
   if (!bInfo) return { food: 0, prod: 0, gold: 0 };
   let food = bInfo.food, prod = bInfo.prod, gold = bInfo.gold;
@@ -702,9 +702,9 @@ function getTileYields(tile) {
   prod += impYields.prod;
   gold += impYields.gold;
 
-  // Apply mod yield bonuses from diplomatic agreements
+  // Apply mod yield bonuses scoped to the requesting faction only
   if (game && game.yieldBonuses) {
-    const modBonus = getModYieldBonus(tile);
+    const modBonus = getModYieldBonus(tile, factionId);
     food += modBonus.food;
     prod += modBonus.prod;
     gold += modBonus.gold;
