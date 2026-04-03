@@ -1594,6 +1594,7 @@ async def spots_remaining():
 async def verify_access(request: Request):
     """Server-side gate: check if current player is allowed to start a game."""
     username = request.headers.get("x-player-name", "").strip()
+    access_token = request.headers.get("x-access-token", "")
     if not username or username == "anonymous":
         return {"allowed": False, "reason": "not_signed_up"}
 
@@ -1604,7 +1605,7 @@ async def verify_access(request: Request):
         try:
             rows = _sb_select(
                 "players",
-                select="status,email_verified,role",
+                select="status,email_verified,role,access_token",
                 filters=f"username_lower=eq.{quote(username.lower())}",
                 limit=1,
             )
@@ -1624,6 +1625,11 @@ async def verify_access(request: Request):
 
         player = rows[0]
         role = player.get("role", "user") or "user"
+
+        # Validate access token
+        stored_token = player.get("access_token") or ""
+        if not access_token or not stored_token or not _hmac_mod.compare_digest(stored_token, str(access_token)):
+            return {"allowed": False, "reason": "invalid_token"}
 
         # Admin/dev accounts always get access
         if role in ("admin", "dev"):

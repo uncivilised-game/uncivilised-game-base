@@ -307,7 +307,7 @@ async function startNewGame() {
   // Server-side access gate
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -400,7 +400,7 @@ async function continueGame() {
   }
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -776,7 +776,7 @@ async function refreshAuthUI() {
 
   try {
     const res = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': username },
+      headers: { 'x-player-name': username, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const data = await res.json();
     if (data.role) setPlayerRole(data.role);
