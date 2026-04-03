@@ -38,7 +38,7 @@ import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassabl
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
-import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
+import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals, getRelationMotivations, getRelationSummary } from './ai-diplomacy.js';
 import { initTutorial, tutorialNext, tutorialPrev, closeTutorial } from './tutorial.js';
 import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
 import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './diplomacy-api.js';
@@ -107,6 +107,8 @@ window.getAIWars = getAIWars;
 window.getAIAlliances = getAIAlliances;
 window.getAISecretPacts = getAISecretPacts;
 window.getAITradeDeals = getAITradeDeals;
+window.getRelationMotivations = getRelationMotivations;
+window.getRelationSummary = getRelationSummary;
 window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
 window.discoverVillage = discoverVillage;

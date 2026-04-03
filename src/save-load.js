@@ -87,6 +87,7 @@ function migrateTiles(state) {
   if (!state.aiAlliances) state.aiAlliances = [];
   if (!state.aiTradeDeals) state.aiTradeDeals = [];
   if (!state.aiDenouncements) state.aiDenouncements = [];
+  if (!state.aiMotivations) state.aiMotivations = {};
   if (!state.rumourQueue) state.rumourQueue = [];
   // Ensure every tile has col/row (missing in saves before v4)
   if (state.map) {
