@@ -1,14 +1,14 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields, getAvailableImprovements, startImprovement } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
-import { processAIWonderTurns, cancelAIWonderBuilders } from './ai.js';
+import { processAIWonderTurns, cancelAIWonderBuilders, processAIDistrictTurns } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
-import { checkVictoryConditions, hideSelectionPanel, closeAllPanels } from './ui-panels.js';
+import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { discoverVisibleFactions, revealAround } from './discovery.js';
@@ -299,6 +299,9 @@ function endTurn() {
   try {
     processAIWonderTurns();
   } catch (e) { console.error('Error in processAIWonderTurns:', e); }
+  try {
+    processAIDistrictTurns();
+  } catch (e) { console.error('Error in processAIDistrictTurns:', e); }
 
   // --- AI-to-AI diplomacy (rule-based negotiations between AI factions) ---
   resetTurnActions();
@@ -585,6 +588,29 @@ function endTurn() {
         game.unitBuildProgress = ut.cost;
       }
     }
+  } else if (game.currentDistrictBuild) {
+    game.districtBuildProgress += prodThisTurn;
+    const ddata = DISTRICTS[game.currentDistrictBuild];
+    if (!ddata) { game.currentDistrictBuild = null; game.districtBuildProgress = 0; game.districtBuildTarget = null; }
+    else if (game.districtBuildProgress >= ddata.cost) {
+      // District completed — place it on the map
+      let target = game.districtBuildTarget;
+      // Re-validate: if the target tile already has a district, find a new spot
+      if (target && game.map[target.row] && game.map[target.row][target.col] &&
+          game.map[target.row][target.col].district) {
+        target = findDistrictPlacement(game.currentDistrictBuild);
+      }
+      if (target && game.map[target.row] && game.map[target.row][target.col]) {
+        placePlayerDistrict(game.currentDistrictBuild, target);
+      }
+      events.push(ddata.icon + ' ' + ddata.name + ' district completed!');
+      addEvent(ddata.icon + ' ' + ddata.name + ' district completed!', 'gold');
+      showCompletionNotification('district', ddata.name, ddata.desc);
+      if (typeof showToast === 'function') showToast('\u{1F3D8} District Complete', ddata.name + ' district placed!');
+      game.currentDistrictBuild = null;
+      game.districtBuildProgress = 0;
+      game.districtBuildTarget = null;
+    }
   } else if (game.currentWonderBuild) {
     // Check if another faction already completed this wonder (AI scooped it)
     if (game.builtWonders[game.currentWonderBuild]) {
@@ -680,6 +706,37 @@ function endTurn() {
   }
   // Pantheon bonus
   if (game.pantheon === 'earth_goddess') cpt += 1;
+  // District culture bonuses
+  if (game.playerDistricts) {
+    for (const did of game.playerDistricts) {
+      const dd = DISTRICTS[did];
+      if (dd && dd.yields && dd.yields.culture) cpt += dd.yields.culture;
+    }
+    // Add adjacency culture bonuses from placed districts
+    for (let r = 0; r < MAP_ROWS; r++) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        const tile = game.map[r][c];
+        if (tile.district && game.playerDistricts.includes(tile.district)) {
+          const dd = DISTRICTS[tile.district];
+          if (dd && dd.adjacency) {
+            const nbs = getHexNeighbors(c, r);
+            for (const nb of nbs) {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              if (!nt) continue;
+              for (const [adjType, yields] of Object.entries(dd.adjacency)) {
+                if (!yields.culture) continue;
+                let match = false;
+                if (adjType === 'mountain' && nt.feature === 'mountain') match = true;
+                else if (adjType === 'woods' && (nt.feature === 'woods' || nt.feature === 'rainforest')) match = true;
+                else if (adjType === 'natural_wonder' && nt.naturalWonder) match = true;
+                if (match) cpt += yields.culture;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   game.culturePerTurn = cpt;
   game.culture += cpt;
 

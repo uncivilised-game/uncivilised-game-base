@@ -9,7 +9,7 @@ import './assets.js';      // preloads terrain tiles, portraits, improvement ima
 import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
-import { SAVE_KEY, GAME_VERSION, RESOURCES, FACTION_TRAITS } from './constants.js';
+import { SAVE_KEY, GAME_VERSION, RESOURCES, FACTION_TRAITS, DISTRICTS } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
   currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS,
@@ -342,6 +342,14 @@ async function startNewGame() {
 
   setNextUnitId(1);
   setGame(createInitialState());
+
+  // District system initialisation
+  if (!game.playerDistricts) game.playerDistricts = [];
+  if (!game.currentDistrictBuild) game.currentDistrictBuild = null;
+  if (!game.districtBuildProgress) game.districtBuildProgress = 0;
+  if (!game.districtBuildTarget) game.districtBuildTarget = null; // {col, row}
+  if (!game.aiDistrictProgress) game.aiDistrictProgress = {};
+
   const eventLog = document.getElementById('event-log-messages');
   if (eventLog) eventLog.innerHTML = '';
   closeAllPanels();
