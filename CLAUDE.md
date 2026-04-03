@@ -89,6 +89,7 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 - **Always run `npm test` before committing, pushing, or creating a PR.** Tests must pass. If tests fail, fix the issue before proceeding.
 - Tests live in `tests/` with fixtures in `tests/fixtures.js` and browser global stubs in `tests/setup.js`
 - Test naming: use `test()` (not `it()`), add `()` after function names in `describe()`, use dummy faction names (`faction_a`, `faction_b`) not real ones
+- When fixing bugs or changing game logic, add a test that covers the fix when practical. Pure UI changes, render tweaks, and trivial one-liners don't need tests.
 
 ## Backend (Python FastAPI)
 
