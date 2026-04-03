@@ -138,6 +138,7 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
+| `scripts/feedback-digest.py` | Daily feedback summary posted as a GitHub issue (categorised & prioritised) |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
 
@@ -182,6 +183,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
+- `.github/workflows/feedback-digest.yml` — daily at 8am UTC, posts a categorised/prioritised feedback summary as a GitHub issue. Also supports manual trigger with configurable lookback hours. Runs `scripts/feedback-digest.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
