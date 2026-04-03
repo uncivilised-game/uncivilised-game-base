@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 REPO = os.environ["REPO"]
 GH_TOKEN = os.environ["GH_TOKEN"]
-THRESHOLD = int(os.environ.get("VOTE_THRESHOLD", "3"))
+THRESHOLD = max(1, int(os.environ.get("VOTE_THRESHOLD", "3")))
 ACTION = os.environ.get("ACTION", "check")
 LABEL = "release-vote"
 
@@ -49,6 +49,10 @@ def gh(*args, parse_json=True):
 def git(*args):
     """Run a git command and return stdout."""
     result = subprocess.run(["git"] + list(args), capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"git command failed: git {' '.join(args)}", file=sys.stderr)
+        print(result.stderr, file=sys.stderr)
+        return ""
     return result.stdout.strip()
 
 
@@ -112,17 +116,11 @@ def get_changelog():
 def get_reactions(issue_number):
     """Fetch reactions on an issue and return (thumbs_up, thumbs_down) counts."""
     reactions = gh("api", f"repos/{REPO}/issues/{issue_number}/reactions",
-                   "--paginate", "--jq", ".[].content")
+                   "--paginate", "--jq", ".[].content", parse_json=False)
     if reactions is None:
         return 0, 0
 
-    # gh --jq returns newline-separated values
-    if isinstance(reactions, str):
-        items = reactions.strip().split("\n") if reactions.strip() else []
-    elif isinstance(reactions, list):
-        items = [r.get("content", "") for r in reactions]
-    else:
-        return 0, 0
+    items = reactions.strip().split("\n") if reactions.strip() else []
 
     thumbs_up = sum(1 for r in items if r == "+1")
     thumbs_down = sum(1 for r in items if r == "-1")
@@ -183,6 +181,10 @@ def tally_and_merge(issue):
     net = thumbs_up - thumbs_down
 
     print(f"Vote tally for #{issue_number}: 👍 {thumbs_up} / 👎 {thumbs_down} (net: {net}, threshold: {THRESHOLD})")
+
+    if thumbs_up == 0:
+        print("No upvotes yet. No action taken.")
+        return
 
     if net < THRESHOLD:
         print(f"Threshold not met ({net} < {THRESHOLD}). No action taken.")

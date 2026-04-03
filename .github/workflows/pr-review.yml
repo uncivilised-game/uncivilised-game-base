@@ -16,7 +16,8 @@ jobs:
        contains(github.event.comment.body, '/review') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
       (github.event_name == 'pull_request' &&
-       startsWith(github.event.pull_request.head.ref, 'fix/'))
+       startsWith(github.event.pull_request.head.ref, 'fix/') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read

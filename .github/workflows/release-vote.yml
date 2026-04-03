@@ -38,8 +38,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch main branch
-        run: git fetch origin main
+      - name: Fetch main and devel branches
+        run: |
+          git fetch origin main
+          git fetch origin devel
 
       - name: Run release vote script
         env:
