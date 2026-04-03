@@ -406,12 +406,34 @@ function render() {
             }
           }
 
+          // Districts that need a radial fade so terrain shows through the perimeter
+          const needsFade = tile.district === 'holy_site' || tile.district === 'encampment';
+
           if (distRotation !== 0) {
             ctx.translate(sx, sy);
             ctx.rotate(distRotation);
             ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
+            if (needsFade) {
+              // Erase perimeter with a radial gradient (destination-in keeps centre, fades edges)
+              ctx.globalCompositeOperation = 'destination-in';
+              const fade = ctx.createRadialGradient(0, 0, HEX_SIZE * 0.3, 0, 0, HEX_SIZE * 0.95);
+              fade.addColorStop(0, 'rgba(255,255,255,1)');
+              fade.addColorStop(1, 'rgba(255,255,255,0)');
+              ctx.fillStyle = fade;
+              ctx.fillRect(-distS/2, -distS/2, distS, distS);
+              ctx.globalCompositeOperation = 'source-over';
+            }
           } else {
             ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
+            if (needsFade) {
+              ctx.globalCompositeOperation = 'destination-in';
+              const fade = ctx.createRadialGradient(sx, sy, HEX_SIZE * 0.3, sx, sy, HEX_SIZE * 0.95);
+              fade.addColorStop(0, 'rgba(255,255,255,1)');
+              fade.addColorStop(1, 'rgba(255,255,255,0)');
+              ctx.fillStyle = fade;
+              ctx.fillRect(sx - distS/2, sy - distS/2, distS, distS);
+              ctx.globalCompositeOperation = 'source-over';
+            }
           }
           ctx.globalAlpha = 1.0;
           ctx.restore();
