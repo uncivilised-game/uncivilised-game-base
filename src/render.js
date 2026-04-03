@@ -383,7 +383,36 @@ function render() {
           ctx.clip();
           ctx.globalAlpha = 0.85;
           const distS = HEX_SIZE * 2.3;
-          ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
+
+          // Harbour: rotate sprite to face adjacent water
+          let distRotation = 0;
+          if (tile.district === 'harbor') {
+            const nbs = getHexNeighbors(c, r);
+            // Average the direction vectors toward all adjacent water tiles
+            let wx = 0, wy = 0, waterCount = 0;
+            for (const nb of nbs) {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              if (nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake')) {
+                const { x: nbx, y: nby } = hexToPixel(nb.col, nb.row);
+                wx += nbx - sx; wy += nby - sy;
+                waterCount++;
+              }
+            }
+            if (waterCount > 0) {
+              // Sprite default faces south (π/2 rad = down).
+              // Rotate so the dock side points toward water.
+              const waterAngle = Math.atan2(wy, wx);
+              distRotation = waterAngle - Math.PI / 2; // offset from default south-facing
+            }
+          }
+
+          if (distRotation !== 0) {
+            ctx.translate(sx, sy);
+            ctx.rotate(distRotation);
+            ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
+          } else {
+            ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
+          }
           ctx.globalAlpha = 1.0;
           ctx.restore();
         }
