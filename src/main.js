@@ -343,62 +343,12 @@ async function startNewGame() {
   setNextUnitId(1);
   setGame(createInitialState());
 
-  // DEBUG: Seed districts near player start for visual testing
-  // Remove this block once district placement UI is built
-  {
-    const districtTypes = Object.keys(DISTRICTS);
-    const startUnit = game.units.find(u => u.owner === 'player');
-    const cx = startUnit ? startUnit.col : Math.floor(MAP_COLS / 2);
-    const cy = startUnit ? startUnit.row : Math.floor(MAP_ROWS / 2);
-    let placed = 0;
-    const toPlace = [...districtTypes]; // mutable copy
-
-    // Helper: is a tile valid for generic district placement?
-    const isLand = (t) => t && t.base !== 'ocean' && t.base !== 'coast' && t.base !== 'lake' && t.feature !== 'mountain';
-    const isWater = (t) => t && (t.base === 'ocean' || t.base === 'coast' || t.base === 'lake');
-    const isOccupied = (col, row) => game.units.some(u => u.col === col && u.row === row);
-
-    // First pass: place harbor on a coastal land tile (adjacent to water)
-    const harborIdx = toPlace.indexOf('harbor');
-    if (harborIdx !== -1) {
-      let harborPlaced = false;
-      for (let ring = 2; ring <= 8 && !harborPlaced; ring++) {
-        for (let r = cy - ring; r <= cy + ring && !harborPlaced; r++) {
-          for (let c = cx - ring; c <= cx + ring && !harborPlaced; c++) {
-            if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
-            const tile = game.map[r][c];
-            if (!isLand(tile) || tile.improvement || tile.district || isOccupied(c, r)) continue;
-            // Must be adjacent to water
-            const nbs = getHexNeighbors(c, r);
-            const hasWater = nbs.some(nb => isWater(game.map[nb.row] && game.map[nb.row][nb.col]));
-            if (hasWater) {
-              tile.district = 'harbor';
-              toPlace.splice(harborIdx, 1);
-              placed++;
-              harborPlaced = true;
-            }
-          }
-        }
-      }
-    }
-
-    // Second pass: place remaining districts on any valid land tile
-    for (let ring = 2; ring <= 5 && toPlace.length > 0; ring++) {
-      for (let r = cy - ring; r <= cy + ring && toPlace.length > 0; r++) {
-        for (let c = cx - ring; c <= cx + ring && toPlace.length > 0; c++) {
-          if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
-          const tile = game.map[r][c];
-          if (!isLand(tile) || tile.improvement || tile.district || isOccupied(c, r)) continue;
-          const d = Math.abs(r - cy) + Math.abs(c - cx);
-          if (d >= ring && d <= ring + 1) {
-            tile.district = toPlace.shift();
-            placed++;
-          }
-        }
-      }
-    }
-    if (placed > 0) console.log('[DEBUG] Seeded ' + placed + ' districts for visual testing');
-  }
+  // District system initialisation
+  if (!game.playerDistricts) game.playerDistricts = [];
+  if (!game.currentDistrictBuild) game.currentDistrictBuild = null;
+  if (!game.districtBuildProgress) game.districtBuildProgress = 0;
+  if (!game.districtBuildTarget) game.districtBuildTarget = null; // {col, row}
+  if (!game.aiDistrictProgress) game.aiDistrictProgress = {};
 
   const eventLog = document.getElementById('event-log-messages');
   if (eventLog) eventLog.innerHTML = '';
