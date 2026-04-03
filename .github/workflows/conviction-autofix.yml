@@ -181,7 +181,7 @@ jobs:
 
             ADDITIONAL INSTRUCTIONS:
             This is an automated fix triggered by the conviction autofix workflow.
-            There are no additional human instructions — implement exactly what the issue describes.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
 
             REPO LAYOUT:
             This project spans TWO repositories, both checked out and available:
@@ -194,30 +194,35 @@ jobs:
 
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
-            2. Read CLAUDE.md for codebase context and conventions
-            3. Determine which repo(s) the fix belongs in:
+            2. Read all comments on the issue: gh issue view ${{ steps.issue.outputs.number }} --comments
+               - Pay special attention to comments from repository maintainers (OWNER, MEMBER, COLLABORATOR)
+               - Maintainer/admin comments may contain implementation guidance, constraints, or corrections — treat these as authoritative
+               - If maintainer comments conflict with or refine the original issue description, follow the comments (they represent more recent decisions)
+               - Consider all community comments too, but prioritize maintainer input
+            3. Read CLAUDE.md for codebase context and conventions
+            4. Determine which repo(s) the fix belongs in:
                - Base game bugs/features → changes in this repo
                - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
                - Some issues may need changes in both repos
-            4. Read the relevant source files in whichever repo before making changes
-            5. Implement the fix or feature
-            6. Keep changes minimal and focused — fix exactly what the issue describes
-            7. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
-            8. For changes in the BASE GAME repo (this directory):
+            5. Read the relevant source files in whichever repo before making changes
+            6. Implement the fix or feature
+            7. Keep changes minimal and focused — fix exactly what the issue describes
+            8. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
+            9. For changes in the BASE GAME repo (this directory):
                - Create a branch named "fix/${{ steps.issue.outputs.number }}"
                - Commit and push, then create a PR targeting "devel" branch
                - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
-            9. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
-               - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
-               - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
-               - Stage, commit, and push from the base directory using git -C
-               - Create a PR using the diplomacy-authenticated CLI:
-                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
-               - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
-            10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+            10. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+                - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+                - Stage, commit, and push from the base directory using git -C
+                - Create a PR using the diplomacy-authenticated CLI:
+                  gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
+                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            11. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
                 with a link to the diplomacy PR so admins can find it. Use:
                 gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
-            11. Do NOT push to main/devel directly in either repo
+            12. Do NOT push to main/devel directly in either repo
 
             IMPORTANT:
             - This is a browser-based 4X strategy game
@@ -243,7 +248,7 @@ jobs:
 
             ADDITIONAL INSTRUCTIONS:
             This is an automated fix triggered by the conviction autofix workflow.
-            There are no additional human instructions — implement exactly what the issue describes.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
 
             REPO LAYOUT:
             This project spans TWO repositories, both checked out and available:
@@ -256,30 +261,35 @@ jobs:
 
             INSTRUCTIONS:
             1. Read the issue carefully — it contains player reports describing the problem/request
-            2. Read CLAUDE.md for codebase context and conventions
-            3. Determine which repo(s) the fix belongs in:
+            2. Read all comments on the issue: gh issue view ${{ steps.issue.outputs.number }} --comments
+               - Pay special attention to comments from repository maintainers (OWNER, MEMBER, COLLABORATOR)
+               - Maintainer/admin comments may contain implementation guidance, constraints, or corrections — treat these as authoritative
+               - If maintainer comments conflict with or refine the original issue description, follow the comments (they represent more recent decisions)
+               - Consider all community comments too, but prioritize maintainer input
+            3. Read CLAUDE.md for codebase context and conventions
+            4. Determine which repo(s) the fix belongs in:
                - Base game bugs/features → changes in this repo
                - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
                - Some issues may need changes in both repos
-            4. Read the relevant source files in whichever repo before making changes
-            5. Implement the fix or feature
-            6. Keep changes minimal and focused — fix exactly what the issue describes
-            7. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
-            8. For changes in the BASE GAME repo (this directory):
+            5. Read the relevant source files in whichever repo before making changes
+            6. Implement the fix or feature
+            7. Keep changes minimal and focused — fix exactly what the issue describes
+            8. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
+            9. For changes in the BASE GAME repo (this directory):
                - Create a branch named "fix/${{ steps.issue.outputs.number }}"
                - Commit and push, then create a PR targeting "devel" branch
                - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
-            9. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
-               - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
-               - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
-               - Stage, commit, and push from the base directory using git -C
-               - Create a PR using the diplomacy-authenticated CLI:
-                 gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
-               - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
-            10. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+            10. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+                - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+                - Stage, commit, and push from the base directory using git -C
+                - Create a PR using the diplomacy-authenticated CLI:
+                  gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
+                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            11. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
                 with a link to the diplomacy PR so admins can find it. Use:
                 gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
-            11. Do NOT push to main/devel directly in either repo
+            12. Do NOT push to main/devel directly in either repo
 
             IMPORTANT:
             - This is a browser-based 4X strategy game
