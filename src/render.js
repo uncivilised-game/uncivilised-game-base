@@ -1,5 +1,5 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP } from './constants.js';
-import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, animRunning, deathMarkers } from './state.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
+import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
 import { drawDetailedHex } from './terrain-render.js';
@@ -10,6 +10,26 @@ import { getWaypointPath } from './improvements.js';
 import { getRelationLabel } from './diplomacy-api.js';
 import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
+
+// ============================================
+// SPRITE ANIMATION — idle frame cycling
+// ============================================
+const SPRITE_ANIM_FRAME_COUNT = 8;
+const SPRITE_ANIM_FRAME_MS = 150; // milliseconds per frame (~5.3 FPS idle bob)
+let _spriteAnimInterval = null;
+
+/** Returns the current idle animation frame index (0-7) based on wall-clock time. */
+function getSpriteAnimFrame() {
+  return Math.floor(performance.now() / SPRITE_ANIM_FRAME_MS) % SPRITE_ANIM_FRAME_COUNT;
+}
+
+/** Start the idle sprite animation loop (called once from render init). */
+function startSpriteAnimLoop() {
+  if (_spriteAnimInterval) return;
+  _spriteAnimInterval = setInterval(() => {
+    if (game) render();
+  }, SPRITE_ANIM_FRAME_MS);
+}
 
 // ============================================
 // SETTLEMENT RENDERING HELPERS
@@ -191,6 +211,8 @@ function computeVisibility() {
 
 function render() {
   if (!game) return;
+  // Kick off idle sprite animation loop on first render
+  startSpriteAnimLoop();
   // Reset transform unconditionally — prevents accumulated scale from corrupted
   // frames where ctx.restore() was skipped due to an exception.
   ctx.setTransform(LOCKED_DPR, 0, 0, LOCKED_DPR, 0, 0);
@@ -340,6 +362,57 @@ function render() {
           ctx.globalAlpha = 0.75;
           const impS = HEX_SIZE * 2.3;
           ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+        }
+      }
+      // Draw district sprites (rendered on top of terrain, below units)
+      if (tile.district) {
+        const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
+        if (distImg && distImg.complete && distImg.naturalWidth > 0) {
+          ctx.save();
+          // Clip to hex shape
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 180 * (60 * i - 30);
+            const hx = sx + HEX_SIZE * Math.cos(angle);
+            const hy = sy + HEX_SIZE * Math.sin(angle);
+            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath();
+          ctx.clip();
+          ctx.globalAlpha = 0.85;
+          const distS = HEX_SIZE * 2.3;
+
+          // Harbour: rotate sprite to face adjacent water
+          let distRotation = 0;
+          if (tile.district === 'harbor') {
+            const nbs = getHexNeighbors(c, r);
+            // Average the direction vectors toward all adjacent water tiles
+            let wx = 0, wy = 0, waterCount = 0;
+            for (const nb of nbs) {
+              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
+              if (nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake')) {
+                const { x: nbx, y: nby } = hexToPixel(nb.col, nb.row);
+                wx += nbx - sx; wy += nby - sy;
+                waterCount++;
+              }
+            }
+            if (waterCount > 0) {
+              // Sprite default faces south (π/2 rad = down).
+              // Rotate so the dock side points toward water.
+              const waterAngle = Math.atan2(wy, wx);
+              distRotation = waterAngle - Math.PI / 2; // offset from default south-facing
+            }
+          }
+
+          if (distRotation !== 0) {
+            ctx.translate(sx, sy);
+            ctx.rotate(distRotation);
+            ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
+          } else {
+            ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
+          }
           ctx.globalAlpha = 1.0;
           ctx.restore();
         }
@@ -914,8 +987,8 @@ function render() {
     // Hide non-player units in explored-but-not-visible areas
     if (unit.owner !== 'player' && game.visibleTiles && !(game.visibleTiles[unit.row] && game.visibleTiles[unit.row][unit.col])) continue;
     const pos = hexToPixel(unit.col, unit.row);
-    const sx = pos.x - camX;
-    const sy = pos.y - camY;
+    let sx = pos.x - camX;
+    let sy = pos.y - camY;
     const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
     if (!ut) continue;
     const isSelected = game.selectedUnitId === unit.id;
@@ -927,7 +1000,16 @@ function render() {
     ctx.globalAlpha = globalAlpha;
 
     // Unit vertical offset — shift down to avoid overlapping city icons
-    const uy = sy + 12;
+    let uy = sy + 12;
+
+    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
+    const isCiv = ut.class === 'civilian';
+    const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
+    if (stackPartner && isCiv) {
+      sx += 12;
+      uy += 12;
+      sy += 12;
+    }
 
     // Pulsing selection ring
     if (isSelected) {
@@ -940,10 +1022,16 @@ function render() {
 
     // Determine unit colors based on owner
     let discBg, borderColor, iconColor;
+    const isBarbUnit = unit.owner === 'barbarian';
     if (isPlayer) {
       discBg = isSelected ? '#f0ebe0' : 'rgba(20,20,20,0.75)';
       borderColor = isSelected ? '#c9a84c' : '#c9a84c';
       iconColor = isSelected ? '#1a1400' : '#c9a84c';
+    } else if (isBarbUnit) {
+      // Barbarian units — red highlight
+      discBg = isSelected ? '#d44' : 'rgba(20,20,20,0.75)';
+      borderColor = '#d44';
+      iconColor = isSelected ? '#1a1400' : '#d44';
     } else {
       // Faction units — use faction color
       const faction = FACTIONS[unit.owner];
@@ -965,18 +1053,43 @@ function render() {
     // Faction color band at bottom of unit disc (for non-player units)
     if (!isPlayer) {
       const faction = FACTIONS[unit.owner];
-      if (faction) {
+      const bandColor = isBarbUnit ? '#d44' : (faction ? faction.color : null);
+      if (bandColor) {
         ctx.beginPath();
         ctx.arc(sx, uy, 11, Math.PI * 0.3, Math.PI * 0.7);
-        ctx.strokeStyle = faction.color;
+        ctx.strokeStyle = bandColor;
         ctx.lineWidth = 3;
         ctx.stroke();
       }
+      // Draw red glowing hex ring around barbarian units
+      if (isBarbUnit) {
+        drawFactionRing(ctx, sx, sy, '#d44');
+      }
     }
 
-    // Unit icon — sprite atlas with emoji fallback
+    // Unit icon — new painterly sprites → legacy atlas → emoji fallback
+    // Barbarian special units use barbSpecial key for their sprite
+    const spriteKey = unit.barbSpecial || unit.type;
+    const newSprite = NEW_UNIT_SPRITES[spriteKey];
     const spriteInfo = UNIT_SPRITE_MAP[unit.type];
-    if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
+    if (newSprite && newSprite.complete && newSprite.naturalWidth > 0) {
+      // New painterly sprite sheet — animate idle frames from horizontal strip
+      // Centre on hex (sx, sy) rather than offset uy so sprite fills the hex
+      const frameSize = newSprite.naturalHeight;
+      const animFrame = getSpriteAnimFrame();
+      const srcX = animFrame * frameSize;
+      const drawSize = 56;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sx, sy, 27, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(newSprite,
+        srcX, 0, frameSize, frameSize,
+        sx - drawSize / 2, sy - drawSize / 2, drawSize, drawSize);
+      ctx.restore();
+    } else if (spriteInfo && unitAtlas.complete && unitAtlas.naturalWidth > 0) {
       const drawSize = 22;
       ctx.save();
       // Clip to unit disc for clean edges
@@ -1219,6 +1332,10 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   if (tile.improvement && TILE_IMPROVEMENTS[tile.improvement]) {
     const imp = TILE_IMPROVEMENTS[tile.improvement];
     lines.push({ text: `${imp.icon} ${imp.name}`, bold: true, color: '#c9a84c' });
+  }
+  if (tile.district && DISTRICTS[tile.district]) {
+    const dist = DISTRICTS[tile.district];
+    lines.push({ text: `${dist.icon} ${dist.name} District`, bold: true, color: '#f0c848' });
   }
   if (tile.road) lines.push({ text: '\u{1F6E4}\uFE0F Road (half move cost)', color: '#8a7a5a' });
   if (tile.improvementBuilder) {

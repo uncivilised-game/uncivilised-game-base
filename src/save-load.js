@@ -37,6 +37,7 @@ function migrateTiles(state) {
 
   if (state.currentUnitBuild === undefined) state.currentUnitBuild = null;
   if (state.unitBuildProgress === undefined) state.unitBuildProgress = 0;
+  if (state.unitBuildCityIdx === undefined) state.unitBuildCityIdx = 0;
   if (state.factionCities) {
     for (const fc of Object.values(state.factionCities)) {
       if (fc.hp === undefined) fc.hp = 100;
@@ -125,6 +126,12 @@ function migrateTiles(state) {
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
   if (!state.tribalVillages) state.tribalVillages = [];
+  // --- District system migration ---
+  if (!state.playerDistricts) state.playerDistricts = [];
+  if (!state.currentDistrictBuild) state.currentDistrictBuild = null;
+  if (!state.districtBuildProgress) state.districtBuildProgress = 0;
+  if (!state.districtBuildTarget) state.districtBuildTarget = null;
+  if (!state.aiDistrictProgress) state.aiDistrictProgress = {};
   // --- Resource visibility migration ---
   // Rebuild revealedResources from techs for saves that pre-date this feature
   if (!state.revealedResources) {

@@ -1,0 +1,140 @@
+name: Conviction Auto-Merge
+
+on:
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+
+concurrency:
+  group: conviction-automerge
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    # Only run for conviction PRs (fix/* branches targeting devel)
+    if: >-
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'approved' &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'check_suite' &&
+       github.event.check_suite.conclusion == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Find conviction PRs to merge
+        id: find-prs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CS_BRANCH: ${{ github.event.check_suite.head_branch }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            # Get the PR number from the review event
+            echo "prs=[$PR_NUMBER]" >> "$GITHUB_OUTPUT"
+          else
+            # check_suite: find open PRs for the head branch
+            if [ -z "$CS_BRANCH" ]; then
+              echo "No branch found in check_suite event"
+              echo "prs=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            PRS=$(gh pr list --repo "$GITHUB_REPO" \
+              --head "$CS_BRANCH" --base devel --state open \
+              --json number --jq '[.[].number]')
+            echo "prs=${PRS:-[]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auto-merge eligible PRs
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          PRS='${{ steps.find-prs.outputs.prs }}'
+
+          for PR_NUM in $(echo "$PRS" | python3 -c "import sys,json; [print(n) for n in json.load(sys.stdin)]" 2>/dev/null); do
+            echo "Checking PR #${PR_NUM}..."
+
+            # Get PR details including author association for fork detection
+            PR_JSON=$(gh pr view "$PR_NUM" --repo "$GITHUB_REPO" \
+              --json headRefName,baseRefName,labels,reviews,statusCheckRollup,mergeable,state,headRepository,headRepositoryOwner,author)
+
+            BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+            BASE=$(echo "$PR_JSON" | jq -r '.baseRefName')
+            STATE=$(echo "$PR_JSON" | jq -r '.state')
+
+            # Must be open, target devel, and be a fix/* branch (conviction PR)
+            if [ "$STATE" != "OPEN" ]; then
+              echo "  PR #${PR_NUM} is not open, skipping"
+              continue
+            fi
+            if [ "$BASE" != "devel" ]; then
+              echo "  PR #${PR_NUM} does not target devel (targets $BASE), skipping"
+              continue
+            fi
+            if ! echo "$BRANCH" | grep -qE '^fix/'; then
+              echo "  PR #${PR_NUM} is not a conviction PR (branch: $BRANCH), skipping"
+              continue
+            fi
+
+            # Reject fork PRs — only same-repo branches are eligible for auto-merge
+            HEAD_OWNER=$(echo "$PR_JSON" | jq -r '.headRepositoryOwner.login // empty')
+            REPO_OWNER=$(echo "$GITHUB_REPO" | cut -d/ -f1)
+            if [ -n "$HEAD_OWNER" ] && [ "$HEAD_OWNER" != "$REPO_OWNER" ]; then
+              echo "  PR #${PR_NUM} is from a fork ($HEAD_OWNER), skipping"
+              continue
+            fi
+
+            # Check latest review state per reviewer (ignore stale approvals)
+            HAS_OUTSTANDING_CHANGES=$(echo "$PR_JSON" | jq '
+              [.reviews[] | {author: .author.login, state: .state}]
+              | group_by(.author)
+              | map(last)
+              | any(.state == "CHANGES_REQUESTED")
+            ')
+            if [ "$HAS_OUTSTANDING_CHANGES" = "true" ]; then
+              echo "  PR #${PR_NUM} has outstanding change requests, skipping"
+              continue
+            fi
+
+            APPROVED=$(echo "$PR_JSON" | jq '
+              [.reviews[] | {author: .author.login, state: .state}]
+              | group_by(.author)
+              | map(last)
+              | map(select(.state == "APPROVED"))
+              | length
+            ')
+            if [ "$APPROVED" -lt 1 ]; then
+              echo "  PR #${PR_NUM} has no approving reviews ($APPROVED), skipping"
+              continue
+            fi
+
+            # Check all status checks passed
+            ALL_PASSED=$(echo "$PR_JSON" | jq '
+              .statusCheckRollup as $checks |
+              if ($checks | length) == 0 then false
+              else ($checks | all(.status == "COMPLETED" and .conclusion == "SUCCESS"))
+              end
+            ')
+            if [ "$ALL_PASSED" != "true" ]; then
+              echo "  PR #${PR_NUM} has failing or pending checks, skipping"
+              continue
+            fi
+
+            # Check mergeable
+            MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+            if [ "$MERGEABLE" != "MERGEABLE" ]; then
+              echo "  PR #${PR_NUM} is not mergeable ($MERGEABLE), skipping"
+              continue
+            fi
+
+            echo "  PR #${PR_NUM} is eligible for auto-merge!"
+            gh pr merge "$PR_NUM" --repo "$GITHUB_REPO" --squash --auto \
+              --body "Auto-merged by conviction-automerge workflow after CI passed and review approved."
+            echo "  Enabled auto-merge for PR #${PR_NUM}"
+          done

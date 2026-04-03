@@ -1,0 +1,310 @@
+name: Conviction Autofix
+
+on:
+  schedule:
+    # Twice daily: 10am and 10pm UTC (2 hours after triage creates/updates issues)
+    - cron: '0 10,22 * * *'
+  workflow_dispatch: # manual trigger
+
+concurrency:
+  group: conviction-autofix
+  cancel-in-progress: false
+
+jobs:
+  find-issues:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.find.outputs.matrix }}
+      has_issues: ${{ steps.find.outputs.has_issues }}
+    permissions:
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Find eligible critical/high conviction issues
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Fetch critical and high priority conviction issues separately
+          # (gh --label uses AND logic, so two calls give us OR across priorities)
+          export _CRITICAL=$(gh issue list --repo "$REPO" --label conviction,priority:critical --state open --json number,body,title,labels --limit 50)
+          export _HIGH=$(gh issue list --repo "$REPO" --label conviction,priority:high --state open --json number,body,title,labels --limit 50)
+
+          MATRIX=$(python3 << 'PYEOF'
+          import json, os, re, subprocess, sys
+
+          critical = json.loads(os.environ.get("_CRITICAL", "[]"))
+          high = json.loads(os.environ.get("_HIGH", "[]"))
+
+          # Deduplicate by issue number
+          seen = set()
+          all_issues = []
+          for issue in critical + high:
+              if issue["number"] not in seen:
+                  seen.add(issue["number"])
+                  all_issues.append(issue)
+
+          # Filter out issues with exclusion labels
+          EXCLUDE = {"autofix-in-progress", "autofix-attempted"}
+          filtered = []
+          for issue in all_issues:
+              label_names = {l["name"] for l in issue.get("labels", [])}
+              if not label_names & EXCLUDE:
+                  filtered.append(issue)
+
+          # Check for existing open PRs (branch fix/N)
+          repo = os.environ.get("REPO", "")
+          eligible = []
+          for issue in filtered:
+              result = subprocess.run(
+                  ["gh", "pr", "list", "--repo", repo,
+                   "--head", f"fix/{issue['number']}", "--state", "open", "--json", "number"],
+                  capture_output=True, text=True)
+              prs = json.loads(result.stdout) if result.stdout.strip() else []
+              if not prs:
+                  eligible.append(issue)
+
+          # Sort by conviction score descending, take top 2
+          scored = []
+          for issue in eligible:
+              m = re.search(r"Conviction Score:\s*(\d+)", issue.get("body", "") or "")
+              score = int(m.group(1)) if m else 0
+              scored.append((score, issue))
+          scored.sort(key=lambda x: x[0], reverse=True)
+
+          top = [{"number": str(i["number"]), "title": i["title"]} for _, i in scored[:2]]
+
+          for s, i in scored[:2]:
+              print(f"  #{i['number']} (score={s}): {i['title']}", file=sys.stderr)
+
+          print(json.dumps(top))
+          PYEOF
+          )
+
+          if [ "$MATRIX" = "[]" ] || [ -z "$MATRIX" ]; then
+            echo "No eligible issues found"
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            echo "has_issues=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found issues: $MATRIX"
+            echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+            echo "has_issues=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  implement:
+    needs: find-issues
+    if: needs.find-issues.outputs.has_issues == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        issue: ${{ fromJSON(needs.find-issues.outputs.matrix) }}
+      max-parallel: 1
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DIPLOMACY_REPO_TOKEN: ${{ secrets.DIPLOMACY_REPO_TOKEN }}
+
+    steps:
+      - name: Label issue as in-progress
+        run: |
+          gh issue edit ${{ matrix.issue.number }} \
+            --repo "${{ github.repository }}" \
+            --add-label "autofix-in-progress"
+
+      - name: Checkout base repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: devel
+
+      - name: Checkout diplomacy repo (devel branch)
+        run: |
+          git clone --depth 1 --branch devel \
+            "https://x-access-token:${DIPLOMACY_REPO_TOKEN}@github.com/uncivilised-game/uncivilised-diplomacy.git" \
+            ../uncivilised-diplomacy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup diplomacy CLI auth
+        run: |
+          printf '#!/bin/sh\nGH_TOKEN="%s" gh "$@"\n' "$DIPLOMACY_REPO_TOKEN" > /usr/local/bin/gh-diplomacy
+          chmod +x /usr/local/bin/gh-diplomacy
+
+      - name: Check auth method
+        id: auth
+        run: |
+          if [ -n "$OAUTH_TOKEN" ]; then
+            echo "method=oauth" >> "$GITHUB_OUTPUT"
+          else
+            echo "method=apikey" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      - name: Get issue details
+        id: issue
+        run: |
+          ISSUE_NUM="${{ matrix.issue.number }}"
+          echo "Implementing issue #${ISSUE_NUM}"
+          TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title' | tr -d '\n' | sed 's/[^a-zA-Z0-9 _.,:;!?()\-\/]//g' | head -c 200)
+          echo "number=$ISSUE_NUM" >> "$GITHUB_OUTPUT"
+          {
+            echo "title<<TITLE_EOF"
+            echo "$TITLE"
+            echo "TITLE_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Implement with Claude Code (OAuth)
+        if: steps.auth.outputs.method == 'oauth'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
+
+            ISSUE TITLE: ${{ steps.issue.outputs.title }}
+
+            Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            ADDITIONAL INSTRUCTIONS:
+            This is an automated fix triggered by the conviction autofix workflow.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
+
+            REPO LAYOUT:
+            This project spans TWO repositories, both checked out and available:
+            - Base game (current directory): uncivilised-game-base (open source)
+            - Diplomacy plugin (at ../uncivilised-diplomacy): uncivilised-diplomacy (private)
+
+            The diplomacy repo contains: AI diplomacy (diplomacy.js), game mods (game-mods.js),
+            and AI faction logic (ai.js). The base game imports diplomacy functions via
+            src/diplomacy-api.js which delegates to the plugin at build time.
+
+            INSTRUCTIONS:
+            1. Read the issue carefully — it contains player reports describing the problem/request
+            2. Read all comments on the issue: gh issue view ${{ steps.issue.outputs.number }} --comments
+               - Pay special attention to comments from repository maintainers (OWNER, MEMBER, COLLABORATOR)
+               - Maintainer/admin comments may contain implementation guidance, constraints, or corrections — treat these as authoritative
+               - If maintainer comments conflict with or refine the original issue description, follow the comments (they represent more recent decisions)
+               - Consider all community comments too, but prioritize maintainer input
+            3. Read CLAUDE.md for codebase context and conventions
+            4. Determine which repo(s) the fix belongs in:
+               - Base game bugs/features → changes in this repo
+               - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
+               - Some issues may need changes in both repos
+            5. Read the relevant source files in whichever repo before making changes
+            6. Implement the fix or feature
+            7. Keep changes minimal and focused — fix exactly what the issue describes
+            8. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
+            9. For changes in the BASE GAME repo (this directory):
+               - Create a branch named "fix/${{ steps.issue.outputs.number }}"
+               - Commit and push, then create a PR targeting "devel" branch
+               - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
+            10. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+                - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+                - Stage, commit, and push from the base directory using git -C
+                - Create a PR using the diplomacy-authenticated CLI:
+                  gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
+                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            11. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+                with a link to the diplomacy PR so admins can find it. Use:
+                gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
+            12. Do NOT push to main/devel directly in either repo
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - If modifying diplomacy-api.js (the plugin interface in the base repo), ensure the
+              corresponding implementation exists in the diplomacy repo's src/plugin.js
+            - Read the relevant source files before making any changes
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(gh-diplomacy:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+
+      - name: Implement with Claude Code (API key)
+        if: steps.auth.outputs.method == 'apikey'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are implementing a fix/feature for issue #${{ steps.issue.outputs.number }} in the Uncivilised game.
+
+            ISSUE TITLE: ${{ steps.issue.outputs.title }}
+
+            Read the full issue with: gh issue view ${{ steps.issue.outputs.number }}
+
+            ADDITIONAL INSTRUCTIONS:
+            This is an automated fix triggered by the conviction autofix workflow.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
+
+            REPO LAYOUT:
+            This project spans TWO repositories, both checked out and available:
+            - Base game (current directory): uncivilised-game-base (open source)
+            - Diplomacy plugin (at ../uncivilised-diplomacy): uncivilised-diplomacy (private)
+
+            The diplomacy repo contains: AI diplomacy (diplomacy.js), game mods (game-mods.js),
+            and AI faction logic (ai.js). The base game imports diplomacy functions via
+            src/diplomacy-api.js which delegates to the plugin at build time.
+
+            INSTRUCTIONS:
+            1. Read the issue carefully — it contains player reports describing the problem/request
+            2. Read all comments on the issue: gh issue view ${{ steps.issue.outputs.number }} --comments
+               - Pay special attention to comments from repository maintainers (OWNER, MEMBER, COLLABORATOR)
+               - Maintainer/admin comments may contain implementation guidance, constraints, or corrections — treat these as authoritative
+               - If maintainer comments conflict with or refine the original issue description, follow the comments (they represent more recent decisions)
+               - Consider all community comments too, but prioritize maintainer input
+            3. Read CLAUDE.md for codebase context and conventions
+            4. Determine which repo(s) the fix belongs in:
+               - Base game bugs/features → changes in this repo
+               - Diplomacy, AI behavior, game mods → changes in ../uncivilised-diplomacy
+               - Some issues may need changes in both repos
+            5. Read the relevant source files in whichever repo before making changes
+            6. Implement the fix or feature
+            7. Keep changes minimal and focused — fix exactly what the issue describes
+            8. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
+            9. For changes in the BASE GAME repo (this directory):
+               - Create a branch named "fix/${{ steps.issue.outputs.number }}"
+               - Commit and push, then create a PR targeting "devel" branch
+               - Include "Fixes #${{ steps.issue.outputs.number }}" in the PR body
+            10. For changes in the DIPLOMACY repo (../uncivilised-diplomacy):
+                - Use `git -C ../uncivilised-diplomacy` for all git commands (do NOT cd)
+                - Create a branch: git -C ../uncivilised-diplomacy checkout -b fix/${{ steps.issue.outputs.number }}
+                - Stage, commit, and push from the base directory using git -C
+                - Create a PR using the diplomacy-authenticated CLI:
+                  gh-diplomacy pr create --repo uncivilised-game/uncivilised-diplomacy --base devel --title "..." --body "..."
+                - Reference "uncivilised-game/uncivilised-game-base#${{ steps.issue.outputs.number }}" in the PR body
+            11. After creating any diplomacy PR, comment on the original issue (#${{ steps.issue.outputs.number }})
+                with a link to the diplomacy PR so admins can find it. Use:
+                gh issue comment ${{ steps.issue.outputs.number }} --body "Diplomacy PR: <url>"
+            12. Do NOT push to main/devel directly in either repo
+
+            IMPORTANT:
+            - This is a browser-based 4X strategy game
+            - Frontend is ES modules bundled by esbuild into game.js
+            - Backend is Python FastAPI (api/index.py for production, server.py for local)
+            - If modifying diplomacy-api.js (the plugin interface in the base repo), ensure the
+              corresponding implementation exists in the diplomacy repo's src/plugin.js
+            - Read the relevant source files before making any changes
+
+          claude_args: '--allowed-tools "Bash(git:*),Bash(gh:*),Bash(gh-diplomacy:*),Bash(npm:*),Bash(node:*),Bash(python3:*),Bash(ls:*),Read,Write,Edit,Glob,Grep"'
+
+      - name: Mark issue as attempted
+        if: always()
+        run: |
+          gh issue edit ${{ matrix.issue.number }} \
+            --repo "${{ github.repository }}" \
+            --add-label "autofix-attempted" \
+            --remove-label "autofix-in-progress"

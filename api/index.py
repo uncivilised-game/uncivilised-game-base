@@ -211,7 +211,8 @@ def _sb_select(table: str, select: str = "*", filters: str = "",
         return []
     url = f"{_SB_REST}/{table}?select={quote(select)}"
     if filters:
-        url += f"&{filters}"
+        # URL-encode + signs in filter values (e.g. timezone +00:00)
+        url += f"&{filters.replace('+', '%2B')}"
     if order:
         url += f"&order={order}"
     if limit:
@@ -861,6 +862,7 @@ When diplomacy leads to sharing knowledge, intelligence, or forging deep coopera
 Mod types you can emit:
   [ACTION: {{"type": "game_mod", "mod": {{"type": "new_unit", "id": "war_elephant", "name": "War Elephant", "cost": 50, "combat": 35, "rangedCombat": 0, "range": 0, "movePoints": 1, "icon": "\U0001f418", "class": "cavalry", "desc": "Devastating heavy unit taught by an ally"}}}}]
   [ACTION: {{"type": "game_mod", "mod": {{"type": "new_building", "id": "caravanserai", "name": "Caravanserai", "cost": 60, "desc": "+4 Gold from trade routes", "effect": {{"gold": 4}}}}}}]
+  [ACTION: {{"type": "game_mod", "mod": {{"type": "new_building", "id": "forge", "name": "Forge", "cost": 70, "desc": "+3 Production per turn", "effect": {{"production": 3}}}}}}]
   [ACTION: {{"type": "game_mod", "mod": {{"type": "new_tech", "id": "espionage", "name": "Espionage", "cost": 40, "desc": "Reveal enemy positions", "unlocks": ["spy_network"]}}}}]
   [ACTION: {{"type": "game_mod", "mod": {{"type": "reveal_map", "col": 25, "row": 15, "radius": 6, "reason": "Ancient map showing hidden valley"}}}}]
   [ACTION: {{"type": "game_mod", "mod": {{"type": "stat_buff", "stat": "military", "amount": 10, "reason": "Elite guard training"}}}}]
