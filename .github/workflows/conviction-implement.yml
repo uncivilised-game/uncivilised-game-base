@@ -171,7 +171,7 @@ jobs:
             4. Read the relevant source files in whichever repo before making changes
             5. Implement the fix or feature
             6. Keep changes minimal and focused — fix exactly what the issue describes
-            7. Test your changes if possible (npm run build at minimum)
+            7. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
             8. For changes in the BASE GAME repo (this directory):
                - Create a branch named "fix/${{ steps.issue.outputs.number }}"
                - Commit and push, then create a PR targeting "devel" branch
@@ -232,7 +232,7 @@ jobs:
             4. Read the relevant source files in whichever repo before making changes
             5. Implement the fix or feature
             6. Keep changes minimal and focused — fix exactly what the issue describes
-            7. Test your changes if possible (npm run build at minimum)
+            7. Run npm test (and npm run build). If fixing a bug or changing game logic, add a test covering the fix when practical.
             8. For changes in the BASE GAME repo (this directory):
                - Create a branch named "fix/${{ steps.issue.outputs.number }}"
                - Commit and push, then create a PR targeting "devel" branch
