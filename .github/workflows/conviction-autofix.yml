@@ -181,7 +181,7 @@ jobs:
 
             ADDITIONAL INSTRUCTIONS:
             This is an automated fix triggered by the conviction autofix workflow.
-            There are no additional human instructions — implement exactly what the issue describes.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
 
             REPO LAYOUT:
             This project spans TWO repositories, both checked out and available:
@@ -248,7 +248,7 @@ jobs:
 
             ADDITIONAL INSTRUCTIONS:
             This is an automated fix triggered by the conviction autofix workflow.
-            There are no additional human instructions — implement exactly what the issue describes.
+            Follow the issue description, refined by any maintainer comments (see step 2 below).
 
             REPO LAYOUT:
             This project spans TWO repositories, both checked out and available:

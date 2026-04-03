@@ -12,6 +12,7 @@ import json
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime, timezone
 
 # ── Config ──────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ MIN_MESSAGE_LENGTH = 10  # skip very short/empty messages
 ACTIONABLE_CATEGORIES = {"bug_report", "feature_request", "gameplay_feedback"}
 
 PRIORITY_WEIGHTS = {"critical": 5, "high": 3, "medium": 2, "low": 1}
-ROLE_WEIGHTS = {"admin": 3.0, "dev": 2.0, "user": 1.0}
+ROLE_WEIGHTS = {"admin": 3, "dev": 2, "user": 1}
 CATEGORY_LABELS = {
     "bug_report": "bug",
     "feature_request": "enhancement",
@@ -166,29 +167,41 @@ def cluster_feedback(items):
 
 # ── Player role lookup ─────────────────────────────────────────────
 def fetch_player_roles(player_names):
-    """Look up roles for a set of player names from the players table."""
+    """Look up roles for a batch of player names from the players table."""
+    names = [n for n in player_names if n]
+    if not names:
+        return {}
+    quoted = ",".join(urllib.parse.quote(n.lower(), safe="") for n in names)
+    try:
+        rows = sb_get("players", f"username_lower=in.({quoted})&select=username,role")
+    except Exception as e:
+        print(f"   Warning: role lookup failed: {e}", file=sys.stderr)
+        return {}
+    if not isinstance(rows, list):
+        return {}
     roles = {}
-    for name in player_names:
-        if not name:
-            continue
-        try:
-            rows = sb_get("players", f"username_lower=eq.{name.lower()}&select=username,role&limit=1")
-            if rows:
-                roles[name] = rows[0].get("role", "user") or "user"
-        except Exception:
-            pass  # default to "user" if lookup fails
-    return roles  # name -> role string
+    # Map back using original casing from caller
+    lower_to_orig = {}
+    for n in names:
+        lower_to_orig.setdefault(n.lower(), n)
+    for row in rows:
+        uname = row.get("username", "")
+        orig = lower_to_orig.get(uname.lower(), uname)
+        roles[orig] = row.get("role", "user") or "user"
+    return roles
 
 
 # ── Conviction scoring ─────────────────────────────────────────────
 def score_cluster(cluster, player_roles=None):
     """
-    Score a cluster by conviction signals. Designed so that:
-    - 1 person, 1 medium report     = 2+2 = 4  (below threshold, no issue)
-    - 1 person, 1 critical report   = 5+2 = 7  (above threshold)
-    - 2 people, same medium bug     = 4+4 = 8  (above threshold — real signal)
-    - 3 people, mixed priority      = ~9+6 = 15 (strong conviction)
-    - 1 person spamming 3 reports   = 6+2 = 8  (barely passes — unique reporters matter)
+    Score a cluster by conviction signals. Designed so that (user=1x baseline):
+    - 1 user,  1 medium report      = 2+2 = 4   (below threshold, no issue)
+    - 1 user,  1 critical report    = 5+2 = 7   (near threshold, passes with recency)
+    - 2 users, same medium bug      = 4+4 = 8   (above threshold — real signal)
+    - 3 users, mixed priority       = ~9+6 = 15  (strong conviction)
+    - 1 user  spamming 3 reports    = 6+2 = 8   (barely passes — unique reporters matter)
+    - 1 admin, 1 medium report      = 6+2 = 8   (fast-tracked — admin 3x multiplier)
+    - 1 dev,   1 critical report    = 10+2 = 12  (dev 2x multiplier)
 
     Formula:
       priority_sum (role-weighted) + (unique_reporters * 2) + recency_bonus
@@ -201,7 +214,7 @@ def score_cluster(cluster, player_roles=None):
         player_roles = {}
     priority_score = sum(
         PRIORITY_WEIGHTS.get(item.get("priority", "medium"), 2)
-        * ROLE_WEIGHTS.get(player_roles.get(item.get("player_name", ""), "user"), 1.0)
+        * ROLE_WEIGHTS.get(player_roles.get(item.get("player_name", ""), "user"), 1)
         for item in cluster
     )
     unique_reporters = len(set(item.get("player_name", "") for item in cluster if item.get("player_name")))
