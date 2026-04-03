@@ -307,7 +307,7 @@ async function startNewGame() {
   // Server-side access gate
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -400,7 +400,7 @@ async function continueGame() {
   }
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -589,7 +589,7 @@ async function handleSignup(e) {
     if (data.status === 'active') {
       content.innerHTML = '<div class="auth-success-icon">\u2694\uFE0F</div>'
         + '<h2 class="auth-success-title">You\'re In!</h2>'
-        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 1,000, <strong>' + username + '</strong>.</p>'
+        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 10,000, <strong>' + username + '</strong>.</p>'
         + '<button class="btn btn-primary auth-success-btn" onclick="closeAuthModals()">Got It</button>';
     } else {
       content.innerHTML = '<div class="auth-success-icon">\u23F3</div>'
@@ -776,7 +776,7 @@ async function refreshAuthUI() {
 
   try {
     const res = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': username },
+      headers: { 'x-player-name': username, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const data = await res.json();
     if (data.role) setPlayerRole(data.role);
