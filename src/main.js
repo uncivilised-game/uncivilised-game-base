@@ -347,24 +347,51 @@ async function startNewGame() {
   // Remove this block once district placement UI is built
   {
     const districtTypes = Object.keys(DISTRICTS);
-    // Find the player's starting area (first unit position or map center)
     const startUnit = game.units.find(u => u.owner === 'player');
     const cx = startUnit ? startUnit.col : Math.floor(MAP_COLS / 2);
     const cy = startUnit ? startUnit.row : Math.floor(MAP_ROWS / 2);
     let placed = 0;
-    for (let ring = 2; ring <= 5 && placed < districtTypes.length; ring++) {
-      for (let r = cy - ring; r <= cy + ring && placed < districtTypes.length; r++) {
-        for (let c = cx - ring; c <= cx + ring && placed < districtTypes.length; c++) {
+    const toPlace = [...districtTypes]; // mutable copy
+
+    // Helper: is a tile valid for generic district placement?
+    const isLand = (t) => t && t.base !== 'ocean' && t.base !== 'coast' && t.base !== 'lake' && t.feature !== 'mountain';
+    const isWater = (t) => t && (t.base === 'ocean' || t.base === 'coast' || t.base === 'lake');
+    const isOccupied = (col, row) => game.units.some(u => u.col === col && u.row === row);
+
+    // First pass: place harbor on a coastal land tile (adjacent to water)
+    const harborIdx = toPlace.indexOf('harbor');
+    if (harborIdx !== -1) {
+      let harborPlaced = false;
+      for (let ring = 2; ring <= 8 && !harborPlaced; ring++) {
+        for (let r = cy - ring; r <= cy + ring && !harborPlaced; r++) {
+          for (let c = cx - ring; c <= cx + ring && !harborPlaced; c++) {
+            if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
+            const tile = game.map[r][c];
+            if (!isLand(tile) || tile.improvement || tile.district || isOccupied(c, r)) continue;
+            // Must be adjacent to water
+            const nbs = getHexNeighbors(c, r);
+            const hasWater = nbs.some(nb => isWater(game.map[nb.row] && game.map[nb.row][nb.col]));
+            if (hasWater) {
+              tile.district = 'harbor';
+              toPlace.splice(harborIdx, 1);
+              placed++;
+              harborPlaced = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Second pass: place remaining districts on any valid land tile
+    for (let ring = 2; ring <= 5 && toPlace.length > 0; ring++) {
+      for (let r = cy - ring; r <= cy + ring && toPlace.length > 0; r++) {
+        for (let c = cx - ring; c <= cx + ring && toPlace.length > 0; c++) {
           if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
           const tile = game.map[r][c];
-          if (!tile || tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') continue;
-          if (tile.feature === 'mountain') continue;
-          if (tile.improvement) continue;
-          // Don't place on city tiles
-          if (game.units.some(u => u.col === c && u.row === r)) continue;
+          if (!isLand(tile) || tile.improvement || tile.district || isOccupied(c, r)) continue;
           const d = Math.abs(r - cy) + Math.abs(c - cx);
           if (d >= ring && d <= ring + 1) {
-            tile.district = districtTypes[placed];
+            tile.district = toPlace.shift();
             placed++;
           }
         }
