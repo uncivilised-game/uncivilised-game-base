@@ -9,7 +9,7 @@ import './assets.js';      // preloads terrain tiles, portraits, improvement ima
 import './_diplomacy-plugin.gen.js'; // auto-generated: loads diplomacy plugin if available
 
 // --- Module imports ---
-import { SAVE_KEY, GAME_VERSION, RESOURCES, FACTION_TRAITS } from './constants.js';
+import { SAVE_KEY, GAME_VERSION, RESOURCES, FACTION_TRAITS, DISTRICTS } from './constants.js';
 import {
   game, setGame, setNextUnitId, safeStorage, API, initCanvasRefs,
   currentCompetition, activeGameRecord, CITY_WALL_DEFAULTS,
@@ -342,6 +342,37 @@ async function startNewGame() {
 
   setNextUnitId(1);
   setGame(createInitialState());
+
+  // DEBUG: Seed districts near player start for visual testing
+  // Remove this block once district placement UI is built
+  {
+    const districtTypes = Object.keys(DISTRICTS);
+    // Find the player's starting area (first unit position or map center)
+    const startUnit = game.units.find(u => u.owner === 'player');
+    const cx = startUnit ? startUnit.col : Math.floor(MAP_COLS / 2);
+    const cy = startUnit ? startUnit.row : Math.floor(MAP_ROWS / 2);
+    let placed = 0;
+    for (let ring = 2; ring <= 5 && placed < districtTypes.length; ring++) {
+      for (let r = cy - ring; r <= cy + ring && placed < districtTypes.length; r++) {
+        for (let c = cx - ring; c <= cx + ring && placed < districtTypes.length; c++) {
+          if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) continue;
+          const tile = game.map[r][c];
+          if (!tile || tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') continue;
+          if (tile.feature === 'mountain') continue;
+          if (tile.improvement) continue;
+          // Don't place on city tiles
+          if (game.units.some(u => u.col === c && u.row === r)) continue;
+          const d = Math.abs(r - cy) + Math.abs(c - cx);
+          if (d >= ring && d <= ring + 1) {
+            tile.district = districtTypes[placed];
+            placed++;
+          }
+        }
+      }
+    }
+    if (placed > 0) console.log('[DEBUG] Seeded ' + placed + ' districts for visual testing');
+  }
+
   const eventLog = document.getElementById('event-log-messages');
   if (eventLog) eventLog.innerHTML = '';
   closeAllPanels();
