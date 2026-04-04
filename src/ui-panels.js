@@ -512,10 +512,8 @@ function renderUnitsPanel() {
     `;
     if (canBuy) {
       div.addEventListener('click', ((uid) => (e) => { e.stopPropagation(); purchaseUnit(uid); })(typeId));
-    } else if (canRecruit && !prodBusy) {
+    } else if (canRecruit) {
       div.addEventListener('click', () => recruitUnit(typeId));
-    } else if (canRecruit && prodBusy) {
-      div.addEventListener('click', () => addEvent('Production busy — need ' + gCost + 'g to buy with gold (have ' + game.gold + 'g)', 'gold'));
     }
     container.appendChild(div);
   }
@@ -855,10 +853,8 @@ function renderBuildPanel() {
       + '</div>';
     if (canBuy) {
       div.addEventListener('click', ((unitId) => (e) => { e.stopPropagation(); purchaseUnit(unitId); })(tid));
-    } else if (canProd) {
+    } else if (prereqMet) {
       div.addEventListener('click', () => recruitUnit(tid));
-    } else if (prereqMet && !canBuy) {
-      div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
     }
     container.appendChild(div);
   }
