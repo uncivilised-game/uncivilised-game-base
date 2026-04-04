@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { getTileYields, crossesRiver, roadBridgesRiver, isResourceRevealed, getHexDirection } from '../src/map.js';
+import { getImprovementYields } from '../src/improvements.js';
 import { getHexNeighbors } from '../src/hex.js';
 import { setupGameState, makeTile } from './fixtures.js';
 
@@ -76,6 +77,49 @@ describe('getTileYields()', () => {
   test('should return zeros for unknown terrain', () => {
     const yields = getTileYields(makeTile({ base: 'nonexistent' }));
     expect(yields).toEqual({ food: 0, prod: 0, gold: 0 });
+  });
+
+  test('should add mine improvement production to hills tile', () => {
+    const yields = getTileYields(makeTile({ base: 'grassland', feature: 'hills', improvement: 'mine' }));
+    // hills: +1 prod (feature), mine: +2 prod (improvement)
+    expect(yields.prod).toBe(3);
+  });
+
+  test('should add lumber mill improvement production', () => {
+    const yields = getTileYields(makeTile({ base: 'grassland', feature: 'woods', improvement: 'lumber_mill' }));
+    // woods: +1 prod (feature), lumber_mill: +2 prod (improvement)
+    expect(yields.prod).toBe(3);
+  });
+});
+
+describe('getImprovementYields()', () => {
+  beforeEach(() => {
+    setupGameState();
+  });
+
+  test('should return +2 prod for mine', () => {
+    const yields = getImprovementYields(makeTile({ base: 'grassland', feature: 'hills', improvement: 'mine' }));
+    expect(yields.prod).toBe(2);
+    expect(yields.food).toBe(0);
+    expect(yields.gold).toBe(0);
+  });
+
+  test('should return +2 prod for lumber mill', () => {
+    const yields = getImprovementYields(makeTile({ base: 'grassland', feature: 'woods', improvement: 'lumber_mill' }));
+    expect(yields.prod).toBe(2);
+  });
+
+  test('should return +2 food for farm', () => {
+    const yields = getImprovementYields(makeTile({ base: 'grassland', improvement: 'farm' }));
+    expect(yields.food).toBe(2);
+    expect(yields.prod).toBe(0);
+  });
+
+  test('should return zero yields for tile with no improvement', () => {
+    const yields = getImprovementYields(makeTile({ base: 'grassland', feature: 'hills' }));
+    expect(yields.prod).toBe(0);
+    expect(yields.food).toBe(0);
+    expect(yields.gold).toBe(0);
   });
 });
 
