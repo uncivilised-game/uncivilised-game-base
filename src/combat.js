@@ -495,6 +495,8 @@ function captureExpansionCity(factionId, cityIdx) {
     borderRadius: ec.borderRadius || 1,
     cultureAccum: 0,
     owner: 'player',
+    captured: true,
+    capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
 
@@ -686,6 +688,8 @@ function captureFactionCity(factionId) {
     population: 500,
     borderRadius: 2,
     cultureAccum: 0,
+    captured: true,
+    capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
 

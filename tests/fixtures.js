@@ -72,6 +72,12 @@ export function makeCity(overrides = {}) {
     amenityFromLuxuries: 0,
     amenityFromBuildings: 0,
     amenityFromAlliance: 0,
+    captured: false,
+    capturedTurn: -1,
+    unrestFromEmpireSize: 0,
+    unrestFromDistance: 0,
+    unrestFromCapture: 0,
+    unrestGarrisonBonus: 0,
     ...overrides,
   };
 }
