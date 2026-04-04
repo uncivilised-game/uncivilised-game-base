@@ -353,18 +353,25 @@ function endTurn() {
 
 
   _turnSection = 'resources';
-  // --- Resource bonuses from territory (respects city border radius) ---
+  // --- Tile yields + resource bonuses from territory (respects city border radius) ---
   let resBonus = { food: 0, gold: 0, prod: 0 };
+  const countedTiles = new Set(); // avoid double-counting tiles in overlapping city borders
   for (const city of game.cities) {
     const bRadius = city.borderRadius || 2;
     for (let r = 0; r < MAP_ROWS; r++) {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, city.col, city.row) <= bRadius) {
+          const tileKey = r * MAP_COLS + c;
+          if (countedTiles.has(tileKey)) continue;
+          countedTiles.add(tileKey);
           const tile = game.map[r][c];
+          // Collect gold from tile improvements and terrain features
+          const tileYields = getTileYields(tile);
+          if (tileYields.gold > 0) resBonus.gold += tileYields.gold;
+          // Resource bonuses (food/prod) — kept separate from tile yields
           if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
             const bonus = RESOURCES[tile.resource].bonus;
             if (bonus.food) resBonus.food += bonus.food;
-            if (bonus.gold) resBonus.gold += bonus.gold;
             if (bonus.prod) resBonus.prod += bonus.prod;
           }
         }
