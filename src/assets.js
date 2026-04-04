@@ -66,6 +66,14 @@ export function preloadDistrictImages() {
     img.src = './assets/hex/' + name + '.png';
     IMPROVEMENT_IMAGES[name] = img;
   }
+  // Building sprites (rendered on city tiles when built)
+  const buildingSprites = ['building_garrison'];
+  for (const name of buildingSprites) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = './assets/hex/' + name + '.png';
+    IMPROVEMENT_IMAGES[name] = img;
+  }
 }
 
 // Start preloading immediately
