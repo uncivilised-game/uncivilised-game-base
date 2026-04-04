@@ -314,6 +314,11 @@ window.barbCampAction = function(campId, action) {
       game.gold += lootGold;
       // Remove barbarian units near this camp
       game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 3));
+      // Track rebellion suppression for rebel camps
+      if (bc.id && bc.id.startsWith('rebel_')) {
+        game.rebellionsSuppressed = (game.rebellionsSuppressed || 0) + 1;
+        addEvent('Rebellion suppressed! Other cities are less likely to revolt.', 'combat');
+      }
       addEvent(`\u{1F4E2} The barbarians flee before your might! +${lootGold}g recovered.`, 'combat');
       showToast('Camp Dispersed', 'Your military strength forced the barbarians to abandon their camp.');
       break;
@@ -329,17 +334,27 @@ window.barbCampAction = function(campId, action) {
       bc.subjugated = true;
       // Remove barbarian units near this camp
       game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 3));
+      // Track rebellion suppression for rebel camps
+      const isRebelCamp = bc.id && bc.id.startsWith('rebel_');
+      if (isRebelCamp) {
+        game.rebellionsSuppressed = (game.rebellionsSuppressed || 0) + 1;
+      }
       // Create a new player city at this location
       const cityNames = ['New Hope', 'Frontier Post', 'Barbarian\'s Rest', 'Converted Hold', 'Outland Keep', 'March\'s End'];
       const cityName = cityNames[Math.floor(Math.random() * cityNames.length)];
       game.cities.push({
         col: bc.col, row: bc.row, name: cityName, owner: 'player',
         population: 500, buildings: [], isCapital: false, founded: game.turn,
+        rebellionSuppressed: isRebelCamp,
         ...CITY_WALL_DEFAULTS,
       });
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
-      addEvent(`\u{1F3F0} Barbarian camp converted to settlement "${cityName}"! The former raiders join your civilization.`, 'diplomacy');
+      if (isRebelCamp) {
+        addEvent(`\u{1F3F0} Rebellion suppressed! "${cityName}" is restored to the empire. Future revolts are less likely.`, 'diplomacy');
+      } else {
+        addEvent(`\u{1F3F0} Barbarian camp converted to settlement "${cityName}"! The former raiders join your civilization.`, 'diplomacy');
+      }
       showToast('Settlement Founded!', `${cityName} rises where barbarians once camped.`);
       break;
     }
@@ -364,6 +379,11 @@ window.barbCampAction = function(campId, action) {
         const lootGold = 15 + Math.floor(Math.random() * 20);
         game.gold += lootGold;
         game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 2));
+        // Track rebellion suppression for rebel camps
+        if (bc.id && bc.id.startsWith('rebel_')) {
+          game.rebellionsSuppressed = (game.rebellionsSuppressed || 0) + 1;
+          addEvent('Rebellion suppressed! Other cities are less likely to revolt.', 'combat');
+        }
         addEvent(`\u{1F525} Barbarian camp destroyed! +${lootGold}g looted.`, 'combat');
         showToast('Camp Destroyed', 'Your warriors razed the barbarian camp!');
       } else {

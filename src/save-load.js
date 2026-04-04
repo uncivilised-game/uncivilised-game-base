@@ -72,8 +72,19 @@ function migrateTiles(state) {
       if (city.amenityFromLuxuries === undefined) city.amenityFromLuxuries = 0;
       if (city.amenityFromBuildings === undefined) city.amenityFromBuildings = 0;
       if (city.amenityFromAlliance === undefined) city.amenityFromAlliance = 0;
+      // Unrest fields
+      if (city.captured === undefined) city.captured = false;
+      if (city.capturedTurn === undefined) city.capturedTurn = -1;
+      if (city.unrestFromEmpireSize === undefined) city.unrestFromEmpireSize = 0;
+      if (city.unrestFromDistance === undefined) city.unrestFromDistance = 0;
+      if (city.unrestFromCapture === undefined) city.unrestFromCapture = 0;
+      if (city.unrestGarrisonBonus === undefined) city.unrestGarrisonBonus = 0;
+      if (city.rebellionSuppressed === undefined) city.rebellionSuppressed = false;
+      if (city.roadConnected === undefined) city.roadConnected = false;
+      if (city.amenityFromRoad === undefined) city.amenityFromRoad = 0;
     }
   }
+  if (state.rebellionsSuppressed === undefined) state.rebellionsSuppressed = 0;
   if (!state.aiFactions) state.aiFactions = {};
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];

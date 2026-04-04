@@ -485,6 +485,20 @@ export const BARBARIAN_UNITS = {
   shaman:            { name: 'Shaman',             combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
 };
 
+export const UNREST = {
+  FREE_CITIES: 3,                   // No empire size penalty for first N cities
+  EMPIRE_SIZE_PENALTY: -1,           // Per city beyond FREE_CITIES
+  DISTANCE_DIVISOR: 8,              // -1 per this many hexes from capital
+  CAPTURED_PENALTY: -2,             // Flat penalty for captured cities
+  GARRISON_BONUS: 1,                // Bonus for fortified military unit in city
+  ROAD_CONNECTION_BONUS: 2,         // Amenity bonus for road connection to capital
+  ROAD_TRADE_GOLD: 1,              // Extra gold per turn for road-connected city
+  ROAD_COVERAGE_THRESHOLD: 0.5,    // Fraction of path that must have roads
+  REBELLION_BASE_CHANCE: 0.15,      // 15% base rebellion chance at REVOLT_RISK
+  REBELLION_GARRISON_CHANCE: 0.05,  // 5% with garrison
+  REBEL_UNIT_COUNT: 2,              // Military units spawned on rebellion
+};
+
 export const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];
 
 export const ZOOM_MIN = 0.5, ZOOM_MAX = 1.8, ZOOM_STEP = 0.1;

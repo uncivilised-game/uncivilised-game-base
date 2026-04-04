@@ -659,6 +659,7 @@ function handleHexClick(col, row) {
             unit._tacticAtkMod = tacticResult.atkMod || 1;
             unit._tacticDefMod = tacticResult.defMod || 1;
             unit._tacticNarrative = tacticResult.narrative || '';
+            if (tacticResult.noMoveCost) unit._tacticNoMoveCost = true;
 
             const result = resolveCombat(unit, target);
             // Add tactic narrative to combat result
@@ -668,6 +669,7 @@ function handleHexClick(col, row) {
             delete unit._tacticAtkMod;
             delete unit._tacticDefMod;
             delete unit._tacticNarrative;
+            delete unit._tacticNoMoveCost;
 
             showCombatResult(unit, target, result);
             if (result.attackerDied) {

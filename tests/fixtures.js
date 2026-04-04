@@ -72,6 +72,15 @@ export function makeCity(overrides = {}) {
     amenityFromLuxuries: 0,
     amenityFromBuildings: 0,
     amenityFromAlliance: 0,
+    captured: false,
+    capturedTurn: -1,
+    unrestFromEmpireSize: 0,
+    unrestFromDistance: 0,
+    unrestFromCapture: 0,
+    unrestGarrisonBonus: 0,
+    rebellionSuppressed: false,
+    roadConnected: false,
+    amenityFromRoad: 0,
     ...overrides,
   };
 }
@@ -167,6 +176,7 @@ export function makeGameState(overrides = {}, { cols = MAP_COLS, rows = MAP_ROWS
     yieldBonuses: [],
     eurekas: [],
     inspirations: [],
+    rebellionsSuppressed: 0,
     barbarianKills: 0,
     mineCount: 0,
     improvementCount: 0,
