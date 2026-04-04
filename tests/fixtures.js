@@ -177,6 +177,7 @@ export function makeGameState(overrides = {}, { cols = MAP_COLS, rows = MAP_ROWS
     activeAlliances: {},
     defensePacts: {},
     diplomaticLedger: {},
+    marriages: {},
     ...overrides,
   };
 }
