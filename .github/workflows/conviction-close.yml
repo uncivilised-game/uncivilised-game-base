@@ -2,8 +2,9 @@ name: Conviction Close
 
 on:
   schedule:
-    # Once daily at 6am UTC
-    - cron: '0 6 * * *'
+    # Every 6 hours — frequent enough to close issues promptly after 24h grace period,
+    # but not so aggressive that false positives pile up before anyone can object
+    - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

@@ -105,6 +105,46 @@ def fetch_open_issues():
     return issues
 
 
+# ── Filter out issues with active autofix work ────────────────────
+AUTOFIX_LABELS = {"autofix-in-progress"}
+
+
+def has_open_fix_pr(issue_number):
+    """Check if there's an open PR on a fix/{N} branch for this issue."""
+    owner = GITHUB_REPO.split("/")[0]
+    try:
+        prs = gh_get("pulls", f"state=open&head={owner}:fix/{issue_number}&per_page=1")
+        return len(prs) > 0
+    except urllib.error.HTTPError:
+        return False  # err on side of not closing
+
+
+def filter_closeable_issues(issues):
+    """Remove issues that shouldn't be auto-closed because they have active autofix work."""
+    closeable = []
+    skipped = 0
+    for issue in issues:
+        labels = {l["name"] for l in issue.get("labels", [])}
+
+        # Skip issues where autofix is actively running
+        if labels & AUTOFIX_LABELS:
+            print(f"  Skipping #{issue['number']}: has autofix-in-progress label")
+            skipped += 1
+            continue
+
+        # Skip issues that have an open fix PR (autofix created it, pending review/merge)
+        if has_open_fix_pr(issue["number"]):
+            print(f"  Skipping #{issue['number']}: has open fix/{issue['number']} PR")
+            skipped += 1
+            continue
+
+        closeable.append(issue)
+
+    if skipped:
+        print(f"Filtered out {skipped} issues with active autofix work")
+    return closeable
+
+
 # ── Fetch recently merged PRs ──────────────────────────────────────
 def fetch_merged_prs():
     """Fetch PRs merged in the last LOOKBACK_DAYS days."""
@@ -537,7 +577,9 @@ def main():
 
     # Exclude issues already pending-close or just closed from matching
     candidates = [i for i in issues if i["number"] not in still_pending]
-    # Also exclude issues we just closed (they'll be filtered by state on next fetch)
+
+    # Exclude issues with active autofix work (in-progress label or open fix PR)
+    candidates = filter_closeable_issues(candidates)
 
     # Tier 1: direct cross-reference
     tier1 = tier1_match(candidates, prs)
