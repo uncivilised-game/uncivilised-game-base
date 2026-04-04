@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS, UNREST, UNIT_TYPES } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -888,6 +888,76 @@ function updateFactionStats() {
         game.aiWonders[pick.id] = fid;
         if (game.metFactions && game.metFactions[fid]) {
           addEvent('\u{1F3DB} ' + (FACTIONS[fid]?.name || fid) + ' has completed ' + pick.name + '!', 'world');
+        }
+      }
+    }
+
+    // --- AI Unrest (parity with player system) ---
+    const capital = game.factionCities[fid];
+    const expansionCities = game.aiFactionCities[fid] || [];
+    const totalCities = (capital ? 1 : 0) + expansionCities.length;
+
+    // Empire size penalty: same FREE_CITIES threshold as player
+    const empirePenalty = totalCities > UNREST.FREE_CITIES
+      ? (totalCities - UNREST.FREE_CITIES) : 0;
+
+    // Apply growth penalties proportional to unrest
+    if (empirePenalty > 0) {
+      const penaltyMod = Math.max(0.25, 1 - empirePenalty * 0.1);
+      stats.gold = Math.max(0, stats.gold - empirePenalty);
+      stats.population = Math.floor(stats.population * penaltyMod);
+    }
+
+    // AI expansion city rebellion — same rules as player
+    if (capital && expansionCities.length > 0) {
+      for (let ci = expansionCities.length - 1; ci >= 0; ci--) {
+        const ec = expansionCities[ci];
+        const dist = hexDistance(ec.col, ec.row, capital.col, capital.row);
+        const distPenalty = Math.floor(dist / UNREST.DISTANCE_DIVISOR);
+        const capturedPenalty = ec.captured ? 2 : 0;
+        const cityUnrest = empirePenalty + distPenalty + capturedPenalty;
+
+        // Garrison check: fortified military unit in the city
+        const hasGarrison = game.units.some(u =>
+          u.col === ec.col && u.row === ec.row &&
+          u.owner === fid && u.fortified &&
+          UNIT_TYPES[u.type] && UNIT_TYPES[u.type].combat > 0
+        );
+        const garrisonBonus = hasGarrison ? UNREST.GARRISON_BONUS : 0;
+        const netUnrest = cityUnrest - garrisonBonus;
+
+        // Rebellion threshold: unrest >= 3 (same as player REVOLT_RISK)
+        if (netUnrest >= 3) {
+          const rebellionChance = hasGarrison
+            ? UNREST.REBELLION_GARRISON_CHANCE
+            : UNREST.REBELLION_BASE_CHANCE;
+          if (Math.random() < rebellionChance) {
+            const factionName = FACTIONS[fid]?.name || fid;
+            const cityName = ec.name || 'expansion city';
+            expansionCities.splice(ci, 1);
+
+            // Spawn barbarian defenders
+            const militaryTypes = Object.entries(UNIT_TYPES)
+              .filter(([, u]) => u.class === 'melee' || u.class === 'cavalry' || u.class === 'anti-cav')
+              .map(([k]) => k);
+            const spawnTiles = [{ col: ec.col, row: ec.row }, ...getHexNeighbors(ec.col, ec.row)];
+            let spawned = 0;
+            for (const tile of spawnTiles) {
+              if (spawned >= UNREST.REBEL_UNIT_COUNT) break;
+              const mapTile = game.map[tile.row]?.[tile.col];
+              if (!mapTile || !isTilePassable(mapTile)) continue;
+              const existing = game.units.find(u => u.col === tile.col && u.row === tile.row);
+              if (existing) continue;
+              const rebelType = militaryTypes[Math.floor(Math.random() * militaryTypes.length)];
+              const rebel = { id: Date.now() + spawned, type: rebelType, col: tile.col, row: tile.row, owner: 'barbarian', hp: 100, moveLeft: UNIT_TYPES[rebelType].movePoints, combat: UNIT_TYPES[rebelType].combat, fortified: true, sleeping: false, alert: false, xp: 0, promotions: [], pendingPromotion: false };
+              game.units.push(rebel);
+              spawned++;
+            }
+
+            if (game.metFactions && game.metFactions[fid]) {
+              addEvent(`\u{1F525} ${factionName}'s city ${cityName} has fallen into rebellion!`, 'world');
+            }
+          }
         }
       }
     }
