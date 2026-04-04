@@ -491,6 +491,9 @@ export const UNREST = {
   DISTANCE_DIVISOR: 8,              // -1 per this many hexes from capital
   CAPTURED_PENALTY: -2,             // Flat penalty for captured cities
   GARRISON_BONUS: 1,                // Bonus for fortified military unit in city
+  ROAD_CONNECTION_BONUS: 2,         // Amenity bonus for road connection to capital
+  ROAD_TRADE_GOLD: 1,              // Extra gold per turn for road-connected city
+  ROAD_COVERAGE_THRESHOLD: 0.5,    // Fraction of path that must have roads
   REBELLION_BASE_CHANCE: 0.15,      // 15% base rebellion chance at REVOLT_RISK
   REBELLION_GARRISON_CHANCE: 0.05,  // 5% with garrison
   REBEL_UNIT_COUNT: 2,              // Military units spawned on rebellion

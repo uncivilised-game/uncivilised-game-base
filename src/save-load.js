@@ -80,6 +80,8 @@ function migrateTiles(state) {
       if (city.unrestFromCapture === undefined) city.unrestFromCapture = 0;
       if (city.unrestGarrisonBonus === undefined) city.unrestGarrisonBonus = 0;
       if (city.rebellionSuppressed === undefined) city.rebellionSuppressed = false;
+      if (city.roadConnected === undefined) city.roadConnected = false;
+      if (city.amenityFromRoad === undefined) city.amenityFromRoad = 0;
     }
   }
   if (state.rebellionsSuppressed === undefined) state.rebellionsSuppressed = 0;

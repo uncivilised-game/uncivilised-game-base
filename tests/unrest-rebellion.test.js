@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { calculateCityAmenities, getAmenityStatus, getAmenityMod } from '../src/turn.js';
+import { calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected } from '../src/turn.js';
 import { setupGameState, makeCity, makeUnit } from './fixtures.js';
 import { UNREST } from '../src/constants.js';
 
@@ -210,6 +210,92 @@ describe('rebellion suppression bonus', () => {
     // City should still exist
     const regular = state.cities.find(c => c.name === 'Regular City');
     expect(regular).toBeDefined();
+  });
+});
+
+describe('road connection bonus', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('adjacent cities should always be road-connected', () => {
+    const c1 = makeCity({ name: 'A', col: 5, row: 5 });
+    const c2 = makeCity({ name: 'B', col: 6, row: 5 });
+    expect(areCitiesRoadConnected(c1, c2)).toBe(true);
+  });
+
+  test('distant cities without roads should NOT be connected', () => {
+    const c1 = makeCity({ name: 'A', col: 5, row: 5 });
+    const c2 = makeCity({ name: 'B', col: 20, row: 5 });
+    expect(areCitiesRoadConnected(c1, c2)).toBe(false);
+  });
+
+  test('distant cities with road path should be connected', () => {
+    const c1 = makeCity({ name: 'A', col: 5, row: 5 });
+    const c2 = makeCity({ name: 'B', col: 15, row: 5 });
+    // Build road tiles between them
+    for (let c = 5; c <= 15; c++) {
+      state.map[5][c].road = true;
+    }
+    expect(areCitiesRoadConnected(c1, c2)).toBe(true);
+  });
+
+  test('road-connected city should get amenity bonus', () => {
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5 }),
+      makeCity({ name: 'Colony', col: 15, row: 5 }),
+    ];
+    // Build road between them
+    for (let c = 5; c <= 15; c++) {
+      state.map[5][c].road = true;
+    }
+    const events = [];
+    calculateCityAmenities(events);
+    expect(state.cities[1].roadConnected).toBe(true);
+    expect(state.cities[1].amenityFromRoad).toBe(UNREST.ROAD_CONNECTION_BONUS);
+  });
+
+  test('unconnected city should NOT get road bonus', () => {
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5 }),
+      makeCity({ name: 'Isolated', col: 25, row: 5 }),
+    ];
+    state.buildings = ['arena', 'garden', 'temple'];
+    const events = [];
+    calculateCityAmenities(events);
+    const isolated = state.cities.find(c => c.name === 'Isolated');
+    expect(isolated.roadConnected).toBe(false);
+    expect(isolated.amenityFromRoad).toBe(0);
+  });
+
+  test('road bonus should be included in amenity balance', () => {
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5, population: 200 }),
+      makeCity({ name: 'Connected', col: 15, row: 5, population: 200 }),
+      makeCity({ name: 'Disconnected', col: 25, row: 5, population: 200 }),
+    ];
+    state.buildings = ['arena', 'garden', 'temple'];
+    // Road only to the first colony
+    for (let c = 5; c <= 15; c++) {
+      state.map[5][c].road = true;
+    }
+    const events = [];
+    calculateCityAmenities(events);
+    const connected = state.cities.find(c => c.name === 'Connected');
+    const disconnected = state.cities.find(c => c.name === 'Disconnected');
+    expect(connected.amenityBalance).toBeGreaterThan(disconnected.amenityBalance);
+  });
+
+  test('capital itself should not get road connection bonus', () => {
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5 }),
+    ];
+    const events = [];
+    calculateCityAmenities(events);
+    expect(state.cities[0].roadConnected).toBe(false);
+    expect(state.cities[0].amenityFromRoad).toBe(0);
   });
 });
 

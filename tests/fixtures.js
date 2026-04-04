@@ -79,6 +79,8 @@ export function makeCity(overrides = {}) {
     unrestFromCapture: 0,
     unrestGarrisonBonus: 0,
     rebellionSuppressed: false,
+    roadConnected: false,
+    amenityFromRoad: 0,
     ...overrides,
   };
 }

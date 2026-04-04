@@ -42,6 +42,23 @@ function getAmenityMod(balance) {
   return -0.25; // -3 or worse: -25% production and growth
 }
 
+function areCitiesRoadConnected(c1, c2) {
+  const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
+  if (dist <= 1) return true; // Adjacent cities are always connected
+  if (dist > 30) return false; // Too far for road connection
+  let roadCount = 0;
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      if (game.map[r][c].road) {
+        const d1 = hexDistance(c, r, c1.col, c1.row);
+        const d2 = hexDistance(c, r, c2.col, c2.row);
+        if (d1 + d2 <= dist + 2) roadCount++;
+      }
+    }
+  }
+  return roadCount >= dist * UNREST.ROAD_COVERAGE_THRESHOLD;
+}
+
 function distributeLuxuries(cities, luxuryTypes) {
   for (const city of cities) {
     city.amenityFromLuxuries = 0;
@@ -138,12 +155,22 @@ function calculateCityAmenities(events) {
     if (garrison) {
       city.unrestGarrisonBonus = UNREST.GARRISON_BONUS;
     }
+
+    // Road connection bonus: connected to capital via roads
+    city.roadConnected = false;
+    city.amenityFromRoad = 0;
+    if (capital && city !== capital) {
+      if (areCitiesRoadConnected(city, capital)) {
+        city.roadConnected = true;
+        city.amenityFromRoad = UNREST.ROAD_CONNECTION_BONUS;
+      }
+    }
   }
 
   // 7. Calculate final balance, status, and modifier per city
   let totalBalance = 0;
   for (const city of game.cities) {
-    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance;
+    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance + (city.amenityFromRoad || 0);
     const totalUnrest = city.unrestFromEmpireSize + city.unrestFromDistance + city.unrestFromCapture + city.unrestGarrisonBonus;
     city.amenityBalance = totalAmenities - city.amenityRequired + totalUnrest;
     city.amenityStatus = getAmenityStatus(city.amenityBalance);
@@ -986,31 +1013,22 @@ function endTurn() {
 
   // --- Road trade income between cities ---
   if (game.cities.length > 1) {
+    let roadTradeGold = 0;
     for (let i = 0; i < game.cities.length; i++) {
       for (let j = i + 1; j < game.cities.length; j++) {
-        // Check if there's a road path between cities (simplified: just check distance and road density)
-        const c1 = game.cities[i], c2 = game.cities[j];
-        const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
-        if (dist <= 15) {
-          // Count road tiles between them
-          let roadCount = 0;
-          for (let r = 0; r < MAP_ROWS; r++) {
-            for (let c = 0; c < MAP_COLS; c++) {
-              if (game.map[r][c].road) {
-                const d1 = hexDistance(c, r, c1.col, c1.row);
-                const d2 = hexDistance(c, r, c2.col, c2.row);
-                if (d1 + d2 <= dist + 2) roadCount++; // Road is roughly between the cities
-              }
-            }
-          }
-          if (roadCount >= dist * 0.5) { // At least half the path has roads
-            game.gold += 3;
-            // Only log occasionally
-            if (game.turn % 10 === 1) addEvent('Trade route: ' + c1.name + ' \u2194 ' + c2.name + ' (+3 gold)', 'gold');
-          }
+        if (areCitiesRoadConnected(game.cities[i], game.cities[j])) {
+          roadTradeGold += 3;
+          if (game.turn % 10 === 1) addEvent('Trade route: ' + game.cities[i].name + ' \u2194 ' + game.cities[j].name + ' (+3 gold)', 'gold');
         }
       }
     }
+    // Bonus gold for each city road-connected to the capital
+    for (let i = 1; i < game.cities.length; i++) {
+      if (game.cities[i].roadConnected) {
+        roadTradeGold += UNREST.ROAD_TRADE_GOLD;
+      }
+    }
+    if (roadTradeGold > 0) game.gold += roadTradeGold;
   }
 
   // --- City cultural expansion ---
@@ -1610,4 +1628,4 @@ function moveAISettlerTowardSite(settler, fid) {
   if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected };

@@ -663,10 +663,12 @@ function renderVictoryPanel() {
     if (city.unrestFromDistance) unrestParts.push('Distance: ' + city.unrestFromDistance);
     if (city.unrestFromCapture) unrestParts.push('Captured: ' + city.unrestFromCapture);
     if (city.unrestGarrisonBonus) unrestParts.push('Garrison: +' + city.unrestGarrisonBonus);
+    if (city.amenityFromRoad) unrestParts.push('Road to capital: +' + city.amenityFromRoad);
     const unrestTip = unrestParts.length > 0 ? unrestParts.join(', ') : 'No unrest';
     const capturedTag = city.captured ? ' <span style="color:#d93;font-size:9px">[CAPTURED]</span>' : '';
+    const roadTag = city.roadConnected ? ' <span style="color:#6b8;font-size:9px">[CONNECTED]</span>' : '';
 
-    c.innerHTML += '<div style="padding:2px 0;font-size:11px" title="' + unrestTip + '">' + emoji + ' <b>' + city.name + '</b>' + capturedTag + ': <span style="color:' + color + '">' + status + '</span> (bal ' + (bal >= 0 ? '+' : '') + bal + ')' + (modStr ? ' <span style="color:#888">' + modStr + ' growth/prod</span>' : '') + '</div>';
+    c.innerHTML += '<div style="padding:2px 0;font-size:11px" title="' + unrestTip + '">' + emoji + ' <b>' + city.name + '</b>' + capturedTag + roadTag + ': <span style="color:' + color + '">' + status + '</span> (bal ' + (bal >= 0 ? '+' : '') + bal + ')' + (modStr ? ' <span style="color:#888">' + modStr + ' growth/prod</span>' : '') + '</div>';
   }
   // Summary of amenity sources
   const luxCount = new Set();
