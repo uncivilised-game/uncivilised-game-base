@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS, TERRAIN_FEATURES } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
@@ -374,6 +374,12 @@ function endTurn() {
             if (bonus.food) resBonus.food += bonus.food;
             if (bonus.prod) resBonus.prod += bonus.prod;
           }
+          // Terrain feature production (hills, woods, etc.)
+          if (tile.feature && TERRAIN_FEATURES[tile.feature]) {
+            resBonus.prod += TERRAIN_FEATURES[tile.feature].prod || 0;
+          }
+          // Improvement production (mine, lumber mill, quarry, etc.)
+          resBonus.prod += getImprovementYields(tile).prod;
         }
       }
     }
