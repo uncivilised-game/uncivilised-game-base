@@ -5,6 +5,12 @@ on:
     types: [submitted]
   check_suite:
     types: [completed]
+  # workflow_run fires even when the triggering workflow used GITHUB_TOKEN,
+  # unlike pull_request_review/check_suite which are suppressed by GitHub's
+  # anti-recursion rule. This is the primary trigger for conviction auto-merge.
+  workflow_run:
+    workflows: ["PR Code Review", "Tests"]
+    types: [completed]
 
 concurrency:
   group: conviction-automerge
@@ -18,7 +24,9 @@ jobs:
        github.event.review.state == 'approved' &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
       (github.event_name == 'check_suite' &&
-       github.event.check_suite.conclusion == 'success')
+       github.event.check_suite.conclusion == 'success') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -33,11 +41,23 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           CS_BRANCH: ${{ github.event.check_suite.head_branch }}
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "pull_request_review" ]; then
             # Get the PR number from the review event
             echo "prs=[$PR_NUMBER]" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_run" ]; then
+            # workflow_run: find open PRs for the triggering workflow's branch
+            if [ -z "$WR_BRANCH" ]; then
+              echo "No branch found in workflow_run event"
+              echo "prs=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            PRS=$(gh pr list --repo "$GITHUB_REPO" \
+              --head "$WR_BRANCH" --base devel --state open \
+              --json number --jq '[.[].number]')
+            echo "prs=${PRS:-[]}" >> "$GITHUB_OUTPUT"
           else
             # check_suite: find open PRs for the head branch
             if [ -z "$CS_BRANCH" ]; then
