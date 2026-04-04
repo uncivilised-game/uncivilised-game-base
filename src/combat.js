@@ -160,7 +160,9 @@ function resolveCombat(attacker, defender) {
   }
 
   // Use movement points — ranged units can still move after attacking
-  if (aType.rangedCombat > 0 && aType.range > 0) {
+  if (attacker._tacticNoMoveCost) {
+    // Fire & Withdraw: no movement cost
+  } else if (aType.rangedCombat > 0 && aType.range > 0) {
     attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
   } else {
     attacker.moveLeft = 0;
@@ -394,6 +396,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(ec, factionId);
 
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
+  const noMoveCost = tacticResult.noMoveCost && aType.rangedCombat > 0;
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
 
   let atkPower = (aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat);
@@ -467,7 +470,9 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
     showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
-  attacker.moveLeft = 0;
+  if (!noMoveCost) {
+    attacker.moveLeft = 0;
+  }
   attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
@@ -572,6 +577,7 @@ function executeCityAttack(attacker, factionId, tactic) {
 
   // Apply tactic modifier
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
+  const noMoveCost = tacticResult.noMoveCost && aType.rangedCombat > 0;
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
 
   let atkPower = (aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat);
@@ -647,7 +653,9 @@ function executeCityAttack(attacker, factionId, tactic) {
     showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
-  attacker.moveLeft = 0;
+  if (!noMoveCost) {
+    attacker.moveLeft = 0;
+  }
   attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
@@ -804,6 +812,24 @@ function showBattlePanel(attacker, defender, onChoice) {
       <div class="battle-odds">Estimated victory: ${odds}%</div>
       <div class="battle-tactics-label">Choose your tactic:</div>
       <div class="battle-tactics">
+        ${aType.rangedCombat > 0 && aType.range > 0 ? `
+        <button class="battle-tactic" data-tactic="volley">
+          <strong>\u{1F3AF} Volley</strong>
+          <span>Concentrated barrage. +25% damage dealt.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="precision_shot">
+          <strong>\u{1F52B} Precision Shot</strong>
+          <span>Aimed shot. 60% chance of +35% damage, 40% chance of normal damage.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="suppressive_fire">
+          <strong>\u{1F6E1} Suppressive Fire</strong>
+          <span>Controlled fire. Guaranteed +10% damage.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="fire_and_withdraw">
+          <strong>\u{1F3C3} Fire & Withdraw</strong>
+          <span>Shoot and reposition. -15% damage, but costs no movement.</span>
+        </button>
+        ` : `
         <button class="battle-tactic" data-tactic="charge">
           <strong>\u{2694} Charge</strong>
           <span>All-out attack. +20% damage dealt, +10% damage taken.</span>
@@ -820,6 +846,7 @@ function showBattlePanel(attacker, defender, onChoice) {
           <strong>\u{1F3C3} Feigned Retreat</strong>
           <span>Lure them in. If enemy combat > yours: +25% damage. Otherwise: -10%.</span>
         </button>
+        `}
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
           <span>Withdraw without fighting. Unit loses 1 move point.</span>
@@ -872,6 +899,29 @@ function applyTacticModifier(tactic, atkPower, defPower, attacker, defender) {
       break;
     case 'retreat':
       return { retreat: true, narrative: 'Your forces pull back from the engagement.' };
+
+    // --- Ranged tactics ---
+    case 'volley':
+      atkMod = 1.25; defMod = 1.0;
+      narrative = 'A concentrated volley rains down on the enemy!';
+      break;
+    case 'precision_shot':
+      if (Math.random() < 0.6) {
+        atkMod = 1.35; defMod = 1.0;
+        narrative = 'A precise shot finds its mark!';
+      } else {
+        atkMod = 1.0; defMod = 1.0;
+        narrative = 'The aimed shot flies wide — normal damage.';
+      }
+      break;
+    case 'suppressive_fire':
+      atkMod = 1.1; defMod = 1.0;
+      narrative = 'Steady, controlled fire keeps the enemy pinned.';
+      break;
+    case 'fire_and_withdraw':
+      atkMod = 0.85; defMod = 1.0;
+      narrative = 'A quick shot before pulling back to safety.';
+      return { atkMod, defMod, narrative, retreat: false, noMoveCost: true };
   }
 
   return { atkMod, defMod, narrative, retreat: false };
