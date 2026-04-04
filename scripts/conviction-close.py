@@ -29,6 +29,9 @@ LOOKBACK_DAYS = 30
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 AUTO_CLOSED_LABEL = "auto-closed"
 AUTO_CLOSED_LABEL_COLOR = "cccccc"
+PENDING_CLOSE_LABEL = "pending-close"
+PENDING_CLOSE_LABEL_COLOR = "e8e459"
+GRACE_PERIOD_HOURS = 24  # hours between "pending-close" label and actual close
 MAX_TIER2_ISSUES = 30  # cap issues sent to Claude to bound prompt size
 MAX_TIER2_PRS = 50     # cap PRs sent to Claude to bound prompt size
 
@@ -125,7 +128,7 @@ def fetch_merged_prs():
                 merged.append({
                     "number": pr["number"],
                     "title": pr["title"],
-                    "body": (pr.get("body") or "")[:1000],
+                    "body": (pr.get("body") or "")[:1500],
                     "branch": pr.get("head", {}).get("ref", ""),
                     "base": base,
                     "merged_at": pr["merged_at"],
@@ -229,11 +232,11 @@ def tier2_match(issues, prs):
 
     # Build prompt
     issues_text = "\n".join(
-        f"- #{i['number']}: \"{i['title']}\" — {(i.get('body') or '')[:300]}"
+        f"- #{i['number']}: \"{i['title']}\" — {(i.get('body') or '')[:600]}"
         for i in capped_issues
     )
     prs_text = "\n".join(
-        f"- PR #{p['number']} (branch: {p['branch']}, merged to {p['base']}): \"{p['title']}\" — {p['body'][:300]}"
+        f"- PR #{p['number']} (branch: {p['branch']}, merged to {p['base']}): \"{p['title']}\" — {p['body'][:600]}"
         for p in capped_prs
     )
 
@@ -247,11 +250,18 @@ For each issue that you believe has been FULLY fixed by one of the merged PRs, r
 [{{"issue": <number>, "fixed_by_pr": <number>, "confidence": "high"|"medium", "reason": "<brief explanation>"}}]
 
 Rules:
-- Only include issues you are confident are fixed. When in doubt, leave them out.
-- "high" confidence: the PR clearly and directly addresses the issue described
+- Only include issues you are confident are FULLY and COMPLETELY fixed. When in doubt, leave them out.
+- "high" confidence: the PR clearly and directly addresses the EXACT issue described — not just a related area
 - "medium" confidence: the PR likely addresses it but the connection is indirect
 - If no issues appear fixed, return an empty array: []
-- Return ONLY the JSON array, no other text."""
+- Return ONLY the JSON array, no other text.
+
+IMPORTANT — common false positives to avoid:
+- A PR that fixes a bug in the SAME AREA or SAME FEATURE does NOT mean it fixes a different bug in that area. Two bugs can exist in the same module.
+- An issue may describe a REGRESSION or CONTINUATION of a previously fixed problem. A PR that fixed the original bug does NOT fix the follow-up issue — the follow-up exists precisely because the first fix was insufficient.
+- A PR that fixes symptom A does not fix an issue about symptom B, even if they share a root cause, unless the PR explicitly addresses both.
+- Partial fixes are NOT full fixes. If the issue describes multiple problems and the PR only addresses one, do NOT mark it as fixed.
+- Similar wording between an issue title and a PR title does NOT mean they are related. Read the descriptions carefully."""
 
     result = _req("POST", "https://api.anthropic.com/v1/messages", data={
         "model": CLAUDE_MODEL,
@@ -329,25 +339,33 @@ def filter_prs_on_main(prs):
 
 
 # ── Ensure label exists ─────────────────────────────────────────────
-def ensure_label():
-    """Create the auto-closed label if it doesn't exist."""
+def ensure_label(name, color, description):
+    """Create a label if it doesn't exist."""
     try:
-        gh_get(f"labels/{AUTO_CLOSED_LABEL}")
+        gh_get(f"labels/{name}")
     except urllib.error.HTTPError as e:
         if e.code == 404:
             gh_post("labels", {
-                "name": AUTO_CLOSED_LABEL,
-                "color": AUTO_CLOSED_LABEL_COLOR,
-                "description": "Automatically closed by conviction-close after detecting a merged fix",
+                "name": name,
+                "color": color,
+                "description": description,
             })
-            print(f"Created '{AUTO_CLOSED_LABEL}' label")
+            print(f"Created '{name}' label")
         else:
             raise
 
 
+def ensure_labels():
+    """Create all needed labels."""
+    ensure_label(AUTO_CLOSED_LABEL, AUTO_CLOSED_LABEL_COLOR,
+                 "Automatically closed by conviction-close after detecting a merged fix")
+    ensure_label(PENDING_CLOSE_LABEL, PENDING_CLOSE_LABEL_COLOR,
+                 "Will be auto-closed after grace period unless someone objects")
+
+
 # ── Close issues ────────────────────────────────────────────────────
-def close_issue(issue, prs, tier, reason=""):
-    """Post a comment, add label, and close an issue."""
+def mark_pending_close(issue, prs, tier, reason=""):
+    """Add pending-close label and comment — issue will be closed on next run after grace period."""
     num = issue["number"]
     pr_citations = ", ".join(
         f"PR #{p['number']} (`{p['title']}`, merged to `{p['base']}` on {p['merged_at'][:10]})"
@@ -357,30 +375,135 @@ def close_issue(issue, prs, tier, reason=""):
     if tier == 1:
         comment = (
             f"This issue appears to be resolved by {pr_citations}.\n\n"
-            f"Closing automatically. If this issue persists, please reopen."
+            f"It will be **automatically closed in ~{GRACE_PERIOD_HOURS} hours** unless someone "
+            f"comments that the issue still persists. Remove the `{PENDING_CLOSE_LABEL}` label to prevent auto-close."
         )
     else:
         comment = (
             f"Based on analysis of recent changes, this issue appears to be addressed by {pr_citations}.\n\n"
             f"> {reason}\n\n"
-            f"Closing automatically. If this issue persists, please reopen."
+            f"It will be **automatically closed in ~{GRACE_PERIOD_HOURS} hours** unless someone "
+            f"comments that the issue still persists. Remove the `{PENDING_CLOSE_LABEL}` label to prevent auto-close."
         )
 
     if DRY_RUN:
-        print(f"  [DRY RUN] Would close #{num} (Tier {tier}): {pr_citations}")
+        print(f"  [DRY RUN] Would mark pending-close #{num} (Tier {tier}): {pr_citations}")
         return
 
     # Post comment
     gh_post(f"issues/{num}/comments", {"body": comment})
 
-    # Add label without overwriting other concurrent label changes
+    # Add pending-close label
+    current_labels = [l["name"] for l in issue.get("labels", [])]
+    if PENDING_CLOSE_LABEL not in current_labels:
+        gh_post(f"issues/{num}/labels", {"labels": [PENDING_CLOSE_LABEL]})
+
+    print(f"  Marked pending-close #{num} (Tier {tier})")
+
+
+def close_issue(issue):
+    """Actually close a pending-close issue after the grace period has passed."""
+    num = issue["number"]
+
+    if DRY_RUN:
+        print(f"  [DRY RUN] Would close #{num} (grace period elapsed)")
+        return
+
+    # Add auto-closed label
     current_labels = [l["name"] for l in issue.get("labels", [])]
     if AUTO_CLOSED_LABEL not in current_labels:
         gh_post(f"issues/{num}/labels", {"labels": [AUTO_CLOSED_LABEL]})
 
+    # Remove pending-close label
+    if PENDING_CLOSE_LABEL in current_labels:
+        try:
+            _req("DELETE",
+                 f"https://api.github.com/repos/{GITHUB_REPO}/issues/{num}/labels/{PENDING_CLOSE_LABEL}",
+                 headers=GH_HEADERS)
+        except urllib.error.HTTPError:
+            pass  # label may have been removed manually
+
     # Close
     gh_patch(f"issues/{num}", {"state": "closed", "state_reason": "completed"})
-    print(f"  Closed #{num} (Tier {tier})")
+    print(f"  Closed #{num} (grace period elapsed)")
+
+
+def process_pending_close_issues(issues):
+    """Close issues that have had the pending-close label for longer than the grace period.
+    Returns the count of issues closed and the set of issue numbers that are still pending."""
+    closed = 0
+    still_pending = set()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=GRACE_PERIOD_HOURS)
+
+    for issue in issues:
+        labels = {l["name"] for l in issue.get("labels", [])}
+        if PENDING_CLOSE_LABEL not in labels:
+            continue
+
+        num = issue["number"]
+
+        # Check issue timeline/events to find when pending-close label was added
+        try:
+            events = gh_get(f"issues/{num}/events", "per_page=100")
+        except urllib.error.HTTPError:
+            events = []
+
+        label_added_at = None
+        for event in events:
+            if (event.get("event") == "labeled" and
+                    event.get("label", {}).get("name") == PENDING_CLOSE_LABEL):
+                label_added_at = datetime.fromisoformat(
+                    event["created_at"].replace("Z", "+00:00"))
+
+        if label_added_at is None:
+            # Can't determine when label was added; skip for safety
+            still_pending.add(num)
+            continue
+
+        if label_added_at > cutoff:
+            # Grace period hasn't elapsed yet
+            still_pending.add(num)
+            print(f"  #{num}: pending-close, grace period not yet elapsed (labeled {label_added_at.isoformat()})")
+            continue
+
+        # Check if someone commented after the label was added (objection)
+        try:
+            comments = gh_get(f"issues/{num}/comments", "per_page=100&sort=created&direction=desc")
+        except urllib.error.HTTPError:
+            comments = []
+
+        objection = False
+        for comment in comments:
+            comment_at = datetime.fromisoformat(
+                comment["created_at"].replace("Z", "+00:00"))
+            # Only look at comments after the label was added
+            if comment_at <= label_added_at:
+                break
+            # Ignore bot comments (our own auto-close comments)
+            author = comment.get("user", {}).get("type", "")
+            if author == "Bot":
+                continue
+            # A human commented after the label — treat as objection
+            objection = True
+            print(f"  #{num}: human commented after pending-close label, removing label")
+            break
+
+        if objection:
+            # Remove the pending-close label, leave issue open
+            if not DRY_RUN:
+                try:
+                    _req("DELETE",
+                         f"https://api.github.com/repos/{GITHUB_REPO}/issues/{num}/labels/{PENDING_CLOSE_LABEL}",
+                         headers=GH_HEADERS)
+                except urllib.error.HTTPError:
+                    pass
+            continue
+
+        # Grace period elapsed, no objection — close it
+        close_issue(issue)
+        closed += 1
+
+    return closed, still_pending
 
 
 # ── Main ────────────────────────────────────────────────────────────
@@ -394,53 +517,67 @@ def main():
         print("No open conviction issues. Done.")
         return
 
+    # Ensure labels exist before any operations (skip in dry-run to stay read-only)
+    if not DRY_RUN:
+        ensure_labels()
+
+    # Phase 1: Process issues already marked pending-close (grace period check)
+    print("\n--- Phase 1: Processing pending-close issues ---")
+    closed_pending, still_pending = process_pending_close_issues(issues)
+
     prs = fetch_merged_prs()
     if not prs:
-        print("No recently merged PRs. Done.")
+        print("No recently merged PRs. Done (after processing pending).")
+        print(f"\n=== Summary ===")
+        print(f"Closed (pending-close grace period elapsed): {closed_pending}")
         return
 
+    # Phase 2: Find new matches and mark them pending-close
+    print("\n--- Phase 2: Finding new matches ---")
+
+    # Exclude issues already pending-close or just closed from matching
+    candidates = [i for i in issues if i["number"] not in still_pending]
+    # Also exclude issues we just closed (they'll be filtered by state on next fetch)
+
     # Tier 1: direct cross-reference
-    tier1 = tier1_match(issues, prs)
+    tier1 = tier1_match(candidates, prs)
 
     # Tier 2: semantic matching for remaining issues
-    unmatched = [i for i in issues if i["number"] not in tier1]
+    unmatched = [i for i in candidates if i["number"] not in tier1]
     tier2 = tier2_match(unmatched, prs)
 
-    # Ensure label exists before closing (skip in dry-run to stay read-only)
-    if (tier1 or tier2) and not DRY_RUN:
-        ensure_label()
-
-    # Close matched issues — only if the fix has reached main
-    closed_t1 = 0
-    closed_t2 = 0
+    # Mark matched issues as pending-close — only if the fix has reached main
+    pending_t1 = 0
+    pending_t2 = 0
     skipped_not_on_main = 0
 
     print("\nChecking which fixes have reached main...")
-    for issue in issues:
+    for issue in candidates:
         num = issue["number"]
         if num in tier1:
             prs_on_main = filter_prs_on_main(tier1[num])
             if prs_on_main:
-                close_issue(issue, prs_on_main, tier=1)
-                closed_t1 += 1
+                mark_pending_close(issue, prs_on_main, tier=1)
+                pending_t1 += 1
             else:
                 skipped_not_on_main += 1
         elif num in tier2:
             info = tier2[num]
             prs_on_main = filter_prs_on_main(info["prs"])
             if prs_on_main:
-                close_issue(issue, prs_on_main, tier=2, reason=info.get("reason", ""))
-                closed_t2 += 1
+                mark_pending_close(issue, prs_on_main, tier=2, reason=info.get("reason", ""))
+                pending_t2 += 1
             else:
                 skipped_not_on_main += 1
 
     # Summary
     print(f"\n=== Summary ===")
     print(f"Open conviction issues checked: {len(issues)}")
-    print(f"Closed (Tier 1 — direct reference): {closed_t1}")
-    print(f"Closed (Tier 2 — semantic match):   {closed_t2}")
+    print(f"Closed (pending-close grace period elapsed): {closed_pending}")
+    print(f"Marked pending-close (Tier 1 — direct reference): {pending_t1}")
+    print(f"Marked pending-close (Tier 2 — semantic match):   {pending_t2}")
     print(f"Skipped (fix not yet on main): {skipped_not_on_main}")
-    print(f"Remaining open: {len(issues) - closed_t1 - closed_t2}")
+    print(f"Still pending from previous run: {len(still_pending)}")
 
 
 if __name__ == "__main__":
