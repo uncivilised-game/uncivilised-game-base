@@ -85,10 +85,13 @@ describe('calculateCityAmenities() unrest system', () => {
       makeCity({ name: 'Capital', col: 5, row: 5 }),
       makeCity({ name: 'Conquered', col: 10, row: 5, captured: true }),
     ];
+    // Add amenity buildings to prevent rebellion from removing the captured city
+    state.buildings = ['arena', 'garden', 'temple'];
     const events = [];
     calculateCityAmenities(events);
     expect(state.cities[0].unrestFromCapture).toBe(0);
-    expect(state.cities[1].unrestFromCapture).toBe(UNREST.CAPTURED_PENALTY);
+    const conquered = state.cities.find(c => c.name === 'Conquered');
+    expect(conquered.unrestFromCapture).toBe(UNREST.CAPTURED_PENALTY);
   });
 
   test('should apply garrison bonus for fortified military unit', () => {
