@@ -104,7 +104,7 @@ function calculateCityAmenities(events) {
   }
 
   // 3. Building amenities: Arena/Garden/Temple each provide +1 to all cities
-  const amenityBuildings = ['arena', 'garden', 'temple', 'garrison'];
+  const amenityBuildings = ['arena', 'garden', 'temple'];
   for (const city of game.cities) {
     for (const bid of amenityBuildings) {
       if (game.buildings.includes(bid)) {

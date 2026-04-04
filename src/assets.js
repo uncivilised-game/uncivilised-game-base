@@ -6,7 +6,7 @@ let _render = null;
 export function setRenderCallback(fn) { _render = fn; }
 
 export function preloadImprovementImages() {
-  const impNames = ['imp_farm','imp_mine','imp_pasture','imp_road','imp_irrigation','imp_lumber_mill','imp_camp','imp_quarry','imp_fishing_boats'];
+  const impNames = ['imp_farm','imp_mine','imp_pasture','imp_road','imp_irrigation','imp_lumber_mill','imp_camp','imp_quarry','imp_fishing_boats','imp_garrison'];
   for (const name of impNames) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -61,14 +61,6 @@ export function preloadDistrictImages() {
     'district_encampment', 'district_harbor', 'district_garden_quarter',
   ];
   for (const name of districtNames) {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = './assets/hex/' + name + '.png';
-    IMPROVEMENT_IMAGES[name] = img;
-  }
-  // Building sprites (rendered on city tiles when built)
-  const buildingSprites = ['building_garrison'];
-  for (const name of buildingSprites) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = './assets/hex/' + name + '.png';

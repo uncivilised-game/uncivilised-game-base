@@ -85,8 +85,12 @@ describe('calculateCityAmenities() unrest system', () => {
       makeCity({ name: 'Capital', col: 5, row: 5 }),
       makeCity({ name: 'Conquered', col: 10, row: 5, captured: true }),
     ];
+    // Prevent rebellion from removing the captured city during amenity calc
+    const origRandom = Math.random;
+    Math.random = () => 0.99;
     const events = [];
     calculateCityAmenities(events);
+    Math.random = origRandom;
     expect(state.cities[0].unrestFromCapture).toBe(0);
     expect(state.cities[1].unrestFromCapture).toBe(UNREST.CAPTURED_PENALTY);
   });
