@@ -158,7 +158,19 @@ function calculateCityAmenities(events) {
 
     // Garrison reduces rebellion chance
     const hasGarrison = city.unrestGarrisonBonus > 0;
-    const rebellionChance = hasGarrison ? UNREST.REBELLION_GARRISON_CHANCE : UNREST.REBELLION_BASE_CHANCE;
+    let rebellionChance = hasGarrison ? UNREST.REBELLION_GARRISON_CHANCE : UNREST.REBELLION_BASE_CHANCE;
+
+    // Suppression bonuses from recaptured rebel cities
+    const suppressed = game.rebellionsSuppressed || 0;
+    if (suppressed > 0) {
+      if (city.rebellionSuppressed) {
+        // This city was recaptured: 50% reduction + 10% per other suppression
+        rebellionChance *= 0.5 * Math.pow(0.9, suppressed - 1);
+      } else {
+        // Other cities: 10% reduction per suppression
+        rebellionChance *= Math.pow(0.9, suppressed);
+      }
+    }
 
     if (Math.random() >= rebellionChance) continue;
 

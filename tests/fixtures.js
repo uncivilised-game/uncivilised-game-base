@@ -78,6 +78,7 @@ export function makeCity(overrides = {}) {
     unrestFromDistance: 0,
     unrestFromCapture: 0,
     unrestGarrisonBonus: 0,
+    rebellionSuppressed: false,
     ...overrides,
   };
 }
@@ -173,6 +174,7 @@ export function makeGameState(overrides = {}, { cols = MAP_COLS, rows = MAP_ROWS
     yieldBonuses: [],
     eurekas: [],
     inspirations: [],
+    rebellionsSuppressed: 0,
     barbarianKills: 0,
     mineCount: 0,
     improvementCount: 0,

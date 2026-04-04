@@ -79,8 +79,10 @@ function migrateTiles(state) {
       if (city.unrestFromDistance === undefined) city.unrestFromDistance = 0;
       if (city.unrestFromCapture === undefined) city.unrestFromCapture = 0;
       if (city.unrestGarrisonBonus === undefined) city.unrestGarrisonBonus = 0;
+      if (city.rebellionSuppressed === undefined) city.rebellionSuppressed = false;
     }
   }
+  if (state.rebellionsSuppressed === undefined) state.rebellionsSuppressed = 0;
   if (!state.aiFactions) state.aiFactions = {};
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];

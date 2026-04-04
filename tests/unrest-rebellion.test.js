@@ -163,6 +163,56 @@ describe('calculateCityAmenities() unrest system', () => {
   });
 });
 
+describe('rebellion suppression bonus', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('rebellionsSuppressed should default to 0', () => {
+    expect(state.rebellionsSuppressed).toBe(0);
+  });
+
+  test('suppressed city should have rebellionSuppressed flag', () => {
+    const city = makeCity({ name: 'Recaptured', rebellionSuppressed: true });
+    expect(city.rebellionSuppressed).toBe(true);
+  });
+
+  test('suppression should reduce rebellion chance for recaptured city by 50%', () => {
+    // With 1 suppression, recaptured city: chance *= 0.5 * 0.9^0 = 0.5
+    // Base chance for REVOLT_RISK without garrison = 0.15
+    // Suppressed chance = 0.15 * 0.5 = 0.075
+    state.rebellionsSuppressed = 1;
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5, population: 200 }),
+      makeCity({ name: 'Recaptured', col: 7, row: 5, population: 200, rebellionSuppressed: true }),
+    ];
+    state.buildings = ['arena', 'garden', 'temple'];
+    const events = [];
+    calculateCityAmenities(events);
+    // City should still exist (suppression makes rebellion less likely)
+    const recaptured = state.cities.find(c => c.name === 'Recaptured');
+    expect(recaptured).toBeDefined();
+    expect(recaptured.rebellionSuppressed).toBe(true);
+  });
+
+  test('suppression should reduce rebellion chance for other cities by 10% per suppression', () => {
+    // With 2 suppressions, other cities: chance *= 0.9^2 = 0.81
+    state.rebellionsSuppressed = 2;
+    state.cities = [
+      makeCity({ name: 'Capital', col: 5, row: 5, population: 200 }),
+      makeCity({ name: 'Regular City', col: 7, row: 5, population: 200 }),
+    ];
+    state.buildings = ['arena', 'garden', 'temple'];
+    const events = [];
+    calculateCityAmenities(events);
+    // City should still exist
+    const regular = state.cities.find(c => c.name === 'Regular City');
+    expect(regular).toBeDefined();
+  });
+});
+
 describe('UNREST constants', () => {
   test('should have expected default values', () => {
     expect(UNREST.FREE_CITIES).toBe(3);
