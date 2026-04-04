@@ -118,7 +118,6 @@ export let BUILDINGS = [
   { id: 'harbor',      name: 'Harbor',        cost: 70,  desc: '+3 Gold, +1 Food (coastal)', effect: { gold: 3, food: 1 } },
   { id: 'university',  name: 'University',    cost: 100, desc: '+4 Science per turn', effect: { science: 4 } },
   { id: 'bank',        name: 'Bank',          cost: 90,  desc: '+5 Gold per turn', effect: { gold: 5 } },
-  { id: 'garrison',    name: 'Garrison',      cost: 65,  desc: '+4 Military, +2 Defense, +1 Amenity', effect: { military: 4, defense: 2 }, sprite: 'building_garrison' },
   { id: 'fortress',    name: 'Fortress',      cost: 110, desc: '+8 Military, +3 Defense', effect: { military: 8, defense: 3 } },
   { id: 'monument', name: 'Monument', cost: 30, desc: '+2 Culture per turn', effect: { culture: 2 } },
   { id: 'garden', name: 'Garden', cost: 45, desc: '+2 Food, +1 Amenity', effect: { food: 2 } },
@@ -149,7 +148,7 @@ export const TECHNOLOGIES = [
   { id: 'pottery', name: 'Pottery', cost: 20, desc: 'Unlock Shrine, storage', unlocks: [], eureka: { condition: 'found_second_city', description: 'Found a second city' } },
   { id: 'irrigation_tech', name: 'Irrigation', cost: 30, desc: 'Unlock Irrigation improvement, Garden', unlocks: ['irrigation', 'garden'], requires: ['agriculture'], eureka: { condition: 'farm_near_river', description: 'Build a Farm adjacent to a River' } },
   { id: 'construction', name: 'Construction', cost: 50, desc: 'Better buildings and roads', unlocks: [], requires: ['masonry'], eureka: { condition: 'build_3_mines', description: 'Build 3 Mines' } },
-  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, unlock Garrison', unlocks: ['garrison'], requires: ['bronze_working'], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
+  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, unlock Garrison improvement', unlocks: ['garrison'], requires: ['bronze_working'], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
   { id: 'mathematics', name: 'Mathematics', cost: 70, desc: 'Unlock Academy, Pyramid of Sun', unlocks: ['academy'], requires: ['engineering'] },
   { id: 'philosophy', name: 'Philosophy', cost: 60, desc: '+1 Envoy, cultural growth', unlocks: [], requires: ['mysticism', 'writing'] },
   { id: 'theology', name: 'Theology', cost: 65, desc: 'Temple upgrades', unlocks: [], requires: ['philosophy'] },
@@ -235,7 +234,7 @@ export const DISTRICTS = {
     icon: '\u{2694}',
     desc: 'Military training grounds. +Military near hills.',
     cost: 45,
-    buildings: ['barracks', 'garrison', 'blacksmith', 'fortress'],
+    buildings: ['barracks', 'blacksmith', 'fortress'],
     yields: { military: 2 },
     adjacency: { hills: { military: 1 } },
     placement: { requiresTerrain: ['grassland', 'plains', 'tundra'], notAdjacentToCity: true },
@@ -388,6 +387,9 @@ export const TILE_IMPROVEMENTS = {
 
   // Infrastructure
   road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
+
+  // Military
+  garrison:    { name: 'Garrison',      icon: '🏰', turns: 4, requires: 'iron_working', validOn: ['grassland','plains','desert','tundra','hills'], yields: { prod: 1 }, defenseBonus: 5, desc: '+5 defense to units on tile, +1 Production' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },

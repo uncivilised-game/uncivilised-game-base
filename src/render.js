@@ -908,18 +908,6 @@ function render() {
     drawFactionRing(ctx, sx, sy, PLAYER_COLOR);
     // Settlement sprite (based on population)
     drawSettlementSprite(ctx, sx, sy, city.population);
-    // Garrison building sprite overlay
-    if (game.buildings.includes('garrison')) {
-      const garImg = IMPROVEMENT_IMAGES['building_garrison'];
-      if (garImg && garImg.complete && garImg.naturalWidth > 0) {
-        ctx.save();
-        ctx.globalAlpha = 0.9;
-        const gs = HEX_SIZE * 1.4;
-        ctx.drawImage(garImg, sx + HEX_SIZE * 0.3 - gs / 2, sy + HEX_SIZE * 0.15 - gs / 2, gs, gs);
-        ctx.globalAlpha = 1.0;
-        ctx.restore();
-      }
-    }
     // Capital star (first city only)
     if (isCapital) {
       drawCapitalStar(ctx, sx, sy, PLAYER_COLOR);
