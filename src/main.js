@@ -258,7 +258,7 @@ function createInitialState() {
     barbarianCamps: [],
     continentId: continentId, mainContinent: mainContinent,
     aiFactions: {}, aiFactionCities: {},
-    selectedUnitId: null,
+    selectedUnitId: null, selectedCityIdx: null,
     relationships: {
       emperor_valerian: 0, shadow_kael: -10, merchant_prince_castellan: 10,
       pirate_queen_elara: -20, commander_thane: 5, rebel_leader_sera: 0,
