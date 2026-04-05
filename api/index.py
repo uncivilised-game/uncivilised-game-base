@@ -851,6 +851,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "make_peace_with", "target_faction": "shadow_kael", "duration": 20}}] \u2014 make peace with another AI faction \u2014 commit to attacking another faction (your units will march)
   [ACTION: {{"type": "threaten"}}] \u2014 issue a military threat
   [ACTION: {{"type": "introduce", "target_faction": "shadow_kael"}}] \u2014 introduce the player to another faction you know
+  [ACTION: {{"type": "gift_city", "city_index": 0}}] \u2014 gift one of your cities to the player (city_index refers to your expansion cities list)
+  [ACTION: {{"type": "demand_city", "city_index": 0}}] \u2014 demand the player hand over one of their cities (city_index refers to the player's cities list)
   [ACTION: {{"type": "game_mod", "mod": {{...}}}}] \u2014 modify the game world through diplomacy (see GAME MODS below)
   [ACTION: {{"type": "none"}}]
 
@@ -901,11 +903,13 @@ DIPLOMACY DEPTH RULES:
 - Tech sharing is collaborative \u2014 agree with allies and friends, refuse enemies
 - Resource trades are specific \u2014 name actual resources when proposing
 - Threats reduce relations but may intimidate weaker factions into concessions
-- Joint military action: if the player asks you to jointly attack another faction and you agree, use the action type 'wage_war_on' with the target_faction ID. Use 'declare_war' (no target) ONLY when declaring war on the player themselves. If you agree to defend the player, form an alliance. Your units WILL actually move to carry out these commitments in the game \u2014 don't promise what you wouldn't do
+- Joint military action: if the player asks you to attack another faction and you agree, use the action type 'wage_war_on' with 'target_faction' set to the faction you will attack. 'declare_war' (no target) means war against THE PLAYER \u2014 never use it when agreeing to a joint attack on a third party. If you agree to defend the player, form an alliance. Your units WILL actually move to carry out these commitments in the game \u2014 don't promise what you wouldn't do
 - Commitments are REAL: when you agree to defend, attack, pay tribute, or research together, the game WILL move your units and transfer resources. Only promise what fits your character
 - If the player asks for something you can do (defend a city, attack a rival, pay tribute, research together), use the matching action type. If no matching type exists, describe what you would do narratively
 - Deception: if your character is deceptive by nature, you MAY agree to attack but then not follow through \u2014 use action type 'none' instead. But only do this if it fits your personality
 - Introductions: if the player asks you to introduce them to another ruler, only agree if you are friendly (relationship 20+) with the player. Pick a faction ID from the list and use the introduce action. Refuse if relationship is too low
+- City gifting: you can gift one of your expansion cities to the player as a diplomatic gesture, peace offering, or part of a deal. Only gift cities when the relationship justifies it or as part of significant negotiations. Use gift_city with city_index (0-based index into your expansion cities)
+- City demands: you can demand the player hand over one of their cities. Only demand cities when you are in a position of strength (military dominance, the player is desperate, or as a condition for peace). The player will be shown a confirmation dialog. Use demand_city with city_index (0-based index into the player's cities list, 0 = first non-capital city)
 - When the player proposes any of these, evaluate based on your personality and current relationship
 - You have family members you can name: create realistic names fitting your culture
 - React emotionally to betrayals, broken promises, and surprise attacks
@@ -958,6 +962,16 @@ DIPLOMACY DEPTH RULES:
         # Also strip partial ACTION tags that didn't fully close
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
+
+        # Guard: 'declare_war' always targets the player. If the AI has an active
+        # alliance with the player and still emits 'declare_war', it almost certainly
+        # made a mistake (it should use 'wage_war_on' to attack a third party, or
+        # 'surprise_attack' for a treacherous betrayal). Sanitize to 'none' to
+        # prevent erroneously breaking the alliance.
+        if action and action.get('type') == 'declare_war':
+            active_alliances = (msg.game_state or {}).get('alliances', {})
+            if active_alliances.get(msg.character_id):
+                action = {'type': 'none'}
 
         # Fallback: if the player offered gold and the AI emitted an agreement
         # without gold_cost, inject the amount from the player's message
