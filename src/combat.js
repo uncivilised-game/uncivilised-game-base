@@ -27,9 +27,20 @@ function resolveCombat(attacker, defender) {
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
     // Only melee units move onto the captured unit's tile (ranged stay put)
+    // But don't move if an enemy military unit already occupies that tile
     if (aType.rangedCombat <= 0 || aType.range <= 0) {
-      attacker.col = defender.col;
-      attacker.row = defender.row;
+      const occupants = game.units.filter(u =>
+        u.col === defender.col && u.row === defender.row &&
+        u.id !== attacker.id && u.id !== defender.id
+      );
+      const enemyMilitary = occupants.some(u => {
+        const ut = UNIT_TYPES[u.type];
+        return u.owner !== attacker.owner && ut && ut.class !== 'civilian';
+      });
+      if (!enemyMilitary) {
+        attacker.col = defender.col;
+        attacker.row = defender.row;
+      }
     }
     const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
     const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
