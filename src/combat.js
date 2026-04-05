@@ -62,6 +62,9 @@ function resolveCombat(attacker, defender) {
     defPower += garrisonDef;
   }
 
+  // Fortification improvement defense bonus
+  if (defTile.fortification) defPower += 4;
+
   // River crossing penalty: attacker loses -3 combat when attacking across a river edge
   // (Classic Civ rule — rivers are natural defensive barriers)
   const isRiverCrossingAttack = crossesRiver(attacker.col, attacker.row, defender.col, defender.row);
