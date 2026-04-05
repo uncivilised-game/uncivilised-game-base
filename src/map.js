@@ -1027,8 +1027,14 @@ function getComparisonData() {
   return entries;
 }
 
-function hasResourceAccess(resourceId, owner) {
+function hasResourceAccess(resourceId, owner, _visited) {
   if (!game || !game.map) return false;
+
+  // Prevent infinite recursion through trade route chains
+  if (!_visited) _visited = new Set();
+  if (_visited.has(owner)) return false;
+  _visited.add(owner);
+
   const isPlayer = (owner === 'player');
 
   // Get owner's cities
@@ -1055,7 +1061,14 @@ function hasResourceAccess(resourceId, owner) {
   // Check 2: Active trade route to faction with access?
   if (isPlayer) {
     for (const route of (game.tradeRoutes || [])) {
-      if (hasResourceAccess(resourceId, route.factionId)) return true;
+      if (hasResourceAccess(resourceId, route.factionId, _visited)) return true;
+    }
+  } else {
+    // AI factions: check aiTradeDeals for partners with access
+    for (const deal of (game.aiTradeDeals || [])) {
+      if (!deal.factions.includes(owner)) continue;
+      const partner = deal.factions.find(f => f !== owner);
+      if (partner && hasResourceAccess(resourceId, partner, _visited)) return true;
     }
   }
   return false;
