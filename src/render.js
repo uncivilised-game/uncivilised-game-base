@@ -487,16 +487,27 @@ function render() {
       // Faction territory with borders
       for (const [fid, fc] of Object.entries(game.factionCities)) {
         if (!fc.color) continue;
+        const bRadius = fc.borderRadius || 2;
         const dist = hexDistance(c, r, fc.col, fc.row);
-        if (dist <= 2) {
+        if (dist <= bRadius) {
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
           ctx.fillStyle = hexToRgba(fc.color, 0.05);
           ctx.fill();
-          if (dist === 2) {
-            drawHex(ctx, sx, sy, HEX_SIZE - 1);
-            ctx.strokeStyle = hexToRgba(fc.color, 0.25);
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
+          if (dist === bRadius) {
+            const nbs = getHexNeighbors(c, r);
+            for (const nb of nbs) {
+              if (hexDistance(nb.col, nb.row, fc.col, fc.row) > bRadius) {
+                const nbPos = hexToPixel(nb.col, nb.row);
+                const edx = (nbPos.x - (sx + camX)) * 0.48;
+                const edy = (nbPos.y - (sy + camY)) * 0.48;
+                ctx.strokeStyle = hexToRgba(fc.color, 0.6);
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
+                ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
+                ctx.stroke();
+              }
+            }
           }
         }
       }
@@ -634,16 +645,34 @@ function render() {
         const ax = ap.x - camX, ay = ap.y - camY;
         // Territory
         const br = aic.borderRadius || 1;
+        const aColor = aic.color || '#888';
         for (let dr = -br; dr <= br; dr++) {
           for (let dc = -br; dc <= br; dc++) {
             const nr = aic.row + dr, nc = ((aic.col + dc) % MAP_COLS + MAP_COLS) % MAP_COLS;
             if (nr < 0 || nr >= MAP_ROWS || hexDistance(nc, nr, aic.col, aic.row) > br) continue;
             const bp = hexToPixel(nc, nr);
-            ctx.fillStyle = (aic.color || '#888') + '18';
-            drawHex(ctx, bp.x - camX, bp.y - camY, HEX_SIZE - 1); ctx.fill();
+            const bx = bp.x - camX, by = bp.y - camY;
+            ctx.fillStyle = hexToRgba(aColor, 0.05);
+            drawHex(ctx, bx, by, HEX_SIZE - 1); ctx.fill();
+            // Border edge segments
+            if (hexDistance(nc, nr, aic.col, aic.row) === br) {
+              const nbs = getHexNeighbors(nc, nr);
+              for (const nb of nbs) {
+                if (hexDistance(nb.col, nb.row, aic.col, aic.row) > br) {
+                  const nbPos = hexToPixel(nb.col, nb.row);
+                  const edx = (nbPos.x - (bx + camX)) * 0.48;
+                  const edy = (nbPos.y - (by + camY)) * 0.48;
+                  ctx.strokeStyle = hexToRgba(aColor, 0.6);
+                  ctx.lineWidth = 2.5;
+                  ctx.beginPath();
+                  ctx.moveTo(bx + edx - edy * 0.5, by + edy + edx * 0.5);
+                  ctx.lineTo(bx + edx + edy * 0.5, by + edy - edx * 0.5);
+                  ctx.stroke();
+                }
+              }
+            }
           }
         }
-        const aColor = aic.color || '#888';
         // Faction ownership ring
         drawFactionRing(ctx, ax, ay, aColor);
         // Settlement sprite (based on population)

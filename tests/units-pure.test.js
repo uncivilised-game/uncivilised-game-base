@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { createUnit, getTileOwner, isTerritoryBlocked } from '../src/units.js';
+import { createUnit, getTileOwner, isTerritoryBlocked, computeAttackRange } from '../src/units.js';
+import { canFoundCityAt } from '../src/improvements.js';
 import { UNIT_TYPES } from '../src/constants.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
@@ -137,5 +138,61 @@ describe('isTerritoryBlocked()', () => {
   test('should not block units in their own territory', () => {
     const unit = makeUnit({ id: 2, col: 9, row: 10, owner: 'faction_a' });
     expect(isTerritoryBlocked(unit, 10, 10)).toBe(false);
+  });
+});
+
+describe('computeAttackRange() one-attack-per-turn', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should not allow ranged unit to attack after already attacking this turn', () => {
+    const archer = makeUnit({ id: 1, col: 5, row: 5, owner: 'player', type: 'archer', moveLeft: 2, hasAttackedThisTurn: true });
+    state.units = [archer, makeUnit({ id: 2, col: 6, row: 5, owner: 'faction_a', type: 'warrior' })];
+    state.selectedUnitId = 1;
+    const range = computeAttackRange();
+    expect(range).toBeNull();
+  });
+
+  test('should allow ranged unit to attack if it has not attacked this turn', () => {
+    const archer = makeUnit({ id: 1, col: 5, row: 5, owner: 'player', type: 'archer', moveLeft: 2, hasAttackedThisTurn: false });
+    state.units = [archer, makeUnit({ id: 2, col: 6, row: 5, owner: 'faction_a', type: 'warrior' })];
+    state.selectedUnitId = 1;
+    const range = computeAttackRange();
+    expect(range).not.toBeNull();
+    expect(range.size).toBeGreaterThan(0);
+  });
+
+  test('should not allow melee unit to attack after already attacking this turn', () => {
+    const warrior = makeUnit({ id: 1, col: 5, row: 5, owner: 'player', type: 'warrior', moveLeft: 2, hasAttackedThisTurn: true });
+    state.units = [warrior, makeUnit({ id: 2, col: 6, row: 5, owner: 'faction_a', type: 'warrior' })];
+    state.selectedUnitId = 1;
+    const range = computeAttackRange();
+    expect(range).toBeNull();
+  });
+});
+
+describe('canFoundCityAt()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should not allow founding a city in enemy territory', () => {
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 10, row: 10, hp: 100, borderRadius: 2 },
+    };
+    // Tile at (10,10) is in faction_a's territory
+    expect(canFoundCityAt(10, 10)).toBe(false);
+  });
+
+  test('should allow founding a city on unclaimed land far from other cities', () => {
+    state.factionCities = {};
+    state.cities = [];
+    // Tile at (30,20) is unclaimed and far from everything
+    expect(canFoundCityAt(30, 20)).toBe(true);
   });
 });

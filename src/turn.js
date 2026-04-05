@@ -16,7 +16,7 @@ import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
-import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked } from './units.js';
+import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
@@ -1494,6 +1494,9 @@ function tryAIImprove(worker, priority) {
   const isCity = game.cities.some(c => c.col === worker.col && c.row === worker.row) ||
     Object.values(game.factionCities).some(fc => fc.col === worker.col && fc.row === worker.row);
   if (isCity) return false;
+  // Can only improve within own territory
+  const owner = getTileOwner(worker.col, worker.row);
+  if (owner !== worker.owner) return false;
 
   for (const impId of priority) {
     const imp = TILE_IMPROVEMENTS[impId];
@@ -1555,6 +1558,9 @@ function canAIFoundCityAt(col, row, fid) {
   if (!tile) return false;
   if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
   if (tile.feature === 'mountain') return false;
+  // Cannot found city in another faction's or the player's territory
+  const owner = getTileOwner(col, row);
+  if (owner && owner !== fid) return false;
   for (const city of game.cities) {
     if (hexDistance(col, row, city.col, city.row) < 4) return false;
   }

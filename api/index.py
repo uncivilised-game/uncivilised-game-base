@@ -851,6 +851,8 @@ INTERACTION RULES:
   [ACTION: {{"type": "make_peace_with", "target_faction": "shadow_kael", "duration": 20}}] \u2014 make peace with another AI faction \u2014 commit to attacking another faction (your units will march)
   [ACTION: {{"type": "threaten"}}] \u2014 issue a military threat
   [ACTION: {{"type": "introduce", "target_faction": "shadow_kael"}}] \u2014 introduce the player to another faction you know
+  [ACTION: {{"type": "gift_city", "city_index": 0}}] \u2014 gift one of your cities to the player (city_index refers to your expansion cities list)
+  [ACTION: {{"type": "demand_city", "city_index": 0}}] \u2014 demand the player hand over one of their cities (city_index refers to the player's cities list)
   [ACTION: {{"type": "game_mod", "mod": {{...}}}}] \u2014 modify the game world through diplomacy (see GAME MODS below)
   [ACTION: {{"type": "none"}}]
 
@@ -906,6 +908,8 @@ DIPLOMACY DEPTH RULES:
 - If the player asks for something you can do (defend a city, attack a rival, pay tribute, research together), use the matching action type. If no matching type exists, describe what you would do narratively
 - Deception: if your character is deceptive by nature, you MAY agree to attack but then not follow through \u2014 use action type 'none' instead. But only do this if it fits your personality
 - Introductions: if the player asks you to introduce them to another ruler, only agree if you are friendly (relationship 20+) with the player. Pick a faction ID from the list and use the introduce action. Refuse if relationship is too low
+- City gifting: you can gift one of your expansion cities to the player as a diplomatic gesture, peace offering, or part of a deal. Only gift cities when the relationship justifies it or as part of significant negotiations. Use gift_city with city_index (0-based index into your expansion cities)
+- City demands: you can demand the player hand over one of their cities. Only demand cities when you are in a position of strength (military dominance, the player is desperate, or as a condition for peace). The player will be shown a confirmation dialog. Use demand_city with city_index (0-based index into the player's cities list, 0 = first non-capital city)
 - When the player proposes any of these, evaluate based on your personality and current relationship
 - You have family members you can name: create realistic names fitting your culture
 - React emotionally to betrayals, broken promises, and surprise attacks
