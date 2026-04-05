@@ -46,9 +46,13 @@ export function getAvailableImprovements(col, row) {
     if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && id !== 'fishing_boats') continue;
     // Can't build on mountains
     if (tile.feature === 'mountain') continue;
-    // Must be within player's own territory — not unclaimed or enemy land
-    const owner = getTileOwner(col, row);
-    if (owner !== 'player') continue;
+    // Don't allow duplicate fortification
+    if (id === 'fortification' && tile.fortification) continue;
+    // Roads and fortifications can be built anywhere on land (no territory requirement)
+    if (id !== 'road' && id !== 'fortification') {
+      const owner = getTileOwner(col, row);
+      if (owner !== 'player') continue;
+    }
 
     available.push({ id, ...imp });
   }
@@ -106,6 +110,10 @@ export function processImprovements() {
         // Apply the improvement
         if (builder.improvementId === 'road') {
           tile.road = true;
+        } else if (builder.improvementId === 'fortification') {
+          tile.fortification = true;
+          tile.fortificationOwner = isPlayer ? 'player' : (worker ? worker.owner : 'player');
+          if (isPlayer) addEvent('Fortification completed! +4 Defense for garrisoned units', 'gold');
         } else if (imp.terraform) {
           // Terraforming
           if (imp.terraform.removeFeature) {

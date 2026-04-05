@@ -8,6 +8,7 @@ function migrateTiles(state) {
   if (!state.tradeRoutes) state.tradeRoutes = [];
   if (state.maxTradeRoutes === undefined) state.maxTradeRoutes = 1;
   if (state.happiness === undefined) state.happiness = 5;
+  if (!state.resourceZones) state.resourceZones = [];
   // Ensure units have promotion fields
   if (state.units) {
     for (const u of state.units) {
@@ -106,6 +107,8 @@ function migrateTiles(state) {
       for (let c = 0; c < state.map[r].length; c++) {
         state.map[r][c].col = c;
         if (state.map[r][c].naturalWonder === undefined) state.map[r][c].naturalWonder = null;
+        if (state.map[r][c].resourceZone === undefined) state.map[r][c].resourceZone = null;
+        if (state.map[r][c].fortification === undefined) state.map[r][c].fortification = false;
         state.map[r][c].row = r;
       }
     }

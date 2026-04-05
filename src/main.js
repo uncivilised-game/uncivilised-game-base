@@ -246,6 +246,7 @@ function createInitialState() {
     cities: [],
     factionCities: factionCities,
     map: map,
+    resourceZones: map._resourceZones || [],
     riverPaths: riverPaths,
     techs: ['agriculture', 'mining'],
     revealedResources: buildRevealedResources(['agriculture', 'mining']),

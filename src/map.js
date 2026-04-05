@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, TECHNOLOGIES, NATURAL_WONDERS, FACTIONS, FACTION_TRAITS, GOVERNMENTS, WONDERS, RESOURCE_ZONES } from './constants.js';
 import { game } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { simplex } from './utils.js';
@@ -542,10 +542,115 @@ function generateMap() {
   }
 
   // ════════════════════════════════════════════════
-  // PASS 7: RESOURCE PLACEMENT (with spacing)
+  // PASS 7a: STRATEGIC RESOURCE ZONE PLACEMENT
   // ════════════════════════════════════════════════
   const resourceAt = Array.from({ length: MAP_ROWS }, () => new Int8Array(MAP_COLS));
+  const resourceZones = [];
+  const strategicResourceIds = Object.keys(RESOURCE_ZONES);
+  const zoneSeedPoints = [];
 
+  for (const zoneId of strategicResourceIds) {
+    const zone = RESOURCE_ZONES[zoneId];
+    let bestSeed = null;
+    let bestScore = -Infinity;
+
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const c = Math.floor(Math.random() * MAP_COLS);
+      const r = 4 + Math.floor(Math.random() * (MAP_ROWS - 8));
+      const tile = map[r][c];
+
+      // Must be land, not mountain
+      if (!BASE_TERRAIN[tile.base] || !BASE_TERRAIN[tile.base].movable) continue;
+      if (tile.feature === 'mountain') continue;
+
+      // Distance from map edges (N/S only, E/W wraps)
+      if (r < 4 || r > MAP_ROWS - 5) continue;
+
+      // Distance from other zone seeds (at least 12)
+      let tooClose = false;
+      for (const sp of zoneSeedPoints) {
+        if (hexDistance(c, r, sp.col, sp.row) < 12) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+
+      // Score: terrain match + feature match + river preference
+      let score = 0;
+      if (zone.preferredTerrain.includes(tile.base)) score += 3;
+      if (zone.preferredFeature && tile.feature === zone.preferredFeature) score += 2;
+      if (zone.preferRiver && tile.hasRiver) score += 2;
+      // Noise for variety
+      score += Math.random() * 1.5;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestSeed = { col: c, row: r };
+      }
+    }
+
+    if (!bestSeed) continue;
+
+    zoneSeedPoints.push(bestSeed);
+
+    // BFS-expand from seed to form organic cluster
+    const targetSize = zone.clusterSize[0] + Math.floor(Math.random() * (zone.clusterSize[1] - zone.clusterSize[0] + 1));
+    const zoneTiles = [bestSeed];
+    const visited = new Set();
+    visited.add(bestSeed.row * MAP_COLS + bestSeed.col);
+    const frontier = [bestSeed];
+
+    while (zoneTiles.length < targetSize && frontier.length > 0) {
+      // Pick from frontier weighted toward compatible terrain
+      const idx = Math.floor(Math.random() * frontier.length);
+      const cur = frontier.splice(idx, 1)[0];
+
+      for (const nb of mgNeighbors(cur.col, cur.row)) {
+        const key = nb.row * MAP_COLS + nb.col;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        const t = map[nb.row][nb.col];
+        if (!BASE_TERRAIN[t.base] || !BASE_TERRAIN[t.base].movable) continue;
+        if (t.feature === 'mountain') continue;
+
+        // Prefer compatible terrain neighbors
+        let accept = 0.4;
+        if (zone.preferredTerrain.includes(t.base)) accept = 0.8;
+        if (zone.preferredFeature && t.feature === zone.preferredFeature) accept += 0.15;
+        if (zone.preferRiver && t.hasRiver) accept += 0.15;
+
+        if (Math.random() < accept) {
+          zoneTiles.push({ col: nb.col, row: nb.row });
+          frontier.push({ col: nb.col, row: nb.row });
+          if (zoneTiles.length >= targetSize) break;
+        }
+      }
+    }
+
+    // Place resources on zone tiles
+    const zoneTileCoords = [];
+    for (const zt of zoneTiles) {
+      const tile = map[zt.row][zt.col];
+      tile.resourceZone = zoneId;
+
+      if (Math.random() < zone.spawnChance) {
+        tile.resource = zone.resource;
+        resourceAt[zt.row][zt.col] = 1;
+      } else if (Math.random() < zone.bonusChance && zone.bonusResources.length > 0) {
+        tile.resource = zone.bonusResources[Math.floor(Math.random() * zone.bonusResources.length)];
+        resourceAt[zt.row][zt.col] = 1;
+      }
+      zoneTileCoords.push({ col: zt.col, row: zt.row });
+    }
+
+    resourceZones.push({ id: zoneId, center: bestSeed, tiles: zoneTileCoords });
+  }
+
+  // Store zone metadata on game state (will be set after generateMap returns)
+  map._resourceZones = resourceZones;
+
+  // ════════════════════════════════════════════════
+  // PASS 7b: NON-STRATEGIC RESOURCE SCATTER
+  // ════════════════════════════════════════════════
   function canPlaceResource(c, r) {
     // Ensure at least 2 tiles between resources
     for (let dr = -2; dr <= 2; dr++) {
@@ -561,6 +666,7 @@ function generateMap() {
     for (let c = 0; c < MAP_COLS; c++) {
       const tile = map[r][c];
       if (tile.feature === 'mountain') continue;
+      if (tile.resource) continue; // Skip tiles already placed by Phase 1
       if (!canPlaceResource(c, r)) continue;
 
       const rng = Math.random();
@@ -572,21 +678,22 @@ function generateMap() {
         tile.resource = 'fish';
         resourceAt[r][c] = 1;
       } else if (tile.base !== 'ocean' && tile.base !== 'coast' && rng < 0.10) {
+        // Strategic resources removed from scatter pools — they ONLY come from zones
         const terrainResources = {
-          plains:    ['wheat', 'horses', 'copper', 'iron', 'cotton', 'wine', 'salt'],
-          grassland: ['wheat', 'horses', 'gems', 'dyes', 'ivory', 'jade'],
-          desert:    ['gold_ore', 'gems', 'spices', 'copper', 'incense', 'salt', 'obsidian'],
-          tundra:    ['iron', 'stone', 'gems', 'furs', 'marble'],
-          snow:      ['iron'],
+          plains:    ['wheat', 'cotton', 'wine', 'salt'],
+          grassland: ['wheat', 'gems', 'dyes', 'ivory', 'jade'],
+          desert:    ['gems', 'spices', 'incense', 'salt'],
+          tundra:    ['stone', 'gems', 'furs', 'marble'],
+          snow:      ['stone'],
         };
         const opts = terrainResources[tile.base] || ['stone'];
         tile.resource = opts[Math.floor(Math.random() * opts.length)];
 
         if (tile.feature === 'woods' || tile.feature === 'rainforest') {
-          tile.resource = ['spices', 'silk', 'iron', 'dyes', 'furs', 'ivory'][Math.floor(Math.random() * 6)];
+          tile.resource = ['spices', 'silk', 'dyes', 'furs', 'ivory'][Math.floor(Math.random() * 5)];
         }
         if (tile.feature === 'hills') {
-          tile.resource = ['iron', 'stone', 'gold_ore', 'copper', 'marble', 'obsidian', 'jade'][Math.floor(Math.random() * 7)];
+          tile.resource = ['stone', 'marble', 'jade', 'gems'][Math.floor(Math.random() * 4)];
         }
         resourceAt[r][c] = 1;
       }
@@ -920,6 +1027,53 @@ function getComparisonData() {
   return entries;
 }
 
+function hasResourceAccess(resourceId, owner, _visited) {
+  if (!game || !game.map) return false;
+
+  // Prevent infinite recursion through trade route chains
+  if (!_visited) _visited = new Set();
+  if (_visited.has(owner)) return false;
+  _visited.add(owner);
+
+  const isPlayer = (owner === 'player');
+
+  // Get owner's cities
+  const cities = [];
+  if (isPlayer) {
+    cities.push(...(game.cities || []));
+  } else {
+    if (game.factionCities && game.factionCities[owner]) cities.push(game.factionCities[owner]);
+    if (game.aiFactionCities && game.aiFactionCities[owner]) cities.push(...game.aiFactionCities[owner]);
+  }
+
+  // Check 1: Any city border contains the resource?
+  for (const city of cities) {
+    const bRadius = city.borderRadius || 2;
+    for (let r = Math.max(0, city.row - bRadius - 1); r <= Math.min(MAP_ROWS - 1, city.row + bRadius + 1); r++) {
+      for (let c = Math.max(0, city.col - bRadius - 1); c <= Math.min(MAP_COLS - 1, city.col + bRadius + 1); c++) {
+        if (hexDistance(c, r, city.col, city.row) > bRadius) continue;
+        const tile = game.map[r][c];
+        if (tile && tile.resource === resourceId) return true;
+      }
+    }
+  }
+
+  // Check 2: Active trade route to faction with access?
+  if (isPlayer) {
+    for (const route of (game.tradeRoutes || [])) {
+      if (hasResourceAccess(resourceId, route.factionId, _visited)) return true;
+    }
+  } else {
+    // AI factions: check aiTradeDeals for partners with access
+    for (const deal of (game.aiTradeDeals || [])) {
+      if (!deal.factions.includes(owner)) continue;
+      const partner = deal.factions.find(f => f !== owner);
+      if (partner && hasResourceAccess(resourceId, partner, _visited)) return true;
+    }
+  }
+  return false;
+}
+
 function getUnmetFactions(fromFactionId) {
   // Return factions that fromFaction knows about but player hasn't met
   const unmet = [];
@@ -950,5 +1104,6 @@ export {
   isResourceRevealed,
   getHexDirection,
   hasRiverBetween,
-  hasRoadBridge
+  hasRoadBridge,
+  hasResourceAccess
 };

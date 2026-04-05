@@ -5,10 +5,11 @@
 // Each turn, AI factions evaluate relationships with other AIs
 // and may initiate diplomatic actions with varying visibility.
 
-import { FACTIONS, FACTION_TRAITS } from './constants.js';
+import { FACTIONS, FACTION_TRAITS, RESOURCE_ZONES, UNIT_RESOURCE_REQUIREMENTS, RESOURCES } from './constants.js';
 import { game } from './state.js';
 import { addEvent, logAction, showToast } from './events.js';
 import { hexDistance } from './hex.js';
+import { hasResourceAccess } from './map.js';
 
 // ============================================
 // VISIBILITY LEVELS
@@ -93,6 +94,11 @@ export function processAIDiplomacy() {
   // 5. Balance of power — threat assessment
   computePowerBalance(factionIds);
 
+  // 5b. Resource scarcity tension (every 5 turns, same cadence as border tension)
+  if (game.turn % 5 === 0 && game.resourceZones && game.resourceZones.length > 0) {
+    computeResourceTension(factionIds);
+  }
+
   // 6. Each AI evaluates and may act toward each other AI (SKIP player as actor)
   for (const a of factionIds) {
     const traitsA = FACTION_TRAITS[a];
@@ -155,12 +161,28 @@ function tryDeclareWar(a, b, relation, traitsA, statsA, statsB) {
   // Already at war?
   if (areAtWar(a, b)) return false;
 
-  const warThreshold = traitsA.warThreshold || -25;
+  let warThreshold = traitsA.warThreshold || -25;
+
+  // Resource desperation: lower war threshold if b controls resources a critically needs
+  let resourceDesperation = 0;
+  if (game.resourceZones && game.resourceZones.length > 0) {
+    const missingA = getMissingResources(a);
+    const ownedB = getOwnedResources(b);
+    for (const res of missingA) {
+      if (ownedB.includes(res)) {
+        resourceDesperation += getResourceNeed(a, res);
+      }
+    }
+  }
+  // Each point of desperation makes war 2 points more tolerable
+  warThreshold += Math.min(resourceDesperation * 2, 15);
+
   if (relation >= warThreshold) return false;
   if (statsA.military <= (statsB.military || 0) * 0.8) return false;
 
-  // 20% chance per turn when conditions met
-  if (Math.random() > 0.20) return false;
+  // 20% base + up to 10% extra from resource desperation
+  const warChance = 0.20 + Math.min(resourceDesperation * 0.02, 0.10);
+  if (Math.random() > warChance) return false;
 
   // Declare war
   declareWar(a, b);
@@ -279,16 +301,49 @@ function tryProposeAlliance(a, b, relation, traitsA) {
 // TRADE PROPOSAL [RUMOURED]
 // ============================================
 function tryProposeTrade(a, b, relation, traitsA, statsA) {
-  if (relation <= 0) return false;
-  if ((statsA.gold || 0) <= 100) return false;
   if (hasTradeDeal(a, b)) return false;
 
-  const chance = 0.15 + (traitsA.diplomacy || 0) * 0.05;
+  // Resource complementarity: A has something B needs and vice versa
+  let resourceBonus = 0;
+  let resourceDetail = null;
+  if (game.resourceZones && game.resourceZones.length > 0) {
+    const ownedA = getOwnedResources(a);
+    const ownedB = getOwnedResources(b);
+    const missingA = getMissingResources(a);
+    const missingB = getMissingResources(b);
+
+    // A has resources B needs
+    const aCanOfferB = ownedA.filter(r => missingB.includes(r));
+    // B has resources A needs
+    const bCanOfferA = ownedB.filter(r => missingA.includes(r));
+
+    if (aCanOfferB.length > 0 && bCanOfferA.length > 0) {
+      // Mutual resource trade — strong incentive
+      resourceBonus = 0.30;
+      resourceDetail = `${RESOURCES[bCanOfferA[0]]?.name} for ${RESOURCES[aCanOfferB[0]]?.name}`;
+    } else if (bCanOfferA.length > 0) {
+      // A needs something B has — A is motivated
+      resourceBonus = 0.20;
+      resourceDetail = `seeks ${RESOURCES[bCanOfferA[0]]?.name}`;
+    } else if (aCanOfferB.length > 0) {
+      // A can offer something B needs — leverage
+      resourceBonus = 0.10;
+    }
+  }
+
+  // Resource need can override the relation threshold (normally > 0)
+  const relationThreshold = resourceBonus >= 0.20 ? -10 : 0;
+  if (relation <= relationThreshold) return false;
+  if ((statsA.gold || 0) <= 100 && resourceBonus === 0) return false;
+
+  const chance = 0.15 + (traitsA.diplomacy || 0) * 0.05 + resourceBonus;
   if (Math.random() > chance) return false;
 
   // B accepts if relation positive and they have some diplomatic inclination
+  // Resource complementarity boosts acceptance
   const traitsB = FACTION_TRAITS[b];
-  const acceptChance = 0.6 + (traitsB ? traitsB.diplomacy : 0.5) * 0.2;
+  let acceptChance = 0.6 + (traitsB ? traitsB.diplomacy : 0.5) * 0.2;
+  if (resourceBonus >= 0.20) acceptChance += 0.20; // B also benefits from resource trade
   if (Math.random() > acceptChance) return false;
 
   // Trade established
@@ -297,6 +352,7 @@ function tryProposeTrade(a, b, relation, traitsA, statsA) {
     factions: [a, b],
     turn: game.turn,
     goldPerTurn: goldExchange,
+    resourceTrade: resourceDetail || null,
   });
   modifyRelation(a, b, 5, { type: 'trade_established', detail: FACTIONS[b]?.name });
   modifyRelation(b, a, 5, { type: 'trade_established', detail: FACTIONS[a]?.name });
@@ -306,15 +362,18 @@ function tryProposeTrade(a, b, relation, traitsA, statsA) {
   const factionB = FACTIONS[b];
 
   // RUMOURED — appears 1-2 turns after agreement
+  const rumourText = resourceDetail
+    ? `Rumour: Caravans laden with ${resourceDetail.includes('for') ? 'goods' : RESOURCES[resourceDetail.split(' ').pop()]?.name || 'resources'} have been seen travelling between ${factionA.name} and ${factionB.name}'s lands`
+    : `Rumour: Merchants have been seen travelling between ${factionA.name} and ${factionB.name}'s lands`;
   game.rumourQueue.push({
-    text: `Rumour: Merchants have been seen travelling between ${factionA.name} and ${factionB.name}'s lands`,
+    text: rumourText,
     revealTurn: game.turn + 1 + Math.floor(Math.random() * 2),
     type: 'diplomacy',
     relatedFactions: [a, b],
   });
 
-  logAction('diplomacy', `${factionA.name} and ${factionB.name} establish trade (+${goldExchange}g/turn)`, {
-    type: 'ai_trade', factions: [a, b], goldPerTurn: goldExchange,
+  logAction('diplomacy', `${factionA.name} and ${factionB.name} establish trade (+${goldExchange}g/turn${resourceDetail ? ', ' + resourceDetail : ''})`, {
+    type: 'ai_trade', factions: [a, b], goldPerTurn: goldExchange, resourceTrade: resourceDetail,
   });
 
   return true;
@@ -516,10 +575,12 @@ function applyRelationDrift(factionIds) {
         modifyRelation(b, a, 1, { type: 'alliance_maintenance', detail: 'shared interests' });
       }
 
-      // Trade deals improve relations slowly
+      // Trade deals improve relations slowly (resource trades bond even stronger)
       if (hasTradeDeal(a, b)) {
-        modifyRelation(a, b, 1, { type: 'trade_maintenance', detail: 'mutual benefit' });
-        modifyRelation(b, a, 1, { type: 'trade_maintenance', detail: 'mutual benefit' });
+        const deal = (game.aiTradeDeals || []).find(td => td.factions.includes(a) && td.factions.includes(b));
+        const bonus = (deal && deal.resourceTrade) ? 2 : 1;
+        modifyRelation(a, b, bonus, { type: 'trade_maintenance', detail: deal?.resourceTrade || 'mutual benefit' });
+        modifyRelation(b, a, bonus, { type: 'trade_maintenance', detail: deal?.resourceTrade || 'mutual benefit' });
       }
     }
   }
@@ -850,6 +911,93 @@ function processPlayerSpillover(factionIds) {
 }
 
 // ============================================
+// FEATURE 5: RESOURCE SCARCITY AWARENESS
+// ============================================
+
+// Strategic resources this faction lacks direct access to
+function getMissingResources(factionId) {
+  const missing = [];
+  for (const zoneId of Object.keys(RESOURCE_ZONES)) {
+    const zone = RESOURCE_ZONES[zoneId];
+    if (!hasResourceAccess(zone.resource, factionId)) {
+      missing.push(zone.resource);
+    }
+  }
+  return missing;
+}
+
+// Strategic resources this faction HAS access to
+function getOwnedResources(factionId) {
+  const owned = [];
+  for (const zoneId of Object.keys(RESOURCE_ZONES)) {
+    const zone = RESOURCE_ZONES[zoneId];
+    if (hasResourceAccess(zone.resource, factionId)) {
+      owned.push(zone.resource);
+    }
+  }
+  return owned;
+}
+
+// How badly does a faction need a resource? Higher = more desperate
+function getResourceNeed(factionId, resourceId) {
+  let need = 1; // base need for any strategic resource
+  // Check if any important units require this resource
+  for (const unitType of Object.keys(UNIT_RESOURCE_REQUIREMENTS)) {
+    const req = UNIT_RESOURCE_REQUIREMENTS[unitType];
+    if (req.resource === resourceId) {
+      // Higher cost multiplier = more painful to lack
+      need += req.costMultiplier;
+      if (req.combatPenalty > 0) need += req.combatPenalty * 0.2;
+    }
+  }
+  return need;
+}
+
+// Which faction controls a given resource zone? Returns factionId or null
+function getZoneController(resourceId) {
+  const allFactions = [...Object.keys(FACTIONS), 'player'];
+  for (const fid of allFactions) {
+    if (hasResourceAccess(resourceId, fid)) return fid;
+  }
+  return null;
+}
+
+// Compute resource scarcity tension between factions (every 5 turns)
+function computeResourceTension(factionIds) {
+  const allParticipants = [...factionIds, 'player'];
+
+  for (const a of allParticipants) {
+    const missingA = getMissingResources(a);
+    if (missingA.length === 0) continue; // Has everything, no tension
+
+    for (const needed of missingA) {
+      const controller = getZoneController(needed);
+      if (!controller || controller === a) continue;
+
+      // A needs this resource and controller has it
+      const urgency = getResourceNeed(a, needed);
+
+      // Negative modifier toward controller — they have what we need
+      if (a !== 'player' && controller !== 'player') {
+        // AI-to-AI: resource envy
+        const penalty = Math.floor(-1 * urgency);
+        modifyRelation(a, controller, penalty, {
+          type: 'resource_envy',
+          detail: `covets ${RESOURCES[needed]?.name || needed}`,
+        });
+      } else if (a !== 'player') {
+        // AI toward player: resource envy
+        const penalty = Math.floor(-1 * urgency);
+        modifyRelation(a, 'player', penalty, {
+          type: 'resource_envy',
+          detail: `covets ${RESOURCES[needed]?.name || needed}`,
+        });
+      }
+    }
+  }
+}
+
+// ============================================
 // QUERY FUNCTIONS (for UI / debug)
 // ============================================
 export function getAIRelation(a, b) {
@@ -870,4 +1018,8 @@ export function getAISecretPacts() {
 
 export function getAITradeDeals() {
   return game.aiTradeDeals || [];
+}
+
+export function getFactionResources(factionId) {
+  return { owned: getOwnedResources(factionId), missing: getMissingResources(factionId) };
 }
