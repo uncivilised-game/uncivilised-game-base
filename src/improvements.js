@@ -46,20 +46,24 @@ export function getAvailableImprovements(col, row) {
     if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && id !== 'fishing_boats') continue;
     // Can't build on mountains
     if (tile.feature === 'mountain') continue;
-    // Must be within city borders (player OR AI faction cities)
-    const inPlayerTerritory = game.cities.some(city => hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2));
-    const inFactionTerritory = (() => {
-      for (const fc of Object.values(game.factionCities || {})) {
-        if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
-      }
-      for (const cities of Object.values(game.aiFactionCities || {})) {
-        for (const fc of cities) {
+    // Don't allow duplicate fortification
+    if (id === 'fortification' && tile.fortification) continue;
+    // Roads and fortifications can be built anywhere on land (no territory requirement)
+    if (id !== 'road' && id !== 'fortification') {
+      const inPlayerTerritory = game.cities.some(city => hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2));
+      const inFactionTerritory = (() => {
+        for (const fc of Object.values(game.factionCities || {})) {
           if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
         }
-      }
-      return false;
-    })();
-    if (!inPlayerTerritory && !inFactionTerritory) continue;
+        for (const cities of Object.values(game.aiFactionCities || {})) {
+          for (const fc of cities) {
+            if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
+          }
+        }
+        return false;
+      })();
+      if (!inPlayerTerritory && !inFactionTerritory) continue;
+    }
 
     available.push({ id, ...imp });
   }
@@ -117,6 +121,10 @@ export function processImprovements() {
         // Apply the improvement
         if (builder.improvementId === 'road') {
           tile.road = true;
+        } else if (builder.improvementId === 'fortification') {
+          tile.fortification = true;
+          tile.fortificationOwner = isPlayer ? 'player' : (worker ? worker.owner : 'player');
+          if (isPlayer) addEvent('Fortification completed! +4 Defense for garrisoned units', 'gold');
         } else if (imp.terraform) {
           // Terraforming
           if (imp.terraform.removeFeature) {

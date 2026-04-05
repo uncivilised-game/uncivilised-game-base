@@ -301,6 +301,79 @@ export const PROMOTION_XP_THRESHOLDS = [15, 40];
 
 export const LUXURY_RESOURCES = ['gold_ore', 'gems', 'spices', 'silk', 'incense', 'ivory', 'dyes', 'furs', 'jade', 'wine'];
 
+// ============================================
+// STRATEGIC RESOURCE ZONES — each spawns ONCE on the map in a cluster
+// ============================================
+export const RESOURCE_ZONES = {
+  iron: {
+    name: 'Iron Highlands',
+    resource: 'iron',
+    clusterSize: [8, 12],
+    preferredTerrain: ['tundra', 'plains'],
+    preferredFeature: 'hills',
+    spawnChance: 0.70,
+    bonusResources: ['stone'],
+    bonusChance: 0.15,
+    desc: 'A mountainous region rich in iron ore — defensible but food-poor',
+  },
+  copper: {
+    name: 'Copper River Delta',
+    resource: 'copper',
+    clusterSize: [8, 12],
+    preferredTerrain: ['plains', 'grassland'],
+    preferredFeature: null,
+    preferRiver: true,
+    spawnChance: 0.65,
+    bonusResources: ['wheat'],
+    bonusChance: 0.15,
+    desc: 'A fertile river valley with rich copper deposits — productive but exposed',
+  },
+  gold_ore: {
+    name: 'Gold Wastes',
+    resource: 'gold_ore',
+    clusterSize: [8, 10],
+    preferredTerrain: ['desert'],
+    preferredFeature: 'hills',
+    spawnChance: 0.65,
+    bonusResources: ['gems'],
+    bonusChance: 0.10,
+    desc: 'Barren desert hiding immense gold deposits — wealthy but starving',
+  },
+  obsidian: {
+    name: 'Obsidian Caldera',
+    resource: 'obsidian',
+    clusterSize: [6, 10],
+    preferredTerrain: ['plains', 'desert'],
+    preferredFeature: 'hills',
+    spawnChance: 0.70,
+    bonusResources: ['stone'],
+    bonusChance: 0.10,
+    desc: 'A volcanic region with glassy obsidian — centrally located, fiercely contested',
+  },
+  horses: {
+    name: 'Horse Plains',
+    resource: 'horses',
+    clusterSize: [10, 14],
+    preferredTerrain: ['grassland', 'plains'],
+    preferredFeature: null,
+    spawnChance: 0.60,
+    bonusResources: ['wheat'],
+    bonusChance: 0.20,
+    desc: 'Open grasslands teeming with wild horses — easy to settle, hard to defend',
+  },
+};
+
+// ============================================
+// UNIT RESOURCE REQUIREMENTS — penalties when built without the strategic resource
+// ============================================
+export const UNIT_RESOURCE_REQUIREMENTS = {
+  spearman:  { resource: 'copper',   costMultiplier: 1.5,  combatPenalty: 3, rangedPenalty: 0, movePenalty: 0, label: 'No copper: +50% cost, -3 combat' },
+  chariot:   { resource: 'horses',   costMultiplier: 1.75, combatPenalty: 4, rangedPenalty: 0, movePenalty: 0, label: 'No horses: +75% cost, -4 combat' },
+  horseman:  { resource: 'horses',   costMultiplier: 2.0,  combatPenalty: 5, rangedPenalty: 0, movePenalty: 1, label: 'No horses: +100% cost, -5 combat, -1 move' },
+  phalanx:   { resource: 'iron',     costMultiplier: 1.75, combatPenalty: 5, rangedPenalty: 0, movePenalty: 0, label: 'No iron: +75% cost, -5 combat' },
+  ballista:  { resource: 'iron',     costMultiplier: 2.0,  combatPenalty: 0, rangedPenalty: 8, movePenalty: 0, label: 'No iron: +100% cost, -8 ranged' },
+};
+
 export const NATURAL_WONDERS = [
   { id: 'grand_mesa', name: 'Grand Mesa', icon: '\u26F0', color: '#c49858', yields: { prod: 2, gold: 2 }, desc: 'A towering flat-topped mountain', terrain: ['plains', 'desert'], feature: 'hills' },
   { id: 'great_barrier_reef', name: 'Great Barrier Reef', icon: '\u{1F41A}', color: '#40c0c0', yields: { food: 3, gold: 2 }, desc: 'A sprawling underwater coral wonder', terrain: ['coast'], feature: null },
@@ -386,10 +459,11 @@ export const TILE_IMPROVEMENTS = {
   lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'construction', validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest, requires Construction)' },
 
   // Infrastructure
-  road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
+  road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
 
   // Military
   garrison:    { name: 'Garrison',      icon: '🏰', turns: 4, requires: 'iron_working', validOn: ['grassland','plains','desert','tundra','hills'], yields: { prod: 1 }, defenseBonus: 5, desc: '+5 defense to units on tile, +1 Production' },
+  fortification: { name: 'Fortification', icon: '🏰', turns: 4, requires: 'masonry', validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, defense: 4, desc: '+4 Defense for garrisoned units, blocks enemy movement' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },
