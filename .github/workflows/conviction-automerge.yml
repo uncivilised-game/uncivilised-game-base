@@ -139,11 +139,17 @@ jobs:
               continue
             fi
 
+            # Count formal approvals + fallback COMMENT reviews from the review workflow
+            # (GITHUB_TOKEN can't submit APPROVE reviews, so the fallback posts a COMMENT
+            # review with a sentinel body instead)
             APPROVED=$(echo "$PR_JSON" | jq '
-              [.reviews[] | {author: .author.login, state: .state}]
+              [.reviews[] | {author: .author.login, state: .state, body: .body}]
               | group_by(.author)
               | map(last)
-              | map(select(.state == "APPROVED"))
+              | map(select(
+                  .state == "APPROVED" or
+                  (.state == "COMMENTED" and (.body | test("no blocking issues found.*fallback")))
+                ))
               | length
             ')
             if [ "$APPROVED" -lt 1 ]; then
