@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER, TILE_IMPROVEMENTS } from './constants.js';
 import { game, CITY_WALL_DEFAULTS, deathMarkers } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
@@ -55,6 +55,12 @@ function resolveCombat(attacker, defender) {
   const defTile = game.map[defender.row][defender.col];
   if (defTile.feature === 'hills') defPower += 3;
   if (defTile.feature === 'woods' || defTile.feature === 'rainforest') defPower += 3;
+
+  // Garrison improvement defense bonus
+  if (defTile.improvement === 'garrison') {
+    const garrisonDef = TILE_IMPROVEMENTS.garrison?.defenseBonus || 5;
+    defPower += garrisonDef;
+  }
 
   // River crossing penalty: attacker loses -3 combat when attacking across a river edge
   // (Classic Civ rule — rivers are natural defensive barriers)
