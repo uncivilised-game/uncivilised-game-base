@@ -63,6 +63,33 @@ describe('resolveCombat()', () => {
     expect(defender.moveLeft).toBe(0);
   });
 
+  test('should not move attacker onto captured civilian tile if enemy military is there', () => {
+    // Barbarian attacks a settler that is stacked with a player warrior
+    const barbarian = makeUnit({ id: 1, col: 5, row: 5, type: 'warrior', owner: 'barbarian' });
+    const settler = makeUnit({ id: 2, col: 6, row: 5, type: 'settler', owner: 'player' });
+    const warrior = makeUnit({ id: 3, col: 6, row: 5, type: 'warrior', owner: 'player' });
+    state.units = [barbarian, settler, warrior];
+
+    const result = resolveCombat(barbarian, settler);
+    expect(result.captured).toBe(true);
+    expect(settler.owner).toBe('barbarian');
+    // Barbarian should NOT move onto the tile — player warrior is there
+    expect(barbarian.col).toBe(5);
+    expect(barbarian.row).toBe(5);
+  });
+
+  test('should move attacker onto captured civilian tile if no enemy military present', () => {
+    const barbarian = makeUnit({ id: 1, col: 5, row: 5, type: 'warrior', owner: 'barbarian' });
+    const settler = makeUnit({ id: 2, col: 6, row: 5, type: 'settler', owner: 'player' });
+    state.units = [barbarian, settler];
+
+    const result = resolveCombat(barbarian, settler);
+    expect(result.captured).toBe(true);
+    // Barbarian SHOULD move onto the tile — no enemy military present
+    expect(barbarian.col).toBe(6);
+    expect(barbarian.row).toBe(5);
+  });
+
   // ── Defender death ──
 
   test('should remove defender from game.units when killed', () => {

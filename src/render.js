@@ -454,59 +454,64 @@ function render() {
         ctx.textBaseline = 'alphabetic';
       }
 
-      // City territory with cultural borders
-      for (const city of game.cities) {
-        const bRadius = city.borderRadius || 2;
-        const dist = hexDistance(c, r, city.col, city.row);
-        if (dist <= bRadius) {
-          // Subtle territory fill
+      // City territory with cultural borders (merged across all player cities)
+      {
+        const inPlayerTerritory = game.cities.some(city =>
+          hexDistance(c, r, city.col, city.row) <= (city.borderRadius || 2)
+        );
+        if (inPlayerTerritory) {
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
           ctx.fillStyle = 'rgba(201,168,76,0.06)';
           ctx.fill();
-          // Draw border edge on outermost ring
-          if (dist === bRadius) {
-            const nbs = getHexNeighbors(c, r);
-            for (const nb of nbs) {
-              if (hexDistance(nb.col, nb.row, city.col, city.row) > bRadius) {
-                // This edge faces outside territory — draw border segment
-                const nbPos = hexToPixel(nb.col, nb.row);
-                const edx = (nbPos.x - (sx + camX)) * 0.48;
-                const edy = (nbPos.y - (sy + camY)) * 0.48;
-                ctx.strokeStyle = 'rgba(201,168,76,0.6)';
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
-                ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
-                ctx.stroke();
-              }
+          // Only draw border edge if the neighbor is outside ALL player cities
+          const nbs = getHexNeighbors(c, r);
+          for (const nb of nbs) {
+            const nbInPlayerTerritory = game.cities.some(city =>
+              hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
+            );
+            if (!nbInPlayerTerritory) {
+              const nbPos = hexToPixel(nb.col, nb.row);
+              const edx = (nbPos.x - (sx + camX)) * 0.48;
+              const edy = (nbPos.y - (sy + camY)) * 0.48;
+              ctx.strokeStyle = 'rgba(201,168,76,0.6)';
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
+              ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
+              ctx.stroke();
             }
           }
         }
       }
 
-      // Faction territory with borders
+      // Faction territory with borders (merged across capital + expansion cities per faction)
       for (const [fid, fc] of Object.entries(game.factionCities)) {
         if (!fc.color) continue;
-        const bRadius = fc.borderRadius || 2;
-        const dist = hexDistance(c, r, fc.col, fc.row);
-        if (dist <= bRadius) {
+        // Collect all cities for this faction (capital + expansions)
+        const allFactionCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
+        const inFactionTerritory = allFactionCities.some(city =>
+          hexDistance(c, r, city.col, city.row) <= (city.borderRadius || 2)
+        );
+        if (inFactionTerritory) {
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
           ctx.fillStyle = hexToRgba(fc.color, 0.05);
           ctx.fill();
-          if (dist === bRadius) {
-            const nbs = getHexNeighbors(c, r);
-            for (const nb of nbs) {
-              if (hexDistance(nb.col, nb.row, fc.col, fc.row) > bRadius) {
-                const nbPos = hexToPixel(nb.col, nb.row);
-                const edx = (nbPos.x - (sx + camX)) * 0.48;
-                const edy = (nbPos.y - (sy + camY)) * 0.48;
-                ctx.strokeStyle = hexToRgba(fc.color, 0.6);
-                ctx.lineWidth = 2.5;
-                ctx.beginPath();
-                ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
-                ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
-                ctx.stroke();
-              }
+          // Only draw border edge if neighbor is outside ALL of this faction's cities
+          const nbs = getHexNeighbors(c, r);
+          for (const nb of nbs) {
+            const nbInFactionTerritory = allFactionCities.some(city =>
+              hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
+            );
+            if (!nbInFactionTerritory) {
+              const nbPos = hexToPixel(nb.col, nb.row);
+              const edx = (nbPos.x - (sx + camX)) * 0.48;
+              const edy = (nbPos.y - (sy + camY)) * 0.48;
+              ctx.strokeStyle = hexToRgba(fc.color, 0.6);
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
+              ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
+              ctx.stroke();
             }
           }
         }
@@ -643,9 +648,14 @@ function render() {
         if (game.visibleTiles && !(game.visibleTiles[aic.row] && game.visibleTiles[aic.row][aic.col])) continue;
         const ap = hexToPixel(aic.col, aic.row);
         const ax = ap.x - camX, ay = ap.y - camY;
-        // Territory
+        // Territory (merged with same faction's other cities — borders handled in faction pass above)
         const br = aic.borderRadius || 1;
         const aColor = aic.color || '#888';
+        // Collect all cities for this faction
+        const allFidCities = [
+          ...(game.factionCities?.[fid] ? [game.factionCities[fid]] : []),
+          ...(game.aiFactionCities?.[fid] || []),
+        ];
         for (let dr = -br; dr <= br; dr++) {
           for (let dc = -br; dc <= br; dc++) {
             const nr = aic.row + dr, nc = ((aic.col + dc) % MAP_COLS + MAP_COLS) % MAP_COLS;
@@ -654,11 +664,14 @@ function render() {
             const bx = bp.x - camX, by = bp.y - camY;
             ctx.fillStyle = hexToRgba(aColor, 0.05);
             drawHex(ctx, bx, by, HEX_SIZE - 1); ctx.fill();
-            // Border edge segments
+            // Border edge segments — only if neighbor is outside ALL faction cities
             if (hexDistance(nc, nr, aic.col, aic.row) === br) {
               const nbs = getHexNeighbors(nc, nr);
               for (const nb of nbs) {
-                if (hexDistance(nb.col, nb.row, aic.col, aic.row) > br) {
+                const nbInFaction = allFidCities.some(city =>
+                  hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
+                );
+                if (!nbInFaction) {
                   const nbPos = hexToPixel(nb.col, nb.row);
                   const edx = (nbPos.x - (bx + camX)) * 0.48;
                   const edy = (nbPos.y - (by + camY)) * 0.48;
