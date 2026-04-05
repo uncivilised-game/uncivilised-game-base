@@ -61,14 +61,7 @@ jobs:
             fi
 
             # Prefer exact PR numbers from the workflow_run event payload
-            PRS=$(echo "$WR_PRS" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          if data:
-              print(json.dumps([pr['number'] for pr in data]))
-          else:
-              print('')
-          " 2>/dev/null)
+            PRS=$(echo "$WR_PRS" | jq -c 'if type == "array" and length > 0 then [.[].number] else empty end' 2>/dev/null)
 
             # Fall back to branch-based lookup if payload has no PRs
             if [ -z "$PRS" ] || [ "$PRS" = "[]" ] || [ "$PRS" = "null" ]; then
