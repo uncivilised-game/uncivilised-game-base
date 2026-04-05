@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOC
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
-import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
+import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, checkCityCapture, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
@@ -381,7 +381,10 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
     revealAround(unit.col, unit.row, sightRange);
     logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
     checkAndClearBarbarianCamp(unit, targetCol, targetRow);
-    if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+    if (unit.owner === 'player') {
+      discoverVillage(targetCol, targetRow, unit);
+      checkCityCapture(targetCol, targetRow);
+    }
     render();
     if (onComplete) onComplete(true);
     return true;
@@ -428,7 +431,10 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
       game._unitMoveAnim = null;
       logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
       checkAndClearBarbarianCamp(unit, targetCol, targetRow);
-      if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+      if (unit.owner === 'player') {
+        discoverVillage(targetCol, targetRow, unit);
+        checkCityCapture(targetCol, targetRow);
+      }
       render();
       if (onComplete) onComplete(true);
     }

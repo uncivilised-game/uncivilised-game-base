@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { resolveCombat } from '../src/combat.js';
+import { resolveCombat, checkCityCapture } from '../src/combat.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
 describe('resolveCombat()', () => {
@@ -253,5 +253,44 @@ describe('resolveCombat()', () => {
     const result = resolveCombat(attacker, defender);
     expect(result.defenderDied).toBe(true);
     expect(state.gold).toBeGreaterThan(goldBefore);
+  });
+});
+
+describe('checkCityCapture()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should capture an expansion city at 0 HP when a player unit is on its tile', () => {
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 0, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 1, col: 10, row: 10, owner: 'player' })];
+
+    checkCityCapture(10, 10);
+
+    // Expansion city should be removed from AI faction cities
+    expect(state.aiFactionCities.faction_a).toHaveLength(0);
+    // Should be converted to a player city
+    expect(state.cities.some(c => c.col === 10 && c.row === 10)).toBe(true);
+  });
+
+  test('should not capture an expansion city that still has HP', () => {
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 1, col: 10, row: 10, owner: 'player' })];
+
+    checkCityCapture(10, 10);
+
+    // Should NOT be captured
+    expect(state.aiFactionCities.faction_a).toHaveLength(1);
+    expect(state.cities).toHaveLength(0);
   });
 });

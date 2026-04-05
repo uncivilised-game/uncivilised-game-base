@@ -670,11 +670,23 @@ function executeCityAttack(attacker, factionId, tactic) {
 }
 
 function checkCityCapture(col, row) {
-  // Check if this tile has a faction city
+  // Check if this tile has a faction capital city
   for (const [fid, fc] of Object.entries(game.factionCities)) {
     if (fc.col === col && fc.row === row) {
       captureFactionCity(fid);
       return;
+    }
+  }
+  // Check AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (let i = 0; i < cities.length; i++) {
+        const ec = cities[i];
+        if (ec.col === col && ec.row === row && ec.hp <= 0) {
+          captureExpansionCity(fid, i);
+          return;
+        }
+      }
     }
   }
 }
