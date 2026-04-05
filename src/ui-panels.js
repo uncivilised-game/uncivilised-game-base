@@ -307,6 +307,12 @@ function showCityPanel(cityData) {
   const panel = document.getElementById('tile-info');
   const isPlayer = cityData.owner === 'player';
 
+  // Track selected city for production/purchase targeting
+  if (isPlayer) {
+    const idx = game.cities.findIndex(c => c.col === cityData.col && c.row === cityData.row);
+    game.selectedCityIdx = idx >= 0 ? idx : 0;
+  }
+
   let title, body;
   if (isPlayer) {
     title = `\u2605 ${cityData.name}`;
@@ -554,7 +560,11 @@ function switchProduction(startFn) {
 
 function getNearestCityIndex() {
   if (game.cities.length <= 1) return 0;
-  // Find city closest to camera center
+  // Use explicitly selected city if available
+  if (game.selectedCityIdx != null && game.selectedCityIdx < game.cities.length) {
+    return game.selectedCityIdx;
+  }
+  // Fallback: find city closest to camera center
   const camCenterCol = Math.floor((game.cameraX + (canvasW / 2) / gameZoom) / (HEX_SIZE * SQRT3));
   const camCenterRow = Math.floor((game.cameraY + (canvasH / 2) / gameZoom) / (HEX_SIZE * 1.5));
   let bestIdx = 0, bestDist = Infinity;

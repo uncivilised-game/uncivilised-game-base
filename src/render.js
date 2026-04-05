@@ -946,6 +946,16 @@ function render() {
     const sx = pos.x - camX;
     const sy = pos.y - camY;
 
+    // Selected city highlight — pulsing glow ring
+    if (game.selectedCityIdx === ci) {
+      const pulse = 0.5 + 0.3 * Math.sin(performance.now() / 400);
+      ctx.beginPath();
+      ctx.arc(sx, sy, HEX_SIZE * 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(201,168,76,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
     // Faction ownership ring
     drawFactionRing(ctx, sx, sy, PLAYER_COLOR);
     // Settlement sprite (based on population)
