@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { resolveCombat, checkCityCapture, captureFactionCity, eliminateFaction } from '../src/combat.js';
+import { resolveCombat, checkCityCapture, captureFactionCity, eliminateFaction, razeCity, aiCapturePlayerCity } from '../src/combat.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
 describe('resolveCombat()', () => {
@@ -346,5 +346,61 @@ describe('captureFactionCity()', () => {
     // Expansion city still exists — faction NOT eliminated
     expect(state.aiFactionCities.faction_a).toHaveLength(1);
     expect(state.factionsEliminated || 0).toBe(0);
+  });
+});
+
+describe('razeCity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should remove a player city from the map and grant gold', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+    const goldBefore = state.gold;
+
+    razeCity(10, 10, 'Outpost', 'faction_a');
+
+    expect(state.cities).toHaveLength(0);
+    expect(state.gold).toBeGreaterThan(goldBefore);
+    expect(state.population).toBe(0);
+  });
+});
+
+describe('aiCapturePlayerCity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('barbarians should always raze a captured player city', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+
+    aiCapturePlayerCity(0, 'barbarian');
+
+    // City should be razed (removed), not converted to AI
+    expect(state.cities).toHaveLength(0);
+    expect(state.aiFactionCities.barbarian || []).toHaveLength(0);
+  });
+
+  test('AI faction should capture or raze without crashing', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 20, row: 20, hp: 100, color: '#f00', borderRadius: 2 },
+    };
+
+    aiCapturePlayerCity(0, 'faction_a');
+
+    // City removed from player
+    expect(state.cities).toHaveLength(0);
+    // Either razed or converted to AI expansion city
+    const aiCities = state.aiFactionCities.faction_a || [];
+    // No crash — result depends on random roll
+    expect(state.population).toBeLessThanOrEqual(500);
   });
 });
