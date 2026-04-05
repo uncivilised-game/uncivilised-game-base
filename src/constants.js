@@ -148,7 +148,7 @@ export const TECHNOLOGIES = [
   { id: 'pottery', name: 'Pottery', cost: 20, desc: 'Unlock Shrine, storage', unlocks: [], eureka: { condition: 'found_second_city', description: 'Found a second city' } },
   { id: 'irrigation_tech', name: 'Irrigation', cost: 30, desc: 'Unlock Irrigation improvement, Garden', unlocks: ['irrigation', 'garden'], requires: ['agriculture'], eureka: { condition: 'farm_near_river', description: 'Build a Farm adjacent to a River' } },
   { id: 'construction', name: 'Construction', cost: 50, desc: 'Better buildings and roads', unlocks: [], requires: ['masonry'], eureka: { condition: 'build_3_mines', description: 'Build 3 Mines' } },
-  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, stronger units', unlocks: [], requires: ['bronze_working'], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
+  { id: 'iron_working', name: 'Iron Working', cost: 45, desc: 'Reveals Iron, unlock Garrison improvement', unlocks: ['garrison'], requires: ['bronze_working'], eureka: { condition: 'build_barracks', description: 'Build a Barracks' } },
   { id: 'mathematics', name: 'Mathematics', cost: 70, desc: 'Unlock Academy, Pyramid of Sun', unlocks: ['academy'], requires: ['engineering'] },
   { id: 'philosophy', name: 'Philosophy', cost: 60, desc: '+1 Envoy, cultural growth', unlocks: [], requires: ['mysticism', 'writing'] },
   { id: 'theology', name: 'Theology', cost: 65, desc: 'Temple upgrades', unlocks: [], requires: ['philosophy'] },
@@ -388,6 +388,9 @@ export const TILE_IMPROVEMENTS = {
   // Infrastructure
   road:        { name: 'Road',         icon: '🛤️', turns: 2, requires: null,          validOn: ['grassland','plains','desert','tundra','hills'], yields: {}, moveCostReduction: true, desc: 'Halves movement cost, +1 Gold between cities' },
 
+  // Military
+  garrison:    { name: 'Garrison',      icon: '🏰', turns: 4, requires: 'iron_working', validOn: ['grassland','plains','desert','tundra','hills'], yields: { prod: 1 }, defenseBonus: 5, desc: '+5 defense to units on tile, +1 Production' },
+
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },
   plant_forest:{ name: 'Plant Forest', icon: '🌲', turns: 4, requires: 'mysticism',   validOn: ['grassland','plains'], yields: {}, terraform: { addFeature: 'woods' }, desc: 'Grow forest on empty land' },
@@ -483,6 +486,20 @@ export const BARBARIAN_UNITS = {
   berserker:         { name: 'Berserker',          combat: 30, icon: '\u{1F4A2}', class: 'melee', desc: '+50% attack but -25% defense', special: 'frenzy' },
   war_drummer:       { name: 'War Drummer',        combat: 10, icon: '\u{1F941}', class: 'support', desc: 'Adjacent allies +5 combat', special: 'inspire' },
   shaman:            { name: 'Shaman',             combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
+};
+
+export const UNREST = {
+  FREE_CITIES: 3,                   // No empire size penalty for first N cities
+  EMPIRE_SIZE_PENALTY: -1,           // Per city beyond FREE_CITIES
+  DISTANCE_DIVISOR: 8,              // -1 per this many hexes from capital
+  CAPTURED_PENALTY: -2,             // Flat penalty for captured cities
+  GARRISON_BONUS: 1,                // Bonus for fortified military unit in city
+  ROAD_CONNECTION_BONUS: 2,         // Amenity bonus for road connection to capital
+  ROAD_TRADE_GOLD: 1,              // Extra gold per turn for road-connected city
+  ROAD_COVERAGE_THRESHOLD: 0.5,    // Fraction of path that must have roads
+  REBELLION_BASE_CHANCE: 0.15,      // 15% base rebellion chance at REVOLT_RISK
+  REBELLION_GARRISON_CHANCE: 0.05,  // 5% with garrison
+  REBEL_UNIT_COUNT: 2,              // Military units spawned on rebellion
 };
 
 export const DIR_TO_EDGE = [4, 5, 3, 0, 2, 1];

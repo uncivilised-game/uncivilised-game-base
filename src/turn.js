@@ -1,4 +1,4 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS, UNREST, ZOC_EXEMPT_CLASSES } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
@@ -16,7 +16,7 @@ import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
-import { createUnit, selectUnit, autoSelectNext } from './units.js';
+import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
@@ -40,6 +40,23 @@ function getAmenityMod(balance) {
   if (balance === -1) return -0.05; // -5% production and growth
   if (balance === -2) return -0.10; // -10% production and growth
   return -0.25; // -3 or worse: -25% production and growth
+}
+
+function areCitiesRoadConnected(c1, c2) {
+  const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
+  if (dist <= 1) return true; // Adjacent cities are always connected
+  if (dist > 30) return false; // Too far for road connection
+  let roadCount = 0;
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      if (game.map[r][c].road) {
+        const d1 = hexDistance(c, r, c1.col, c1.row);
+        const d2 = hexDistance(c, r, c2.col, c2.row);
+        if (d1 + d2 <= dist + 2) roadCount++;
+      }
+    }
+  }
+  return roadCount >= dist * UNREST.ROAD_COVERAGE_THRESHOLD;
 }
 
 function distributeLuxuries(cities, luxuryTypes) {
@@ -104,23 +121,92 @@ function calculateCityAmenities(events) {
   // 5. Distribute luxury amenities (each unique type -> +1 to up to 4 neediest cities)
   distributeLuxuries(game.cities, luxuryTypesInTerritory);
 
-  // 6. Calculate final balance, status, and modifier per city
+  // 6. Calculate unrest penalties per city
+  const capital = game.cities[0]; // First city is always the capital
+  const cityCount = game.cities.length;
+  for (const city of game.cities) {
+    city.unrestFromEmpireSize = 0;
+    city.unrestFromDistance = 0;
+    city.unrestFromCapture = 0;
+    city.unrestGarrisonBonus = 0;
+
+    // Empire size penalty: -1 per city beyond FREE_CITIES
+    if (cityCount > UNREST.FREE_CITIES) {
+      city.unrestFromEmpireSize = UNREST.EMPIRE_SIZE_PENALTY * (cityCount - UNREST.FREE_CITIES);
+    }
+
+    // Distance from capital penalty: -1 per DISTANCE_DIVISOR hexes
+    if (capital && (city.col !== capital.col || city.row !== capital.row)) {
+      const dist = hexDistance(city.col, city.row, capital.col, capital.row);
+      city.unrestFromDistance = -Math.floor(dist / UNREST.DISTANCE_DIVISOR);
+    }
+
+    // Captured city penalty
+    if (city.captured) {
+      city.unrestFromCapture = UNREST.CAPTURED_PENALTY;
+    }
+
+    // Garrison bonus: fortified military unit in the city
+    const garrison = game.units.find(u =>
+      u.col === city.col && u.row === city.row &&
+      u.owner === 'player' && u.fortified &&
+      UNIT_TYPES[u.type] && !ZOC_EXEMPT_CLASSES.includes(UNIT_TYPES[u.type].class)
+    );
+    if (garrison) {
+      city.unrestGarrisonBonus = UNREST.GARRISON_BONUS;
+    }
+
+    // Road connection bonus: connected to capital via roads
+    city.roadConnected = false;
+    city.amenityFromRoad = 0;
+    if (capital && city !== capital) {
+      if (areCitiesRoadConnected(city, capital)) {
+        city.roadConnected = true;
+        city.amenityFromRoad = UNREST.ROAD_CONNECTION_BONUS;
+      }
+    }
+  }
+
+  // 7. Calculate final balance, status, and modifier per city
   let totalBalance = 0;
   for (const city of game.cities) {
-    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance;
-    city.amenityBalance = totalAmenities - city.amenityRequired;
+    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance + (city.amenityFromRoad || 0);
+    const totalUnrest = city.unrestFromEmpireSize + city.unrestFromDistance + city.unrestFromCapture + city.unrestGarrisonBonus;
+    city.amenityBalance = totalAmenities - city.amenityRequired + totalUnrest;
     city.amenityStatus = getAmenityStatus(city.amenityBalance);
     city.amenityMod = getAmenityMod(city.amenityBalance);
     totalBalance += city.amenityBalance;
   }
 
-  // 7. Revolt risk: cities at -3 or worse have 5% chance of spawning a rebel warrior
-  for (const city of game.cities) {
-    if (city.amenityStatus === 'REVOLT_RISK' && Math.random() < 0.05) {
+  // 8. Rebellion: REVOLT_RISK cities may rebel and become barbarian
+  for (let i = game.cities.length - 1; i >= 0; i--) {
+    const city = game.cities[i];
+    if (city.amenityStatus !== 'REVOLT_RISK') continue;
+
+    // Garrison reduces rebellion chance
+    const hasGarrison = city.unrestGarrisonBonus > 0;
+    let rebellionChance = hasGarrison ? UNREST.REBELLION_GARRISON_CHANCE : UNREST.REBELLION_BASE_CHANCE;
+
+    // Suppression bonuses from recaptured rebel cities
+    const suppressed = game.rebellionsSuppressed || 0;
+    if (suppressed > 0) {
+      if (city.rebellionSuppressed) {
+        // This city was recaptured: 50% reduction + 10% per other suppression
+        rebellionChance *= 0.5 * Math.pow(0.9, suppressed - 1);
+      } else {
+        // Other cities: 10% reduction per suppression
+        rebellionChance *= Math.pow(0.9, suppressed);
+      }
+    }
+
+    if (Math.random() >= rebellionChance) continue;
+
+    // Capital cannot rebel — spawn a rebel unit instead
+    if (i === 0) {
       const neighbors = getHexNeighbors(city.col, city.row);
       for (const nb of neighbors) {
-        const tile = game.map[nb.row][nb.col];
-        if (!isTilePassable(tile)) continue;
+        const tile = game.map[nb.row]?.[nb.col];
+        if (!tile || !isTilePassable(tile)) continue;
         if (getUnitAt(nb.col, nb.row)) continue;
         const rebel = createUnit('warrior', nb.col, nb.row, 'barbarian');
         game.units.push(rebel);
@@ -128,7 +214,56 @@ function calculateCityAmenities(events) {
         addEvent(`Rebels have risen in ${city.name}!`, 'combat');
         break;
       }
+      continue;
     }
+
+    // Non-capital city: full rebellion — becomes a barbarian camp
+    const cityName = city.name;
+    const cityCol = city.col;
+    const cityRow = city.row;
+    const cityPop = city.population || 500;
+
+    // Remove city from player
+    game.cities.splice(i, 1);
+    game.population -= cityPop;
+    game.score = Math.max(0, game.score - 20);
+
+    // Create a barbarian camp at the city location
+    game.minorFactions.push({
+      id: `rebel_${cityName}_${game.turn}`,
+      type: 'barbarian_camp',
+      col: cityCol,
+      row: cityRow,
+      strength: 15 + Math.floor(Math.random() * 10),
+      gold: 10 + Math.floor(Math.random() * 20),
+      disposition: -20,
+      interacted: false,
+      defeated: false,
+      converted: false,
+      convertedRole: null,
+    });
+
+    // Spawn barbarian military units to defend the rebel city
+    const militaryTypes = Object.entries(UNIT_TYPES)
+      .filter(([, u]) => u.class === 'melee' || u.class === 'cavalry' || u.class === 'anti-cav')
+      .map(([k]) => k);
+    let spawned = 0;
+    const spawnTiles = [{ col: cityCol, row: cityRow }, ...getHexNeighbors(cityCol, cityRow)];
+    for (const tile of spawnTiles) {
+      if (spawned >= UNREST.REBEL_UNIT_COUNT) break;
+      const mapTile = game.map[tile.row]?.[tile.col];
+      if (!mapTile || !isTilePassable(mapTile)) continue;
+      if (getUnitAt(tile.col, tile.row)) continue;
+      const rebelType = militaryTypes[Math.floor(Math.random() * militaryTypes.length)];
+      const rebel = createUnit(rebelType, tile.col, tile.row, 'barbarian');
+      rebel.fortified = true;
+      game.units.push(rebel);
+      spawned++;
+    }
+
+    events.push(`\u{1F525} ${cityName} has fallen into rebellion!`);
+    addEvent(`\u{1F525} ${cityName} has fallen into rebellion! The city is lost!`, 'combat');
+    showToast('Rebellion!', `${cityName} has rebelled and is now under barbarian control!`);
   }
 
   // Keep game.happiness as a summary value for backward compat (UI top bar, save compat)
@@ -878,31 +1013,22 @@ function endTurn() {
 
   // --- Road trade income between cities ---
   if (game.cities.length > 1) {
+    let roadTradeGold = 0;
     for (let i = 0; i < game.cities.length; i++) {
       for (let j = i + 1; j < game.cities.length; j++) {
-        // Check if there's a road path between cities (simplified: just check distance and road density)
-        const c1 = game.cities[i], c2 = game.cities[j];
-        const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
-        if (dist <= 15) {
-          // Count road tiles between them
-          let roadCount = 0;
-          for (let r = 0; r < MAP_ROWS; r++) {
-            for (let c = 0; c < MAP_COLS; c++) {
-              if (game.map[r][c].road) {
-                const d1 = hexDistance(c, r, c1.col, c1.row);
-                const d2 = hexDistance(c, r, c2.col, c2.row);
-                if (d1 + d2 <= dist + 2) roadCount++; // Road is roughly between the cities
-              }
-            }
-          }
-          if (roadCount >= dist * 0.5) { // At least half the path has roads
-            game.gold += 3;
-            // Only log occasionally
-            if (game.turn % 10 === 1) addEvent('Trade route: ' + c1.name + ' \u2194 ' + c2.name + ' (+3 gold)', 'gold');
-          }
+        if (areCitiesRoadConnected(game.cities[i], game.cities[j])) {
+          roadTradeGold += 3;
+          if (game.turn % 10 === 1) addEvent('Trade route: ' + game.cities[i].name + ' \u2194 ' + game.cities[j].name + ' (+3 gold)', 'gold');
         }
       }
     }
+    // Bonus gold for each city road-connected to the capital
+    for (let i = 1; i < game.cities.length; i++) {
+      if (game.cities[i].roadConnected) {
+        roadTradeGold += UNREST.ROAD_TRADE_GOLD;
+      }
+    }
+    if (roadTradeGold > 0) game.gold += roadTradeGold;
   }
 
   // --- City cultural expansion ---
@@ -1368,6 +1494,9 @@ function tryAIImprove(worker, priority) {
   const isCity = game.cities.some(c => c.col === worker.col && c.row === worker.row) ||
     Object.values(game.factionCities).some(fc => fc.col === worker.col && fc.row === worker.row);
   if (isCity) return false;
+  // Can only improve within own territory
+  const owner = getTileOwner(worker.col, worker.row);
+  if (owner !== worker.owner) return false;
 
   for (const impId of priority) {
     const imp = TILE_IMPROVEMENTS[impId];
@@ -1416,6 +1545,7 @@ function moveAIWorkerTowardWork(worker, fid, priority) {
       const t = game.map[nb.row]?.[nb.col];
       if (!t || !isTilePassable(t)) continue;
       if (getUnitAt(nb.col, nb.row)) continue;
+      if (isTerritoryBlocked(worker, nb.col, nb.row)) continue;
       const d = hexDistance(nb.col, nb.row, bestTile.col, bestTile.row);
       if (d < closestDist) { closestDist = d; closest = nb; }
     }
@@ -1428,6 +1558,9 @@ function canAIFoundCityAt(col, row, fid) {
   if (!tile) return false;
   if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
   if (tile.feature === 'mountain') return false;
+  // Cannot found city in another faction's or the player's territory
+  const owner = getTileOwner(col, row);
+  if (owner && owner !== fid) return false;
   for (const city of game.cities) {
     if (hexDistance(col, row, city.col, city.row) < 4) return false;
   }
@@ -1496,10 +1629,11 @@ function moveAISettlerTowardSite(settler, fid) {
     const t = game.map[nb.row]?.[nb.col];
     if (!t || !isTilePassable(t)) continue;
     if (getUnitAt(nb.col, nb.row)) continue;
+    if (isTerritoryBlocked(settler, nb.col, nb.row)) continue;
     const d = hexDistance(nb.col, nb.row, target.col, target.row);
     if (d < closestDist) { closestDist = d; closest = nb; }
   }
   if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected };
