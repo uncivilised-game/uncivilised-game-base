@@ -1,0 +1,78 @@
+name: PR Auto-Merge
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  queue-merge:
+    # Trigger on /merge comment from repo owners, members, or collaborators
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/merge') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: React to comment
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content=rocket
+
+      - name: Get PR info
+        id: pr
+        run: |
+          PR_NUM="${{ github.event.issue.number }}"
+          PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" \
+            --json headRefName,baseRefName,state,mergeable,labels)
+
+          STATE=$(echo "$PR_JSON" | jq -r '.state')
+          BASE=$(echo "$PR_JSON" | jq -r '.baseRefName')
+          MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+
+          echo "number=${PR_NUM}" >> "$GITHUB_OUTPUT"
+          echo "state=${STATE}" >> "$GITHUB_OUTPUT"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "mergeable=${MERGEABLE}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate PR
+        id: validate
+        run: |
+          PR_NUM="${{ steps.pr.outputs.number }}"
+
+          if [ "${{ steps.pr.outputs.state }}" != "OPEN" ]; then
+            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" \
+              --body "Cannot enable auto-merge: PR is not open."
+            exit 1
+          fi
+
+          if [ "${{ steps.pr.outputs.base }}" != "devel" ]; then
+            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" \
+              --body "Cannot enable auto-merge: PR must target \`devel\` (currently targets \`${{ steps.pr.outputs.base }}\`)."
+            exit 1
+          fi
+
+          if [ "${{ steps.pr.outputs.mergeable }}" = "CONFLICTING" ]; then
+            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" \
+              --body "Cannot enable auto-merge: PR has merge conflicts that need to be resolved first."
+            exit 1
+          fi
+
+      - name: Add auto-merge label
+        run: |
+          gh pr edit "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" \
+            --add-label "auto-merge"
+
+      - name: Enable auto-merge
+        run: |
+          PR_NUM="${{ steps.pr.outputs.number }}"
+          gh pr merge "$PR_NUM" --repo "${{ github.repository }}" --squash --auto \
+            --body "Auto-merged via /merge command by ${{ github.event.comment.user.login }}."
+
+          gh pr comment "$PR_NUM" --repo "${{ github.repository }}" \
+            --body "Auto-merge enabled by @${{ github.event.comment.user.login }}. This PR will be merged automatically once all CI checks pass and it has an approving review."
