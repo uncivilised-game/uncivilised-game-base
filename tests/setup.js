@@ -38,7 +38,7 @@ if (typeof globalThis.document === 'undefined') {
     scrollHeight: 0,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
     querySelectorAll: () => [],
-    querySelector: () => null,
+    querySelector: () => makeElement(),
     children: [],
     parentElement: null,
     display: '',

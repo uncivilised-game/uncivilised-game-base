@@ -670,11 +670,23 @@ function executeCityAttack(attacker, factionId, tactic) {
 }
 
 function checkCityCapture(col, row) {
-  // Check if this tile has a faction city
+  // Check if this tile has a faction capital city
   for (const [fid, fc] of Object.entries(game.factionCities)) {
     if (fc.col === col && fc.row === row) {
       captureFactionCity(fid);
       return;
+    }
+  }
+  // Check AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (let i = 0; i < cities.length; i++) {
+        const ec = cities[i];
+        if (ec.col === col && ec.row === row && ec.hp <= 0) {
+          captureExpansionCity(fid, i);
+          return;
+        }
+      }
     }
   }
 }
@@ -721,8 +733,9 @@ function captureFactionCity(factionId) {
   addEvent(`🏛 CAPTURED: ${fc.name} (${factionName})! +${plunderGold} gold plundered`, 'combat');
 
   // Check if this was their last city — faction elimination
-  const remainingCities = Object.keys(game.factionCities).filter(fid => fid === factionId);
-  if (remainingCities.length === 0) {
+  const hasCapital = factionId in game.factionCities;
+  const hasExpansion = (game.aiFactionCities[factionId] || []).length > 0;
+  if (!hasCapital && !hasExpansion) {
     eliminateFaction(factionId, factionName);
   }
 
@@ -737,6 +750,9 @@ function eliminateFaction(factionId, factionName) {
   const removedUnits = game.units.filter(u => u.owner === factionId).length;
   game.units = game.units.filter(u => u.owner !== factionId);
   markVisibilityDirty();
+
+  // Remove any remaining expansion cities
+  delete game.aiFactionCities[factionId];
 
   // Remove from met factions tracking
   // (keep metFactions entry so they still show in history)

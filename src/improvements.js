@@ -5,7 +5,7 @@ import { getTileMoveCost, isTilePassable, hasRoadBridge } from './map.js';
 import { addEvent, logAction, triggerEureka, triggerInspiration } from './events.js';
 import { render } from './render.js';
 import { isResourceRevealed } from './map.js';
-import { createUnit } from './units.js';
+import { createUnit, getTileOwner } from './units.js';
 import { revealAround } from './discovery.js';
 import { getUnitAt } from './combat.js';
 import { hideSelectionPanel } from './ui-panels.js';
@@ -46,20 +46,9 @@ export function getAvailableImprovements(col, row) {
     if ((tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') && id !== 'fishing_boats') continue;
     // Can't build on mountains
     if (tile.feature === 'mountain') continue;
-    // Must be within city borders (player OR AI faction cities)
-    const inPlayerTerritory = game.cities.some(city => hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2));
-    const inFactionTerritory = (() => {
-      for (const fc of Object.values(game.factionCities || {})) {
-        if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
-      }
-      for (const cities of Object.values(game.aiFactionCities || {})) {
-        for (const fc of cities) {
-          if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return true;
-        }
-      }
-      return false;
-    })();
-    if (!inPlayerTerritory && !inFactionTerritory) continue;
+    // Must be within player's own territory — not unclaimed or enemy land
+    const owner = getTileOwner(col, row);
+    if (owner !== 'player') continue;
 
     available.push({ id, ...imp });
   }
@@ -308,6 +297,9 @@ export function canFoundCityAt(col, row) {
   // Must be passable land
   if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
   if (tile.feature === 'mountain') return false;
+  // Cannot found city in enemy territory
+  const owner = getTileOwner(col, row);
+  if (owner && owner !== 'player') return false;
   // Must be 4+ hexes from any existing city
   for (const city of game.cities) {
     if (hexDistance(col, row, city.col, city.row) < 4) return false;
