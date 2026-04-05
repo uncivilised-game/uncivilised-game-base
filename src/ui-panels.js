@@ -716,26 +716,32 @@ function renderBuildPanel() {
   // Current production status
   if (game.currentBuild) {
     const bd = BUILDINGS.find(b => b.id === game.currentBuild);
-    const pct = Math.floor((game.buildProgress / bd.cost) * 100);
-    const tl = Math.ceil((bd.cost - game.buildProgress) / prodRate);
-    const s = document.createElement('div');
-    s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(201,168,76,0.08);border:1px solid var(--color-border);border-radius:6px';
-    s.innerHTML = '<p style="color:var(--color-gold);margin-bottom:6px">Building: <strong>' + bd.name + '</strong></p>'
-      + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:var(--color-gold);height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
-      + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
-      + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
-    container.appendChild(s);
+    if (!bd) { game.currentBuild = null; game.buildProgress = 0; }
+    else {
+      const pct = Math.floor((game.buildProgress / bd.cost) * 100);
+      const tl = Math.ceil((bd.cost - game.buildProgress) / prodRate);
+      const s = document.createElement('div');
+      s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(201,168,76,0.08);border:1px solid var(--color-border);border-radius:6px';
+      s.innerHTML = '<p style="color:var(--color-gold);margin-bottom:6px">Building: <strong>' + bd.name + '</strong></p>'
+        + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:var(--color-gold);height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
+        + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
+        + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
+      container.appendChild(s);
+    }
   } else if (game.currentUnitBuild) {
     const ut = UNIT_TYPES[game.currentUnitBuild];
-    const pct = Math.floor((game.unitBuildProgress / ut.cost) * 100);
-    const tl = Math.ceil((ut.cost - game.unitBuildProgress) / prodRate);
-    const s = document.createElement('div');
-    s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(91,141,199,0.08);border:1px solid var(--color-border);border-radius:6px';
-    s.innerHTML = '<p style="color:var(--color-blue);margin-bottom:6px">Training: <strong>' + ut.icon + ' ' + ut.name + '</strong></p>'
-      + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:var(--color-blue);height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
-      + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
-      + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
-    container.appendChild(s);
+    if (!ut) { game.currentUnitBuild = null; game.unitBuildProgress = 0; }
+    else {
+      const pct = Math.floor((game.unitBuildProgress / ut.cost) * 100);
+      const tl = Math.ceil((ut.cost - game.unitBuildProgress) / prodRate);
+      const s = document.createElement('div');
+      s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(91,141,199,0.08);border:1px solid var(--color-border);border-radius:6px';
+      s.innerHTML = '<p style="color:var(--color-blue);margin-bottom:6px">Training: <strong>' + ut.icon + ' ' + ut.name + '</strong></p>'
+        + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:var(--color-blue);height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
+        + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
+        + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
+      container.appendChild(s);
+    }
   } else if (game.currentWonderBuild) {
     const wd = WONDERS.find(w => w.id === game.currentWonderBuild);
     if (wd) {
