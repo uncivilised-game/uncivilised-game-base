@@ -571,47 +571,8 @@ function checkAndClearBarbarianCamp(unit, col, row) {
   if (unit.owner !== 'player') return;
   if (unit.type === 'worker' || unit.type === 'settler') return; // Civilians can't clear camps
 
-  // Check AI-spawned barbarianCamps
-  if (game.barbarianCamps) {
-    const camp = game.barbarianCamps.find(bc => bc.col === col && bc.row === row && !bc.destroyed);
-    if (camp) {
-      // Check if camp is undefended (no barbarian units on or adjacent to camp)
-      const defenders = game.units.filter(u =>
-        u.owner === 'barbarian' && u.id !== unit.id && hexDistance(u.col, u.row, col, row) <= 1
-      );
-      if (defenders.length === 0) {
-        camp.destroyed = true;
-        const lootGold = 15 + Math.floor(camp.strength * 1.5);
-        game.gold += lootGold;
-        addEvent(`\u{1F525} Cleared barbarian camp! +${lootGold}g looted.`, 'combat');
-        showToast('Camp Cleared!', `Your ${UNIT_TYPES[unit.type]?.name || 'unit'} cleared an undefended barbarian camp.`);
-        logAction('combat', 'Cleared barbarian camp at (' + col + ',' + row + ')', { gold: lootGold });
-
-        // Reputation boost with nearby AI factions (Civ-style)
-        boostFactionReputation(col, row, 'barbarian camp');
-      }
-    }
-  }
-
-  // Check minorFaction barbarian_camps
-  if (game.minorFactions) {
-    const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated && m.type === 'barbarian_camp');
-    if (mf) {
-      const defenders = game.units.filter(u =>
-        u.owner === 'barbarian' && u.id !== unit.id && hexDistance(u.col, u.row, col, row) <= 1
-      );
-      if (defenders.length === 0) {
-        mf.defeated = true;
-        const lootGold = 10 + Math.floor(mf.strength);
-        game.gold += lootGold;
-        addEvent(`\u{1F525} Cleared ${MINOR_FACTION_TYPES[mf.type]?.name || 'barbarian camp'}! +${lootGold}g looted.`, 'combat');
-        showToast('Camp Cleared!', `Your ${UNIT_TYPES[unit.type]?.name || 'unit'} cleared an undefended barbarian camp.`);
-
-        // Reputation boost with nearby AI factions
-        boostFactionReputation(col, row, 'barbarian camp');
-      }
-    }
-  }
+  // Don't auto-clear camps — let the player interact via the negotiation panel.
+  // Camps are destroyed via the "Attack" / "Destroy" button in the interaction UI.
 }
 
 // ---- Boost reputation with nearby AI factions when clearing barbarian threats ----
@@ -778,6 +739,16 @@ function handleHexClick(col, row) {
       return;
     }
 
+    // Check for minor faction / barbarian camp FIRST — prioritize negotiation
+    if (game.minorFactions) {
+      const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated);
+      if (mf) { interactWithMinorFaction(mf.id); return; }
+    }
+    if (game.barbarianCamps) {
+      const bc = game.barbarianCamps.find(c => c.col === col && c.row === row && !c.destroyed);
+      if (bc) { interactWithBarbarianCamp(bc.id); return; }
+    }
+
     // Check what's at this hex — cycle through stacked units on repeat clicks
     const unitsHere = game.units.filter(u => u.col === col && u.row === row);
     const playerUnitsHere = unitsHere.filter(u => u.owner === 'player');
@@ -813,17 +784,6 @@ function handleHexClick(col, row) {
       game.selectedHex = { col, row };
       showCityPanel(cityHere);
       return;
-    }
-
-    // Check for minor faction
-    if (game.minorFactions) {
-      const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated);
-      if (mf) { interactWithMinorFaction(mf.id); return; }
-    }
-    // Check for barbarian camps (AI-spawned)
-    if (game.barbarianCamps) {
-      const bc = game.barbarianCamps.find(c => c.col === col && c.row === row && !c.destroyed);
-      if (bc) { interactWithBarbarianCamp(bc.id); return; }
     }
 
     // Deselect and show tile info
