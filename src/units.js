@@ -82,6 +82,7 @@ function createUnit(type, col, row, owner) {
     row: row,
     owner: owner, // 'player' or faction ID string
     hp: 100,
+    movePoints: ut.movePoints,
     moveLeft: ut.movePoints,
     combat: ut.combat,
     fortified: false,
@@ -825,8 +826,11 @@ function applyPromotion(unitId, promoId) {
   unit.pendingPromotion = false;
   const p = UNIT_PROMOTIONS[promoId];
   if (p && p.moveBonus) {
+    // Permanently increase the unit's move points so the bonus persists across turns
     const ut = UNIT_TYPES[unit.type];
-    if (ut) unit.moveLeft = Math.min(unit.moveLeft + p.moveBonus, ut.movePoints + p.moveBonus);
+    const baseMovePoints = unit.movePoints ?? (ut ? ut.movePoints : 2);
+    unit.movePoints = baseMovePoints + p.moveBonus;
+    unit.moveLeft = Math.min(unit.moveLeft + p.moveBonus, unit.movePoints);
   }
   addEvent((UNIT_TYPES[unit.type]?.name || unit.type) + ' promoted: ' + (p ? p.icon + ' ' + p.name : promoId), 'combat');
   showSelectionPanel(unit);

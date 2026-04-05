@@ -1,6 +1,7 @@
-import { describe, test, expect } from 'vitest';
-import { createUnit } from '../src/units.js';
+import { describe, test, expect, beforeEach } from 'vitest';
+import { createUnit, applyPromotion } from '../src/units.js';
 import { UNIT_TYPES } from '../src/constants.js';
+import { setupGameState } from './fixtures.js';
 
 describe('createUnit()', () => {
   test('should create a warrior with correct defaults', () => {
@@ -11,6 +12,7 @@ describe('createUnit()', () => {
     expect(unit.owner).toBe('player');
     expect(unit.hp).toBe(100);
     expect(unit.moveLeft).toBe(UNIT_TYPES.warrior.movePoints);
+    expect(unit.movePoints).toBe(UNIT_TYPES.warrior.movePoints);
     expect(unit.combat).toBe(UNIT_TYPES.warrior.combat);
     expect(unit.fortified).toBe(false);
     expect(unit.sleeping).toBe(false);
@@ -50,5 +52,57 @@ describe('createUnit()', () => {
     const archer = createUnit('archer', 0, 0, 'player');
     expect(archer.combat).toBe(UNIT_TYPES.archer.combat);
     expect(archer.moveLeft).toBe(UNIT_TYPES.archer.movePoints);
+  });
+});
+
+describe('applyPromotion()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('permanently increases unit movePoints when promotion has moveBonus', () => {
+    const unit = createUnit('horseman', 5, 5, 'player');
+    unit.pendingPromotion = true;
+    state.units = [unit];
+    const baseMovePoints = unit.movePoints;
+
+    applyPromotion(unit.id, 'pursuit'); // pursuit: moveBonus: 1
+
+    expect(unit.movePoints).toBe(baseMovePoints + 1);
+  });
+
+  test('increases moveLeft immediately when promotion has moveBonus', () => {
+    const unit = createUnit('horseman', 5, 5, 'player');
+    unit.pendingPromotion = true;
+    unit.moveLeft = 1; // partially spent
+    state.units = [unit];
+
+    applyPromotion(unit.id, 'pursuit');
+
+    expect(unit.moveLeft).toBe(2); // 1 + 1 bonus, capped at new movePoints
+  });
+
+  test('does not change movePoints for promotions without moveBonus', () => {
+    const unit = createUnit('warrior', 5, 5, 'player');
+    unit.pendingPromotion = true;
+    state.units = [unit];
+    const baseMovePoints = unit.movePoints;
+
+    applyPromotion(unit.id, 'elite'); // elite: combatBonus: 5, no moveBonus
+
+    expect(unit.movePoints).toBe(baseMovePoints);
+  });
+
+  test('clears pendingPromotion flag after applying', () => {
+    const unit = createUnit('warrior', 5, 5, 'player');
+    unit.pendingPromotion = true;
+    state.units = [unit];
+
+    applyPromotion(unit.id, 'battlecry');
+
+    expect(unit.pendingPromotion).toBe(false);
+    expect(unit.promotions).toContain('battlecry');
   });
 });
