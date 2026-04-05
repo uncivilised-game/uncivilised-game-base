@@ -67,6 +67,41 @@ describe('migrateTiles()', () => {
     expect(state.units[0].pendingPromotion).toBe(true);
   });
 
+  test('backfills movePoints from unit type for units without it', () => {
+    const state = {
+      units: [
+        { type: 'warrior', promotions: [] },
+        { type: 'scout', promotions: [] },
+      ],
+    };
+    migrateTiles(state);
+
+    expect(state.units[0].movePoints).toBe(2); // warrior base
+    expect(state.units[1].movePoints).toBe(3); // scout base
+  });
+
+  test('backfills movePoints including move-bonus promotions', () => {
+    const state = {
+      units: [
+        { type: 'horseman', promotions: ['pursuit'] }, // pursuit: moveBonus 1
+      ],
+    };
+    migrateTiles(state);
+
+    expect(state.units[0].movePoints).toBe(4); // horseman(3) + pursuit(1)
+  });
+
+  test('does not overwrite existing movePoints', () => {
+    const state = {
+      units: [
+        { type: 'warrior', promotions: [], movePoints: 5 },
+      ],
+    };
+    migrateTiles(state);
+
+    expect(state.units[0].movePoints).toBe(5);
+  });
+
   test('migrates faction city fields', () => {
     const state = {
       factionCities: {

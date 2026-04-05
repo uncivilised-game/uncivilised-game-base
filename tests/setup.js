@@ -9,40 +9,43 @@ if (typeof globalThis.window === 'undefined') {
 }
 
 if (typeof globalThis.document === 'undefined') {
-  const makeElement = () => ({
-    getContext: () => ({
-      beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
-      arc() {}, fill() {}, stroke() {}, clearRect() {},
-      fillRect() {}, strokeRect() {}, save() {}, restore() {},
-      translate() {}, scale() {}, rotate() {}, drawImage() {},
-      measureText: () => ({ width: 0 }),
-      createLinearGradient: () => ({ addColorStop() {} }),
-      canvas: { width: 800, height: 600 },
-    }),
-    style: {},
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    addEventListener() {},
-    removeEventListener() {},
-    appendChild() {},
-    removeChild() {},
-    insertBefore() {},
-    setAttribute() {},
-    getAttribute: () => null,
-    innerHTML: '',
-    textContent: '',
-    value: '',
-    checked: false,
-    offsetWidth: 0,
-    offsetHeight: 0,
-    scrollTop: 0,
-    scrollHeight: 0,
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
-    querySelectorAll: () => [],
-    querySelector: () => null,
-    children: [],
-    parentElement: null,
-    display: '',
-  });
+  const makeElement = () => {
+    const el = {
+      getContext: () => ({
+        beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+        arc() {}, fill() {}, stroke() {}, clearRect() {},
+        fillRect() {}, strokeRect() {}, save() {}, restore() {},
+        translate() {}, scale() {}, rotate() {}, drawImage() {},
+        measureText: () => ({ width: 0 }),
+        createLinearGradient: () => ({ addColorStop() {} }),
+        canvas: { width: 800, height: 600 },
+      }),
+      style: {},
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      addEventListener() {},
+      removeEventListener() {},
+      appendChild() {},
+      removeChild() {},
+      insertBefore() {},
+      setAttribute() {},
+      getAttribute: () => null,
+      innerHTML: '',
+      textContent: '',
+      value: '',
+      checked: false,
+      offsetWidth: 0,
+      offsetHeight: 0,
+      scrollTop: 0,
+      scrollHeight: 0,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+      querySelectorAll: () => [],
+      querySelector: () => makeElement(),
+      children: [],
+      parentElement: null,
+      display: '',
+    };
+    return el;
+  };
 
   globalThis.document = {
     getElementById: () => makeElement(),
