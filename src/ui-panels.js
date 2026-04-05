@@ -1,8 +1,8 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3, DISTRICTS, TERRAIN_FEATURES } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3, DISTRICTS, TERRAIN_FEATURES, UNIT_RESOURCE_REQUIREMENTS } from './constants.js';
 import { getNextUnitId } from './state.js';
 import { game, canvasW, canvasH, gameZoom } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
-import { getTileYields, getTileName, isResourceRevealed } from './map.js';
+import { getTileYields, getTileName, isResourceRevealed, hasResourceAccess } from './map.js';
 import { render } from './render.js';
 import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
@@ -493,9 +493,14 @@ function renderUnitsPanel() {
     const canRecruit = techUnlocked && (!needsBarracks || hasBarracks) && !needsPop;
     const reason = !techUnlocked ? `Requires ${getTechNameById(requiredTech)}` : (needsBarracks && !hasBarracks) ? 'Requires Barracks' : needsPop ? 'Requires population 2,000+' : '';
     const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
-    const gCost = goldCost(ut.cost);
+    // Resource requirement check for substitute mechanic
+    const resReq = UNIT_RESOURCE_REQUIREMENTS[typeId];
+    const hasRes = resReq ? hasResourceAccess(resReq.resource, 'player') : true;
+    const effectiveProdCost = hasRes ? ut.cost : Math.ceil(ut.cost * resReq.costMultiplier);
+    const gCost = goldCost(effectiveProdCost);
     const canBuy = canRecruit && game.gold >= gCost;
-    const turns = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
+    const turns = Math.ceil(effectiveProdCost / Math.max(1, game.productionPerTurn));
+    const resWarning = (resReq && !hasRes) ? `<div style="color:#ff6b6b;font-size:11px">\u26A0 ${resReq.label}</div>` : '';
 
     const div = document.createElement('div');
     const disabled = !canRecruit && !canBuy;
@@ -504,6 +509,7 @@ function renderUnitsPanel() {
       <div class="item-info">
         <div class="item-name">${ut.icon} ${ut.name}</div>
         <div class="item-desc">${ut.desc}${reason ? ` — ${reason}` : ''}</div>
+        ${resWarning}
       </div>
       <div class="item-cost-group">
         <span class="cost-prod${canRecruit && !prodBusy ? '' : ' cost-na'}">${prodBusy && canRecruit ? 'Busy' : turns + 'T'}</span>
@@ -570,10 +576,14 @@ function recruitUnit(typeId) {
     game.unitBuildProgress = 0;
     // Track which city is building (closest to camera center)
     game.unitBuildCityIdx = getNearestCityIndex();
-    const turnsNeeded = Math.ceil(ut.cost / Math.max(1, game.productionPerTurn));
+    const rResReq = UNIT_RESOURCE_REQUIREMENTS[typeId];
+    const rHasRes = rResReq ? hasResourceAccess(rResReq.resource, 'player') : true;
+    const rEffCost = rHasRes ? ut.cost : Math.ceil(ut.cost * rResReq.costMultiplier);
+    const turnsNeeded = Math.ceil(rEffCost / Math.max(1, game.productionPerTurn));
     const buildCityName = game.cities[game.unitBuildCityIdx]?.name || 'city';
     logAction('build', 'Started training ' + ut.name + ' in ' + buildCityName, { unitType: typeId });
-    addEvent('Training ' + ut.name + ' in ' + buildCityName + ' (' + turnsNeeded + ' turns)', 'combat');
+    const rWarnMsg = (!rHasRes && rResReq) ? ' \u26A0 ' + rResReq.label : '';
+    addEvent('Training ' + ut.name + ' in ' + buildCityName + ' (' + turnsNeeded + ' turns)' + rWarnMsg, 'combat');
     if (typeId === 'settler') addEvent('Settler will consume 500 population when complete', 'gold');
     updateUI();
     closeAllPanels();
@@ -727,13 +737,18 @@ function renderBuildPanel() {
     container.appendChild(s);
   } else if (game.currentUnitBuild) {
     const ut = UNIT_TYPES[game.currentUnitBuild];
-    const pct = Math.floor((game.unitBuildProgress / ut.cost) * 100);
-    const tl = Math.ceil((ut.cost - game.unitBuildProgress) / prodRate);
+    const ubResReq = UNIT_RESOURCE_REQUIREMENTS[game.currentUnitBuild];
+    const ubHasRes = ubResReq ? hasResourceAccess(ubResReq.resource, 'player') : true;
+    const ubEffCost = ubHasRes ? ut.cost : Math.ceil(ut.cost * ubResReq.costMultiplier);
+    const pct = Math.floor((game.unitBuildProgress / ubEffCost) * 100);
+    const tl = Math.ceil((ubEffCost - game.unitBuildProgress) / prodRate);
+    const ubResWarn = (ubResReq && !ubHasRes) ? '<p style="color:#ff6b6b;font-size:11px;margin-top:4px">\u26A0 ' + ubResReq.label + '</p>' : '';
     const s = document.createElement('div');
     s.style.cssText = 'margin-bottom:12px;padding:10px;background:rgba(91,141,199,0.08);border:1px solid var(--color-border);border-radius:6px';
     s.innerHTML = '<p style="color:var(--color-blue);margin-bottom:6px">Training: <strong>' + ut.icon + ' ' + ut.name + '</strong></p>'
       + '<div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;margin:4px 0"><div style="background:var(--color-blue);height:100%;width:' + pct + '%;transition:width 0.3s"></div></div>'
       + '<p style="color:var(--color-text-muted);font-size:11px">' + pct + '% \u2014 ' + tl + ' turn' + (tl!==1?'s':'') + ' left</p>'
+      + ubResWarn
       + '<button class="sel-btn" style="margin-top:6px;background:#5a2020;border-color:#8a3030;font-size:11px" onclick="cancelProduction()">Cancel</button>';
     container.appendChild(s);
   } else if (game.currentWonderBuild) {
@@ -1003,7 +1018,11 @@ function purchaseBuilding(buildingId) {
 function purchaseUnit(typeId) {
   const ut = UNIT_TYPES[typeId];
   if (!ut) return;
-  const cost = goldCost(ut.cost);
+  // Substitute mechanic for gold purchases
+  const pResReq = UNIT_RESOURCE_REQUIREMENTS[typeId];
+  const pHasRes = pResReq ? hasResourceAccess(pResReq.resource, 'player') : true;
+  const pEffCost = pHasRes ? ut.cost : Math.ceil(ut.cost * pResReq.costMultiplier);
+  const cost = goldCost(pEffCost);
   if (game.gold < cost) { addEvent('Not enough gold (' + cost + 'g needed, have ' + game.gold + 'g)', 'gold'); return; }
   if (typeId === 'settler' && game.population < 2000) {
     addEvent('Need population 2,000+ to buy Settler', 'combat'); return;
@@ -1032,13 +1051,21 @@ function purchaseUnit(typeId) {
     owner: 'player', hp: 100, moveLeft: 0,
     xp: 0, level: 1, fortified: false, sleeping: false
   };
+  // Apply substitute penalties if no resource
+  if (!pHasRes && pResReq) {
+    newUnit.combat = Math.max(0, (ut.combat || 0) - pResReq.combatPenalty);
+    if (pResReq.rangedPenalty && ut.rangedCombat) newUnit.rangedCombat = Math.max(0, ut.rangedCombat - pResReq.rangedPenalty);
+    if (pResReq.movePenalty) newUnit.movePoints = Math.max(1, ut.movePoints - pResReq.movePenalty);
+    newUnit.substitute = true;
+  }
   game.units.push(newUnit);
   if (typeId === 'settler') {
     game.population = Math.max(500, game.population - 500);
     city.population = Math.max(500, (city.population || game.population) - 500);
   }
-  logAction('build', 'Purchased ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
-  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + ' in ' + city.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
+  const pSubLabel = (!pHasRes && pResReq) ? ' (substitute)' : '';
+  logAction('build', 'Purchased ' + ut.name + pSubLabel + ' in ' + city.name + ' for ' + cost + ' gold', { unitType: typeId, goldCost: cost });
+  addEvent('\u{1F4B0} Purchased ' + ut.icon + ' ' + ut.name + pSubLabel + ' in ' + city.name + ' for ' + cost + ' gold (ready next turn)', 'gold');
   updateUI(); renderBuildPanel(); render();
 }
 

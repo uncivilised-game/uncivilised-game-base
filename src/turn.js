@@ -1,7 +1,7 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS, UNREST, ZOC_EXEMPT_CLASSES } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS, UNREST, ZOC_EXEMPT_CLASSES, UNIT_RESOURCE_REQUIREMENTS } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
+import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed, hasResourceAccess } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields, getAvailableImprovements, startImprovement } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
@@ -686,7 +686,11 @@ function endTurn() {
   } else if (game.currentUnitBuild) {
     game.unitBuildProgress += prodThisTurn;
     const ut = UNIT_TYPES[game.currentUnitBuild];
-    if (ut && game.unitBuildProgress >= ut.cost) {
+    // Substitute mechanic: check resource access for cost/stat penalties
+    const resReq = UNIT_RESOURCE_REQUIREMENTS[game.currentUnitBuild];
+    const hasResource = resReq ? hasResourceAccess(resReq.resource, 'player') : true;
+    const effectiveCost = hasResource ? ut.cost : Math.ceil(ut.cost * resReq.costMultiplier);
+    if (ut && game.unitBuildProgress >= effectiveCost) {
       // Place unit near the city that started the build (fallback to any city with room)
       const buildCityIdx = game.unitBuildCityIdx || 0;
       const cityOrder = [...game.cities];
@@ -705,6 +709,13 @@ function endTurn() {
           if (getUnitAt(nb.col, nb.row)) continue;
           const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
           newUnit.moveLeft = 0;
+          // Apply substitute penalties if no resource access
+          if (!hasResource && resReq) {
+            newUnit.combat = Math.max(0, (newUnit.combat || ut.combat) - resReq.combatPenalty);
+            if (resReq.rangedPenalty && newUnit.rangedCombat) newUnit.rangedCombat = Math.max(0, newUnit.rangedCombat - resReq.rangedPenalty);
+            if (resReq.movePenalty) newUnit.movePoints = Math.max(1, (newUnit.movePoints || ut.movePoints) - resReq.movePenalty);
+            newUnit.substitute = true;
+          }
           game.units.push(newUnit);
           game.military += Math.floor(ut.combat / 4);
           placed = true;
@@ -718,16 +729,17 @@ function endTurn() {
           game.population = Math.max(500, game.population - 500);
           if (placedCity) placedCity.population = Math.max(500, (placedCity.population || game.population) - 500);
         }
-        events.push(`${ut.name} trained!`);
-        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!`, 'combat');
+        const subLabel = (!hasResource && resReq) ? ` (substitute — no ${RESOURCES[resReq.resource]?.name || resReq.resource})` : '';
+        events.push(`${ut.name} trained!${subLabel}`);
+        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!${subLabel}`, 'combat');
         game.currentUnitBuild = null;
         game.unitBuildProgress = 0;
         game.unitBuildCityIdx = 0;
         showCompletionNotification('unit', ut.name, ut.desc);
-        if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!');
+        if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!' + subLabel);
       } else {
         addEvent(`${ut.name} ready but no room — clear tiles near city`, 'combat');
-        game.unitBuildProgress = ut.cost;
+        game.unitBuildProgress = effectiveCost;
       }
     }
   } else if (game.currentDistrictBuild) {
