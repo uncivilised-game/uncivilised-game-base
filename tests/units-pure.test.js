@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { createUnit, getTileOwner, isTerritoryBlocked, computeAttackRange } from '../src/units.js';
 import { canFoundCityAt } from '../src/improvements.js';
+import { ejectTrespassingUnits } from '../src/turn.js';
 import { UNIT_TYPES } from '../src/constants.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
@@ -194,5 +195,52 @@ describe('canFoundCityAt()', () => {
     state.cities = [];
     // Tile at (30,20) is unclaimed and far from everything
     expect(canFoundCityAt(30, 20)).toBe(true);
+  });
+});
+
+describe('ejectTrespassingUnits()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should eject AI unit from player territory when borders are closed', () => {
+    state.cities = [{ name: 'Home', col: 10, row: 10, borderRadius: 2 }];
+    // AI unit inside player territory, no open borders, no war
+    const aiUnit = makeUnit({ id: 1, col: 10, row: 10, owner: 'faction_a' });
+    state.units = [aiUnit];
+
+    ejectTrespassingUnits('faction_a');
+
+    // Unit should have been moved outside player territory
+    expect(isTerritoryBlocked(aiUnit, aiUnit.col, aiUnit.row)).toBe(false);
+  });
+
+  test('should eject player unit from AI territory when borders are closed', () => {
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 10, row: 10, hp: 100, borderRadius: 2 },
+    };
+    const playerUnit = makeUnit({ id: 1, col: 10, row: 10, owner: 'player' });
+    state.units = [playerUnit];
+
+    ejectTrespassingUnits('faction_a');
+
+    expect(isTerritoryBlocked(playerUnit, playerUnit.col, playerUnit.row)).toBe(false);
+  });
+
+  test('should not eject units that have open borders', () => {
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 10, row: 10, hp: 100, borderRadius: 2 },
+    };
+    state.openBorders = { faction_a: { startTurn: 1, duration: 20 } };
+    const playerUnit = makeUnit({ id: 1, col: 10, row: 10, owner: 'player' });
+    state.units = [playerUnit];
+
+    ejectTrespassingUnits('faction_a');
+
+    // Should stay — open borders allow it
+    expect(playerUnit.col).toBe(10);
+    expect(playerUnit.row).toBe(10);
   });
 });
