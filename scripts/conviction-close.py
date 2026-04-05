@@ -496,6 +496,11 @@ def process_pending_close_issues(issues):
 
         num = issue["number"]
 
+        # Skip issues where autofix started after pending-close was marked
+        if labels & AUTOFIX_LABELS:
+            still_pending.add(num)
+            continue
+
         # Check issue timeline/events to find when pending-close label was added
         try:
             events = _paginate_get(f"issues/{num}/events")
