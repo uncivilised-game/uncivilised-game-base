@@ -445,6 +445,11 @@ function endTurn() {
     processAITradeIncome();
   } catch (e) { console.error('Error in AI diplomacy:', e); }
 
+  // --- Eject any units trespassing after diplomacy changes (peace, expired borders) ---
+  try {
+    ejectTrespassingUnits();
+  } catch (e) { console.error('Error ejecting trespassing units:', e); }
+
   // --- Player turn processing (resilient — errors won't block turn advancement) ---
   let _turnSection = '';
   try {
@@ -1116,6 +1121,8 @@ function endTurn() {
     if (game.turn >= ob.startTurn + ob.duration) {
       delete game.openBorders[cid];
       addEvent(`Open borders with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
+      // Eject units that are now trespassing
+      ejectTrespassingUnits(cid);
     }
   }
 
@@ -1648,4 +1655,76 @@ function moveAISettlerTowardSite(settler, fid) {
   if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected };
+// ============================================
+// EJECT TRESPASSING UNITS
+// ============================================
+
+/**
+ * Eject all units that are trespassing in foreign territory they no longer
+ * have permission to be in (e.g. open borders expired, peace signed).
+ * Called with a specific factionId when a bilateral agreement changes,
+ * or with no argument to do a full sweep.
+ */
+function ejectTrespassingUnits(factionId) {
+  const unitsToEject = [];
+
+  for (const unit of game.units) {
+    // Only check units involved with this faction, or all if no factionId given
+    if (factionId) {
+      // When open borders with factionId expire:
+      // - eject AI faction's units from player territory
+      // - eject player's units from AI faction's territory
+      if (unit.owner !== factionId && unit.owner !== 'player') continue;
+    }
+    if (isTerritoryBlocked(unit, unit.col, unit.row)) {
+      unitsToEject.push(unit);
+    }
+  }
+
+  for (const unit of unitsToEject) {
+    const target = findNearestValidTile(unit);
+    if (target) {
+      unit.col = target.col;
+      unit.row = target.row;
+      unit.moveLeft = 0;
+      const unitName = UNIT_TYPES[unit.type]?.name || unit.type;
+      if (unit.owner === 'player') {
+        addEvent(`${unitName} ejected from foreign territory`, 'diplomacy');
+      }
+    }
+  }
+}
+
+/**
+ * Find the nearest passable tile that the unit is allowed to be on.
+ * Searches outward in rings from the unit's current position.
+ */
+function findNearestValidTile(unit) {
+  const visited = new Set();
+  const queue = [{ col: unit.col, row: unit.row }];
+  visited.add(`${unit.col},${unit.row}`);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const nbs = getHexNeighbors(cur.col, cur.row);
+    for (const nb of nbs) {
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const tile = game.map[nb.row]?.[nb.col];
+      if (!tile || !isTilePassable(tile)) continue;
+      // Check if this tile is valid for the unit (not blocked by territory)
+      if (!isTerritoryBlocked(unit, nb.col, nb.row)) {
+        // Also make sure no enemy military unit is here
+        const occupant = game.units.find(u =>
+          u.col === nb.col && u.row === nb.row && u.id !== unit.id && u.owner !== unit.owner
+        );
+        if (!occupant) return nb;
+      }
+      queue.push(nb);
+    }
+  }
+  return null;
+}
+
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected, ejectTrespassingUnits };

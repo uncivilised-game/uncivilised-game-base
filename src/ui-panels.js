@@ -832,52 +832,6 @@ function renderBuildPanel() {
     }
   }
 
-  // Units
-  const uh = document.createElement('p');
-  uh.style.cssText = 'color:var(--color-blue);margin-top:14px;margin-bottom:8px;font-size:13px;font-weight:600;border-bottom:1px solid var(--color-border);padding-bottom:4px';
-  const hasBarracks = game.buildings.includes('barracks');
-  uh.textContent = 'Train Units' + (!hasBarracks ? ' (Barracks for advanced)' : '');
-  container.appendChild(uh);
-
-  for (const [tid, ut] of Object.entries(UNIT_TYPES)) {
-    const reqTech = UNIT_UNLOCKS[tid];
-    const techOk = !reqTech || game.techs.includes(reqTech);
-    const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
-    const needsPop = tid === 'settler' && game.population < 2000;
-    const prereqMet = techOk && (!needsBarr || hasBarracks) && !needsPop;
-    const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
-    const canProd = prereqMet && !prodBusy;
-    const gCost = goldCost(ut.cost);
-    const canBuy = prereqMet && game.gold >= gCost;
-    const maint = UNIT_MAINTENANCE[tid] || 0;
-    let reason = '';
-    if (!techOk) reason = 'Requires ' + getTechNameById(reqTech);
-    else if (needsBarr && !hasBarracks) reason = 'Requires Barracks';
-    else if (needsPop) reason = 'Need pop 2,000+ (have ' + game.population.toLocaleString() + ')';
-    const turns = Math.ceil(ut.cost / prodRate);
-    const div = document.createElement('div');
-    const unitDisabled = !prereqMet && !canBuy;
-    div.className = 'build-item' + (unitDisabled ? ' item-disabled' : '') + (!canProd && canBuy && !unitDisabled ? ' has-gold-option' : '');
-    if (unitDisabled && reason) div.title = reason;
-    const popNote = tid === 'settler' ? ' (-500 pop)' : '';
-    const maintNote = maint > 0 ? ' \u2022 ' + maint + 'g/turn upkeep' : '';
-    const prodLabel = prodBusy && prereqMet ? 'Busy' : turns + 'T';
-    div.innerHTML = '<div class="item-info"><div class="item-name">' + ut.icon + ' ' + ut.name + '</div>'
-      + '<div class="item-desc">' + ut.desc + popNote + maintNote + (reason ? ' \u2014 ' + reason : '') + '</div></div>'
-      + '<div class="item-cost-group">'
-      + (canProd ? '<span class="cost-prod" title="Train with production">' + turns + 'T</span>' : '<span class="cost-prod cost-na">' + prodLabel + '</span>')
-      + (prereqMet ? '<span class="cost-gold' + (canBuy ? '' : ' cost-na') + '" title="Buy instantly with gold">' + gCost + 'g</span>' : '')
-      + '</div>';
-    if (canBuy) {
-      div.addEventListener('click', ((unitId) => (e) => { e.stopPropagation(); purchaseUnit(unitId); })(tid));
-    } else if (canProd) {
-      div.addEventListener('click', () => recruitUnit(tid));
-    } else if (prereqMet && !canBuy) {
-      div.addEventListener('click', () => addEvent('Not enough gold (' + gCost + 'g needed, have ' + game.gold + 'g)', 'gold'));
-    }
-    container.appendChild(div);
-  }
-
   // --- Wonders Section ---
   const wh = document.createElement('p');
   wh.style.cssText = 'color:#ffd700;margin-top:14px;margin-bottom:8px;font-size:13px;font-weight:600;border-bottom:1px solid var(--color-border);padding-bottom:4px';
