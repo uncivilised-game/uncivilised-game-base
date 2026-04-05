@@ -433,10 +433,8 @@ def mark_pending_close(issue, prs, tier, reason=""):
     # Post comment
     gh_post(f"issues/{num}/comments", {"body": comment})
 
-    # Add pending-close label
-    current_labels = [l["name"] for l in issue.get("labels", [])]
-    if PENDING_CLOSE_LABEL not in current_labels:
-        gh_post(f"issues/{num}/labels", {"labels": [PENDING_CLOSE_LABEL]})
+    # Add pending-close label (idempotent — safe to call even if already present)
+    gh_post(f"issues/{num}/labels", {"labels": [PENDING_CLOSE_LABEL]})
 
     print(f"  Marked pending-close #{num} (Tier {tier})")
 
@@ -449,30 +447,46 @@ def close_issue(issue):
         print(f"  [DRY RUN] Would close #{num} (grace period elapsed)")
         return
 
-    # Add auto-closed label
-    current_labels = [l["name"] for l in issue.get("labels", [])]
-    if AUTO_CLOSED_LABEL not in current_labels:
-        gh_post(f"issues/{num}/labels", {"labels": [AUTO_CLOSED_LABEL]})
+    # Add auto-closed label (idempotent)
+    gh_post(f"issues/{num}/labels", {"labels": [AUTO_CLOSED_LABEL]})
 
-    # Remove pending-close label
-    if PENDING_CLOSE_LABEL in current_labels:
-        try:
-            _req("DELETE",
-                 f"https://api.github.com/repos/{GITHUB_REPO}/issues/{num}/labels/{PENDING_CLOSE_LABEL}",
-                 headers=GH_HEADERS)
-        except urllib.error.HTTPError:
-            pass  # label may have been removed manually
+    # Remove pending-close label (ignore 404 if already removed)
+    try:
+        _req("DELETE",
+             f"https://api.github.com/repos/{GITHUB_REPO}/issues/{num}/labels/{PENDING_CLOSE_LABEL}",
+             headers=GH_HEADERS)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
 
     # Close
     gh_patch(f"issues/{num}", {"state": "closed", "state_reason": "completed"})
     print(f"  Closed #{num} (grace period elapsed)")
 
 
+def _paginate_get(path, params=""):
+    """Fetch all pages from a paginated GitHub API endpoint."""
+    results = []
+    page = 1
+    while True:
+        sep = "&" if params else ""
+        batch = gh_get(path, f"{params}{sep}per_page=100&page={page}")
+        if not batch:
+            break
+        results.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return results
+
+
 def process_pending_close_issues(issues):
     """Close issues that have had the pending-close label for longer than the grace period.
-    Returns the count of issues closed and the set of issue numbers that are still pending."""
+    Returns the count of issues closed, the set of still-pending issue numbers,
+    and the set of issue numbers closed or objected (to exclude from Phase 2)."""
     closed = 0
     still_pending = set()
+    closed_or_objected = set()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=GRACE_PERIOD_HOURS)
 
     for issue in issues:
@@ -484,16 +498,19 @@ def process_pending_close_issues(issues):
 
         # Check issue timeline/events to find when pending-close label was added
         try:
-            events = gh_get(f"issues/{num}/events", "per_page=100")
+            events = _paginate_get(f"issues/{num}/events")
         except urllib.error.HTTPError:
             events = []
 
+        # Find the most recent time the pending-close label was added
         label_added_at = None
         for event in events:
             if (event.get("event") == "labeled" and
                     event.get("label", {}).get("name") == PENDING_CLOSE_LABEL):
-                label_added_at = datetime.fromisoformat(
+                event_created_at = datetime.fromisoformat(
                     event["created_at"].replace("Z", "+00:00"))
+                if label_added_at is None or event_created_at > label_added_at:
+                    label_added_at = event_created_at
 
         if label_added_at is None:
             # Can't determine when label was added; skip for safety
@@ -508,7 +525,7 @@ def process_pending_close_issues(issues):
 
         # Check if someone commented after the label was added (objection)
         try:
-            comments = gh_get(f"issues/{num}/comments", "per_page=100&sort=created&direction=desc")
+            comments = _paginate_get(f"issues/{num}/comments", "sort=created&direction=desc")
         except urllib.error.HTTPError:
             comments = []
 
@@ -537,13 +554,15 @@ def process_pending_close_issues(issues):
                          headers=GH_HEADERS)
                 except urllib.error.HTTPError:
                     pass
+            closed_or_objected.add(num)
             continue
 
         # Grace period elapsed, no objection — close it
         close_issue(issue)
         closed += 1
+        closed_or_objected.add(num)
 
-    return closed, still_pending
+    return closed, still_pending, closed_or_objected
 
 
 # ── Main ────────────────────────────────────────────────────────────
@@ -563,7 +582,7 @@ def main():
 
     # Phase 1: Process issues already marked pending-close (grace period check)
     print("\n--- Phase 1: Processing pending-close issues ---")
-    closed_pending, still_pending = process_pending_close_issues(issues)
+    closed_pending, still_pending, closed_or_objected = process_pending_close_issues(issues)
 
     prs = fetch_merged_prs()
     if not prs:
@@ -575,8 +594,9 @@ def main():
     # Phase 2: Find new matches and mark them pending-close
     print("\n--- Phase 2: Finding new matches ---")
 
-    # Exclude issues already pending-close or just closed from matching
-    candidates = [i for i in issues if i["number"] not in still_pending]
+    # Exclude issues that are still pending, were just closed, or had objections
+    exclude = still_pending | closed_or_objected
+    candidates = [i for i in issues if i["number"] not in exclude]
 
     # Exclude issues with active autofix work (in-progress label or open fix PR)
     candidates = filter_closeable_issues(candidates)
