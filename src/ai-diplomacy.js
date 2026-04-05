@@ -5,10 +5,11 @@
 // Each turn, AI factions evaluate relationships with other AIs
 // and may initiate diplomatic actions with varying visibility.
 
-import { FACTIONS, FACTION_TRAITS } from './constants.js';
+import { FACTIONS, FACTION_TRAITS, RESOURCE_ZONES, UNIT_RESOURCE_REQUIREMENTS, RESOURCES } from './constants.js';
 import { game } from './state.js';
 import { addEvent, logAction, showToast } from './events.js';
 import { hexDistance } from './hex.js';
+import { hasResourceAccess } from './map.js';
 
 // ============================================
 // VISIBILITY LEVELS
@@ -90,6 +91,11 @@ export function processAIDiplomacy() {
     computeBorderTension(factionIds);
   }
 
+  // 4b. Resource competition — tension over scarce strategic resources (every 5 turns)
+  if (game.turn % 5 === 0) {
+    computeResourceCompetition(factionIds);
+  }
+
   // 5. Balance of power — threat assessment
   computePowerBalance(factionIds);
 
@@ -155,15 +161,34 @@ function tryDeclareWar(a, b, relation, traitsA, statsA, statsB) {
   // Already at war?
   if (areAtWar(a, b)) return false;
 
-  const warThreshold = traitsA.warThreshold || -25;
+  // Resource desperation: if B controls a zone that A critically needs,
+  // A is more willing to go to war (lower threshold, higher chance)
+  let resourceDesperation = false;
+  const profA = getResourceProfile(a);
+  const profB = getResourceProfile(b);
+  const bHasThatANeeds = profB.has.filter(r => profA.lacks.includes(r));
+  if (bHasThatANeeds.length > 0 && (statsA.military || 0) > (statsB.military || 0)) {
+    resourceDesperation = true;
+  }
+
+  const warThreshold = resourceDesperation
+    ? (traitsA.warThreshold || -25) + 10 // More willing to war over resources
+    : (traitsA.warThreshold || -25);
   if (relation >= warThreshold) return false;
   if (statsA.military <= (statsB.military || 0) * 0.8) return false;
 
-  // 20% chance per turn when conditions met
-  if (Math.random() > 0.20) return false;
+  // Higher chance when desperate for resources
+  const warChance = resourceDesperation ? 0.30 : 0.20;
+  if (Math.random() > warChance) return false;
 
   // Declare war
   declareWar(a, b);
+
+  // Log resource motivation
+  if (resourceDesperation) {
+    const resourceNames = bHasThatANeeds.map(r => RESOURCES[r]?.name || r).join(', ');
+    modifyRelation(a, b, -5, { type: 'resource_war', detail: `covets ${resourceNames}` });
+  }
   return true;
 }
 
@@ -279,42 +304,66 @@ function tryProposeAlliance(a, b, relation, traitsA) {
 // TRADE PROPOSAL [RUMOURED]
 // ============================================
 function tryProposeTrade(a, b, relation, traitsA, statsA) {
-  if (relation <= 0) return false;
-  if ((statsA.gold || 0) <= 100) return false;
   if (hasTradeDeal(a, b)) return false;
 
-  const chance = 0.15 + (traitsA.diplomacy || 0) * 0.05;
+  // Resource-driven trade: factions with complementary resources trade even at lower relations
+  const resTrade = evaluateResourceTrade(a, b);
+  const hasResourceIncentive = resTrade && resTrade.mutuallyBeneficial;
+
+  // Standard trade needs positive relations, resource trades just need non-hostile
+  if (!hasResourceIncentive && relation <= 0) return false;
+  if (hasResourceIncentive && relation <= -20) return false;
+  if (!hasResourceIncentive && (statsA.gold || 0) <= 100) return false;
+
+  // Higher chance when resources are at stake
+  const baseChance = 0.15 + (traitsA.diplomacy || 0) * 0.05;
+  const chance = hasResourceIncentive ? Math.min(0.5, baseChance + 0.20) : baseChance;
   if (Math.random() > chance) return false;
 
-  // B accepts if relation positive and they have some diplomatic inclination
+  // B accepts more readily when they also benefit from resource access
   const traitsB = FACTION_TRAITS[b];
-  const acceptChance = 0.6 + (traitsB ? traitsB.diplomacy : 0.5) * 0.2;
+  const baseAccept = 0.6 + (traitsB ? traitsB.diplomacy : 0.5) * 0.2;
+  const acceptChance = hasResourceIncentive ? Math.min(0.9, baseAccept + 0.20) : baseAccept;
   if (Math.random() > acceptChance) return false;
 
-  // Trade established
-  const goldExchange = 20 + Math.floor(Math.random() * 21); // 20-40
-  game.aiTradeDeals.push({
+  // Trade established — gold exchange boosted if resource-driven
+  const goldExchange = hasResourceIncentive
+    ? 30 + Math.floor(Math.random() * 21) // 30-50 for resource trades
+    : 20 + Math.floor(Math.random() * 21); // 20-40 standard
+  const deal = {
     factions: [a, b],
     turn: game.turn,
     goldPerTurn: goldExchange,
-  });
-  modifyRelation(a, b, 5, { type: 'trade_established', detail: FACTIONS[b]?.name });
-  modifyRelation(b, a, 5, { type: 'trade_established', detail: FACTIONS[a]?.name });
+  };
+  if (hasResourceIncentive) {
+    deal.resourceTrade = { aOffers: resTrade.aOffers, bOffers: resTrade.bOffers };
+  }
+  game.aiTradeDeals.push(deal);
+
+  const relationBonus = hasResourceIncentive ? 8 : 5;
+  const tradeDetail = hasResourceIncentive
+    ? `resource trade (${resTrade.aOffers.map(r => RESOURCES[r]?.name || r).join(', ')} ↔ ${resTrade.bOffers.map(r => RESOURCES[r]?.name || r).join(', ')})`
+    : FACTIONS[b]?.name;
+  modifyRelation(a, b, relationBonus, { type: 'trade_established', detail: tradeDetail });
+  modifyRelation(b, a, relationBonus, { type: 'trade_established', detail: tradeDetail });
   markActed(a, b);
 
   const factionA = FACTIONS[a];
   const factionB = FACTIONS[b];
 
   // RUMOURED — appears 1-2 turns after agreement
+  const rumourText = hasResourceIncentive
+    ? `Rumour: Caravans laden with ${resTrade.aOffers.map(r => RESOURCES[r]?.name || r).join(', ')} have been seen crossing between ${factionA.name} and ${factionB.name}'s territory`
+    : `Rumour: Merchants have been seen travelling between ${factionA.name} and ${factionB.name}'s lands`;
   game.rumourQueue.push({
-    text: `Rumour: Merchants have been seen travelling between ${factionA.name} and ${factionB.name}'s lands`,
+    text: rumourText,
     revealTurn: game.turn + 1 + Math.floor(Math.random() * 2),
     type: 'diplomacy',
     relatedFactions: [a, b],
   });
 
-  logAction('diplomacy', `${factionA.name} and ${factionB.name} establish trade (+${goldExchange}g/turn)`, {
-    type: 'ai_trade', factions: [a, b], goldPerTurn: goldExchange,
+  logAction('diplomacy', `${factionA.name} and ${factionB.name} establish trade (+${goldExchange}g/turn)${hasResourceIncentive ? ' [resource trade]' : ''}`, {
+    type: 'ai_trade', factions: [a, b], goldPerTurn: goldExchange, resourceTrade: hasResourceIncentive || false,
   });
 
   return true;
@@ -870,4 +919,116 @@ export function getAISecretPacts() {
 
 export function getAITradeDeals() {
   return game.aiTradeDeals || [];
+}
+
+// ============================================
+// RESOURCE SCARCITY — AI COMPETITION & TRADE
+// ============================================
+
+/**
+ * Get list of strategic resources a faction has/lacks access to.
+ */
+function getResourceProfile(factionId) {
+  const has = [];
+  const lacks = [];
+  for (const zoneId of Object.keys(RESOURCE_ZONES)) {
+    const resourceId = RESOURCE_ZONES[zoneId].resource;
+    if (hasResourceAccess(resourceId, factionId)) {
+      has.push(resourceId);
+    } else {
+      lacks.push(resourceId);
+    }
+  }
+  return { has, lacks };
+}
+
+/**
+ * Compute resource competition — factions near contested zones get tension,
+ * factions with complementary resources get affinity.
+ */
+function computeResourceCompetition(factionIds) {
+  const allFactions = [...factionIds, 'player'];
+  const profiles = {};
+  for (const fid of allFactions) {
+    profiles[fid] = getResourceProfile(fid);
+  }
+
+  for (let i = 0; i < allFactions.length; i++) {
+    for (let j = i + 1; j < allFactions.length; j++) {
+      const a = allFactions[i];
+      const b = allFactions[j];
+      const profA = profiles[a];
+      const profB = profiles[b];
+
+      // Both factions lack the same resource AND are near the same zone → competition
+      const sharedNeeds = profA.lacks.filter(r => profB.lacks.includes(r));
+      if (sharedNeeds.length > 0) {
+        // Check if both are near any of the contested zones
+        const citiesA = getCitiesForFaction(a);
+        const citiesB = getCitiesForFaction(b);
+        for (const resourceId of sharedNeeds) {
+          const zoneId = Object.keys(RESOURCE_ZONES).find(z => RESOURCE_ZONES[z].resource === resourceId);
+          if (!zoneId) continue;
+          const zoneData = (game.resourceZones || []).find(z => z.id === zoneId);
+          if (!zoneData) continue;
+          const zoneCenter = zoneData.center;
+
+          const distA = Math.min(...citiesA.map(c => hexDistance(c.col, c.row, zoneCenter.col, zoneCenter.row)), 99);
+          const distB = Math.min(...citiesB.map(c => hexDistance(c.col, c.row, zoneCenter.col, zoneCenter.row)), 99);
+
+          // Both within striking distance of the zone → resource rivalry
+          if (distA < 15 && distB < 15) {
+            const resourceName = RESOURCES[resourceId]?.name || resourceId;
+            modifyRelation(a, b, -3, { type: 'resource_rivalry', detail: `competing for ${resourceName}` });
+            modifyRelation(b, a, -3, { type: 'resource_rivalry', detail: `competing for ${resourceName}` });
+          }
+        }
+      }
+
+      // Complementary resources: A has what B lacks and vice versa → trade affinity
+      const aCanOfferB = profA.has.filter(r => profB.lacks.includes(r));
+      const bCanOfferA = profB.has.filter(r => profA.lacks.includes(r));
+      if (aCanOfferB.length > 0 && bCanOfferA.length > 0) {
+        modifyRelation(a, b, 2, { type: 'resource_complementary', detail: 'mutual resource needs' });
+        modifyRelation(b, a, 2, { type: 'resource_complementary', detail: 'mutual resource needs' });
+      }
+    }
+  }
+}
+
+/**
+ * Check if a resource-driven trade is beneficial between two factions.
+ * Returns resource trade metadata if so, null otherwise.
+ */
+export function evaluateResourceTrade(a, b) {
+  const profA = getResourceProfile(a);
+  const profB = getResourceProfile(b);
+
+  // A offers what B needs, B offers what A needs
+  const aOffers = profA.has.filter(r => profB.lacks.includes(r));
+  const bOffers = profB.has.filter(r => profA.lacks.includes(r));
+
+  if (aOffers.length === 0 && bOffers.length === 0) return null;
+
+  // Value: each resource offered is worth gold based on how critical it is
+  let aValue = 0;
+  let bValue = 0;
+  for (const r of aOffers) {
+    // Resources needed for units are more valuable
+    const unitsNeedingIt = Object.values(UNIT_RESOURCE_REQUIREMENTS).filter(req => req.resource === r).length;
+    aValue += 15 + unitsNeedingIt * 10;
+  }
+  for (const r of bOffers) {
+    const unitsNeedingIt = Object.values(UNIT_RESOURCE_REQUIREMENTS).filter(req => req.resource === r).length;
+    bValue += 15 + unitsNeedingIt * 10;
+  }
+
+  return {
+    aOffers,
+    bOffers,
+    aValue,
+    bValue,
+    goldDifference: Math.abs(aValue - bValue),
+    mutuallyBeneficial: aOffers.length > 0 && bOffers.length > 0,
+  };
 }
