@@ -27,7 +27,7 @@ jobs:
        github.event.check_suite.conclusion == 'success') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'pull_request')
+       contains(fromJSON('["pull_request","issue_comment"]'), github.event.workflow_run.event))
     runs-on: ubuntu-latest
     permissions:
       contents: write
