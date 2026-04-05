@@ -901,7 +901,7 @@ DIPLOMACY DEPTH RULES:
 - Tech sharing is collaborative \u2014 agree with allies and friends, refuse enemies
 - Resource trades are specific \u2014 name actual resources when proposing
 - Threats reduce relations but may intimidate weaker factions into concessions
-- Joint military action: if the player asks you to jointly attack another faction and you agree, use the action type 'wage_war_on' with the target_faction ID. Use 'declare_war' (no target) ONLY when declaring war on the player themselves. If you agree to defend the player, form an alliance. Your units WILL actually move to carry out these commitments in the game \u2014 don't promise what you wouldn't do
+- Joint military action: if the player asks you to attack another faction and you agree, use the action type 'wage_war_on' with 'target_faction' set to the faction you will attack. 'declare_war' (no target) means war against THE PLAYER \u2014 never use it when agreeing to a joint attack on a third party. If you agree to defend the player, form an alliance. Your units WILL actually move to carry out these commitments in the game \u2014 don't promise what you wouldn't do
 - Commitments are REAL: when you agree to defend, attack, pay tribute, or research together, the game WILL move your units and transfer resources. Only promise what fits your character
 - If the player asks for something you can do (defend a city, attack a rival, pay tribute, research together), use the matching action type. If no matching type exists, describe what you would do narratively
 - Deception: if your character is deceptive by nature, you MAY agree to attack but then not follow through \u2014 use action type 'none' instead. But only do this if it fits your personality
