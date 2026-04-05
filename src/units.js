@@ -48,7 +48,7 @@ function isInEnemyZOC(col, row, movingUnitOwner) {
     const unitsOnTile = game.units.filter(u => u.col === nb.col && u.row === nb.row);
     for (const u of unitsOnTile) {
       if (u.owner !== movingUnitOwner) {
-        const ut = Object.assign({}, UNIT_TYPES[u.type], u.barbSpecial ? BARBARIAN_UNITS[u.barbSpecial] : {});
+        const ut = UNIT_TYPES[u.type];
         if (ut && !ZOC_EXEMPT_CLASSES.includes(ut.class)) {
           return true;
         }
@@ -63,7 +63,7 @@ function getEnemyZOCHexes(factionId) {
   const zocSet = new Set();
   for (const u of game.units) {
     if (u.owner === factionId) continue;
-    const ut = Object.assign({}, UNIT_TYPES[u.type], u.barbSpecial ? BARBARIAN_UNITS[u.barbSpecial] : {});
+    const ut = UNIT_TYPES[u.type];
     if (!ut || ZOC_EXEMPT_CLASSES.includes(ut.class)) continue;
     const neighbors = getHexNeighbors(u.col, u.row);
     for (const nb of neighbors) {
@@ -224,7 +224,7 @@ function computeMoveRange() {
       // Can't move through hexes with units (enemy or own)
       if (isHexBlockedForUnit(unit, nb.col, nb.row)) continue;
       // Civilian units can't enter enemy city tiles
-      const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
+      const ut = UNIT_TYPES[unit.type];
       if (ut && ut.class === 'civilian') {
         const isEnemyCity = Object.entries(game.factionCities).some(([, fc]) => fc.col === nb.col && fc.row === nb.row)
           || (game.aiFactionCities && Object.values(game.aiFactionCities).some(cities =>
@@ -289,7 +289,7 @@ function computeAttackRange() {
   if (unit.type === 'worker' || unit.type === 'settler') return null; // Civilians can't attack
 
   const attackable = new Map();
-  const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
+  const ut = UNIT_TYPES[unit.type];
 
   if (ut.rangedCombat > 0 && ut.range > 0 && (unit.moveLeft > 0 || !unit.hasAttackedThisTurn)) {
     for (let r = 0; r < MAP_ROWS; r++) {
@@ -823,7 +823,7 @@ function applyPromotion(unitId, promoId) {
   unit.pendingPromotion = false;
   const p = UNIT_PROMOTIONS[promoId];
   if (p && p.moveBonus) {
-    const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
+    const ut = UNIT_TYPES[unit.type];
     if (ut) unit.moveLeft = Math.min(unit.moveLeft + p.moveBonus, ut.movePoints + p.moveBonus);
   }
   addEvent((UNIT_TYPES[unit.type]?.name || unit.type) + ' promoted: ' + (p ? p.icon + ' ' + p.name : promoId), 'combat');

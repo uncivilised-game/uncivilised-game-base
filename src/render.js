@@ -1,4 +1,4 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
@@ -693,7 +693,8 @@ function render() {
       ctx.fillStyle = '#d9534f'; ctx.font = '600 8px sans-serif';
       ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 2;
       let campLabel = 'Barbarian Camp';
-      if (bc.specialUnit) { const su = BARBARIAN_UNITS[bc.specialUnit]; if (su) campLabel = su.name + ' Camp'; }
+      if (bc.specialUnit && UNIT_TYPES[bc.specialUnit])
+        campLabel = UNIT_TYPES[bc.specialUnit].name + ' Camp';
       ctx.fillText(campLabel, bx, by - 14);
       // Strength bar
       const maxStr = 30; const strPct = Math.min(1, bc.strength / maxStr);
@@ -989,7 +990,7 @@ function render() {
     const pos = hexToPixel(unit.col, unit.row);
     let sx = pos.x - camX;
     let sy = pos.y - camY;
-    const ut = Object.assign({}, UNIT_TYPES[unit.type], unit.barbSpecial ? BARBARIAN_UNITS[unit.barbSpecial] : {});
+    const ut = UNIT_TYPES[unit.type];
     if (!ut) continue;
     const isSelected = game.selectedUnitId === unit.id;
     const isPlayer = unit.owner === 'player';
@@ -1394,7 +1395,7 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
   const tileVisible = game.visibleTiles && game.visibleTiles[row] && game.visibleTiles[row][col];
   if (unitHere && (unitHere.owner === 'player' || tileVisible)) {
     lines.push({ text: '', color: '' }); // spacer
-    const ut = Object.assign({}, UNIT_TYPES[unitHere.type], unitHere.barbSpecial ? BARBARIAN_UNITS[unitHere.barbSpecial] : {});
+    const ut = UNIT_TYPES[unitHere.type];
     const isPlayer = unitHere.owner === 'player';
     if (isPlayer) {
       lines.push({ text: `${ut.icon} ${ut.name} (Yours)`, bold: true, color: '#c9a84c' });

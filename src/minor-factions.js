@@ -8,7 +8,7 @@ import { render } from './render.js';
 import { revealAround } from './discovery.js';
 import { getUnitAt, addDeathMarker } from './combat.js';
 import { updateUI } from './leaderboard.js';
-import { BARBARIAN_UNITS } from './constants.js';
+import { UNIT_TYPES } from './constants.js';
 
 const MINOR_FACTION_TYPES = {
   barbarian_camp: {
@@ -157,7 +157,7 @@ function interactWithBarbarianCamp(campId) {
   const title = document.getElementById('tile-info-title');
   const body = document.getElementById('tile-info-body');
 
-  const specUnit = bc.specialUnit ? BARBARIAN_UNITS[bc.specialUnit] : null;
+  const specUnit = bc.specialUnit ? UNIT_TYPES[bc.specialUnit] : null;
   const campName = specUnit ? specUnit.name + ' Camp' : 'Barbarian Camp';
   title.textContent = `\u{1F3D5} ${campName}`;
 
@@ -285,7 +285,7 @@ window.barbCampAction = function(campId, action) {
       );
       if (!nb) { addEvent('No room near your city for mercenaries.', 'combat'); return; }
       // Chance of specialist unit from this camp
-      const spec = bc.specialUnit ? BARBARIAN_UNITS[bc.specialUnit] : null;
+      const spec = bc.specialUnit ? UNIT_TYPES[bc.specialUnit] : null;
       const u = createUnit('warrior', nb.col, nb.row, 'player');
       if (spec && Math.random() < 0.5) {
         u.barbSpecial = bc.specialUnit;
@@ -431,17 +431,13 @@ window.minorAction = function(mfId, action) {
       if (city) {
         const nb = getHexNeighbors(city.col, city.row).find(n => isTilePassable(game.map[n.row][n.col]) && !getUnitAt(n.col, n.row));
         if (nb) {
-          const nearCamp = game.barbarianCamps ? game.barbarianCamps.find(bc => bc.id === mfId || hexDistance(bc.col, bc.row, mf.col, mf.row) <= 2) : null;
-          const spec2 = nearCamp && nearCamp.specialUnit ? BARBARIAN_UNITS[nearCamp.specialUnit] : null;
-          const u = createUnit('warrior', nb.col, nb.row, 'player');
-          if (spec2 && Math.random() < 0.5) {
-            u.barbSpecial = nearCamp.specialUnit;
-            u.combat = spec2.combat;
-            game.units.push(u);
-            addEvent('Hired ' + spec2.name + ' mercenary! (' + spec2.desc + ')', 'combat');
+          const nearCamp = game.barbarianCamps?.find(bc => bc.id === mfId || hexDistance(bc.col, bc.row, mf.col, mf.row) <= 2) || null;
+          const type = (nearCamp?.specialUnit && Math.random() < 0.5) ? nearCamp.specialUnit : 'warrior';
+          game.units.push(createUnit(type, nb.col, nb.row, 'player'));
+          if (type !== 'warrior') {
+            addEvent('Hired ' + UNIT_TYPES[type].name + ' mercenary! (' + UNIT_TYPES[type].desc + ')', 'combat');
           } else {
-            game.units.push(u);
-            addEvent('Hired barbarian mercenaries!', 'combat');
+            addEvent('Hired barbarian mercenary!', 'combat');
           }
         }
       }
