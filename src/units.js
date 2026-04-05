@@ -725,6 +725,22 @@ function handleHexClick(col, row) {
         });
         return;
       }
+
+      // If hex is adjacent but territory-blocked, offer to declare war
+      if (unit.moveLeft > 0 && hexDistance(col, row, unit.col, unit.row) <= 1) {
+        const owner = getTileOwner(col, row);
+        if (owner && owner !== 'player' && !isAtWarWith(owner) && !(game.openBorders && game.openBorders[owner])) {
+          if (confirmAndDeclareWar(owner)) {
+            // War declared — now the hex should be unblocked, try to move
+            moveUnitTo(unit, col, row, () => {
+              if (unit.moveLeft <= 0) autoSelectNext();
+              else { showSelectionPanel(unit); render(); }
+            });
+            return;
+          }
+          return; // Player declined war
+        }
+      }
     }
 
     // Clicked outside movement/attack range — set as multi-turn waypoint
