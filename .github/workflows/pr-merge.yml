@@ -9,22 +9,38 @@ jobs:
     # Trigger on /merge comment from repo owners, members, or collaborators
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/merge') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Check command
+        id: cmd
+        run: |
+          # Match /merge as a standalone command (not /merge-something or mid-sentence)
+          COMMENT=$(cat <<'BODY'
+          ${{ github.event.comment.body }}
+          BODY
+          )
+          if echo "$COMMENT" | grep -qP '(^|\s)\/merge(\s|$)'; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: React to comment
+        if: steps.cmd.outputs.match == 'true'
         run: |
           gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
             -f content=rocket
 
       - name: Get PR info
+        if: steps.cmd.outputs.match == 'true'
         id: pr
         run: |
           PR_NUM="${{ github.event.issue.number }}"
@@ -41,7 +57,7 @@ jobs:
           echo "mergeable=${MERGEABLE}" >> "$GITHUB_OUTPUT"
 
       - name: Validate PR
-        id: validate
+        if: steps.cmd.outputs.match == 'true'
         run: |
           PR_NUM="${{ steps.pr.outputs.number }}"
 
@@ -63,16 +79,25 @@ jobs:
             exit 1
           fi
 
-      - name: Add auto-merge label
+      - name: Ensure auto-merge label exists
+        if: steps.cmd.outputs.match == 'true'
         run: |
-          gh pr edit "${{ steps.pr.outputs.number }}" --repo "${{ github.repository }}" \
-            --add-label "auto-merge"
+          gh api repos/${{ github.repository }}/labels/auto-merge \
+            --silent 2>/dev/null || \
+          gh api repos/${{ github.repository }}/labels \
+            -f name="auto-merge" -f color="0e8a16" \
+            -f description="Queued for auto-merge via /merge command"
 
-      - name: Enable auto-merge
+      - name: Add auto-merge label and notify
+        if: steps.cmd.outputs.match == 'true'
         run: |
           PR_NUM="${{ steps.pr.outputs.number }}"
-          gh pr merge "$PR_NUM" --repo "${{ github.repository }}" --squash --auto \
-            --body "Auto-merged via /merge command by ${{ github.event.comment.user.login }}."
+
+          # Add auto-merge label — this triggers the conviction-automerge workflow
+          # via the pull_request labeled event. The automerge workflow will check for
+          # approving reviews and passing CI before actually merging.
+          gh pr edit "$PR_NUM" --repo "${{ github.repository }}" \
+            --add-label "auto-merge"
 
           gh pr comment "$PR_NUM" --repo "${{ github.repository }}" \
-            --body "Auto-merge enabled by @${{ github.event.comment.user.login }}. This PR will be merged automatically once all CI checks pass and it has an approving review."
+            --body "Auto-merge queued by @${{ github.event.comment.user.login }}. This PR will be merged automatically once all CI checks pass and it has an approving review."
