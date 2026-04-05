@@ -959,6 +959,16 @@ DIPLOMACY DEPTH RULES:
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
 
+        # Guard: 'declare_war' always targets the player. If the AI has an active
+        # alliance with the player and still emits 'declare_war', it almost certainly
+        # made a mistake (it should use 'wage_war_on' to attack a third party, or
+        # 'surprise_attack' for a treacherous betrayal). Sanitize to 'none' to
+        # prevent erroneously breaking the alliance.
+        if action and action.get('type') == 'declare_war':
+            active_alliances = (msg.game_state or {}).get('alliances', {})
+            if active_alliances.get(msg.character_id):
+                action = {'type': 'none'}
+
         # Fallback: if the player offered gold and the AI emitted an agreement
         # without gold_cost, inject the amount from the player's message
         AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
