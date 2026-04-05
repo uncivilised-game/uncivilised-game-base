@@ -16,7 +16,7 @@ import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
-import { createUnit, selectUnit, autoSelectNext } from './units.js';
+import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
@@ -1542,6 +1542,7 @@ function moveAIWorkerTowardWork(worker, fid, priority) {
       const t = game.map[nb.row]?.[nb.col];
       if (!t || !isTilePassable(t)) continue;
       if (getUnitAt(nb.col, nb.row)) continue;
+      if (isTerritoryBlocked(worker, nb.col, nb.row)) continue;
       const d = hexDistance(nb.col, nb.row, bestTile.col, bestTile.row);
       if (d < closestDist) { closestDist = d; closest = nb; }
     }
@@ -1622,6 +1623,7 @@ function moveAISettlerTowardSite(settler, fid) {
     const t = game.map[nb.row]?.[nb.col];
     if (!t || !isTilePassable(t)) continue;
     if (getUnitAt(nb.col, nb.row)) continue;
+    if (isTerritoryBlocked(settler, nb.col, nb.row)) continue;
     const d = hexDistance(nb.col, nb.row, target.col, target.row);
     if (d < closestDist) { closestDist = d; closest = nb; }
   }

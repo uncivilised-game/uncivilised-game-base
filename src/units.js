@@ -29,8 +29,65 @@ function canStackWith(movingUnit, existingUnit) {
   return true;
 }
 
+// ---- Territory helpers ----
+
+/**
+ * Returns the faction ID that owns the tile at (col, row), or null if unclaimed.
+ * Checks player cities, faction capitals, and AI expansion cities.
+ */
+function getTileOwner(col, row) {
+  // Player cities
+  for (const city of (game.cities || [])) {
+    if (hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2)) return 'player';
+  }
+  // Faction capital cities
+  for (const [fid, fc] of Object.entries(game.factionCities || {})) {
+    if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return fid;
+  }
+  // AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (const ec of cities) {
+        if (hexDistance(col, row, ec.col, ec.row) <= (ec.borderRadius || 1)) return fid;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns true if the given unit is NOT allowed to enter (col, row) due to
+ * closed borders. At war or with open borders → entry allowed.
+ */
+function isTerritoryBlocked(unit, col, row) {
+  const owner = getTileOwner(col, row);
+  if (!owner) return false; // unclaimed land
+
+  if (unit.owner === 'player') {
+    if (owner === 'player') return false; // own territory
+    // At war → can enter enemy territory
+    if (isAtWarWith(owner)) return false;
+    // Open borders → can enter
+    if (game.openBorders && game.openBorders[owner]) return false;
+    return true; // peace + no open borders → blocked
+  }
+
+  // AI unit
+  if (owner === unit.owner) return false; // own territory
+  if (owner === 'player') {
+    // AI entering player territory — mirror the same check
+    if (isAtWarWith(unit.owner)) return false;
+    if (game.openBorders && game.openBorders[unit.owner]) return false;
+    return true;
+  }
+  // AI entering another AI's territory — let AI-to-AI rules handle this
+  return false;
+}
+
 /** Returns true if a hex is blocked for the given unit (can't enter or pass through) */
 function isHexBlockedForUnit(unit, col, row) {
+  // Territory restriction: can't enter foreign territory without open borders or war
+  if (isTerritoryBlocked(unit, col, row)) return true;
   const occupants = game.units.filter(u => u.col === col && u.row === row && u.id !== unit.id);
   if (occupants.length === 0) return false;
   // If there's already a stack of 2, it's full
@@ -894,4 +951,6 @@ export {
   selectNextUnit,
   isInEnemyZOC,
   getEnemyZOCHexes,
+  getTileOwner,
+  isTerritoryBlocked,
 };
