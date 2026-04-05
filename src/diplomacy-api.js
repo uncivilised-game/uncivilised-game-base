@@ -5,10 +5,73 @@
 // To enable diplomacy, place the uncivilised-diplomacy repo alongside this repo
 // and rebuild. The build system auto-detects it.
 
+import { game } from './state.js';
+import { currentChatCharacter } from './state.js';
+import { FACTIONS } from './constants.js';
+
 let _pluginLoaded = false;
 const noop = () => {};
 let _onTradeRouteEstablished = noop;
 export function registerTradeRouteCallback(fn) { _onTradeRouteEstablished = fn; }
+
+/** Base-game diplomacy shortcuts — always shown beneath the chat */
+function _renderDiploShortcuts(factionId) {
+  const container = document.getElementById('diplo-shortcuts');
+  if (!container) return;
+  const fid = factionId || currentChatCharacter;
+  if (!fid) { container.innerHTML = ''; return; }
+
+  const isAtWar = (game.aiWars || []).some(w =>
+    (w.attacker === 'player' && w.defender === fid) ||
+    (w.attacker === fid && w.defender === 'player')
+  );
+  const factionName = FACTIONS[fid]?.name || fid;
+
+  let html = '<div style="display:flex;gap:6px;padding:6px 8px;flex-wrap:wrap">';
+  if (isAtWar) {
+    html += `<button class="minor-btn" style="background:#2a4a2a;color:#6aab5c;border:1px solid #3a5a3a;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px" onclick="window._diploQuickAction('${fid}','peace')">☮ Offer Peace</button>`;
+  } else {
+    html += `<button class="minor-btn" style="background:#4a2a2a;color:#d9534f;border:1px solid #5a3a3a;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px" onclick="window._diploQuickAction('${fid}','war')">⚔ Declare War</button>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+window._diploQuickAction = function(factionId, action) {
+  if (action === 'war') {
+    const factionName = FACTIONS[factionId]?.name || factionId;
+    if (!confirm(`Declare war on ${factionName}? This will end all agreements.`)) return;
+    // Add war entry
+    if (!game.aiWars) game.aiWars = [];
+    const alreadyAtWar = game.aiWars.some(w =>
+      (w.attacker === 'player' && w.defender === factionId) ||
+      (w.attacker === factionId && w.defender === 'player')
+    );
+    if (!alreadyAtWar) {
+      game.aiWars.push({ attacker: 'player', defender: factionId, startTurn: game.turn, turnsActive: 0 });
+    }
+    // Break all agreements
+    delete game.activeAlliances?.[factionId];
+    delete game.tradeDeals?.[factionId];
+    delete game.defensePacts?.[factionId];
+    delete game.openBorders?.[factionId];
+    delete game.ceasefires?.[factionId];
+    delete game.nonAggressionPacts?.[factionId];
+    delete game.marriages?.[factionId];
+    game.relationships[factionId] = Math.min(-50, (game.relationships[factionId] || 0) - 50);
+    // Refresh the actions panel
+    _renderDiploShortcuts(factionId);
+    if (_pluginLoaded) _plugin.updateDiploActions(factionId);
+  } else if (action === 'peace') {
+    const factionName = FACTIONS[factionId]?.name || factionId;
+    // Send peace message via chat instead of auto-accepting
+    const input = document.getElementById('chat-input');
+    if (input) {
+      input.value = `I wish to end this war. Let us make peace, ${factionName}.`;
+      input.focus();
+    }
+  }
+};
 
 const _plugin = {
   // --- diplomacy.js ---
@@ -31,7 +94,7 @@ const _plugin = {
   },
   renderDiplomacyActions: noop,
   renderChatMarkdown: (text) => text,
-  updateDiploActions: noop,
+  updateDiploActions: (fid) => { _renderDiploShortcuts(fid); },
   appendChatMessage: noop,
   appendChatAction: noop,
   sendChatMessage: noop,
@@ -86,7 +149,11 @@ export function renderRankingsView(...args) { return _plugin.renderRankingsView(
 export function openChat(...args) { return _plugin.openChat(...args); }
 export function renderDiplomacyActions(...args) { return _plugin.renderDiplomacyActions(...args); }
 export function renderChatMarkdown(...args) { return _plugin.renderChatMarkdown(...args); }
-export function updateDiploActions(...args) { return _plugin.updateDiploActions(...args); }
+export function updateDiploActions(...args) {
+  _plugin.updateDiploActions(...args);
+  // Always render base-game shortcuts (Declare War / Offer Peace)
+  _renderDiploShortcuts(args[0]);
+}
 export function appendChatMessage(...args) { return _plugin.appendChatMessage(...args); }
 export function appendChatAction(...args) { return _plugin.appendChatAction(...args); }
 export function sendChatMessage(...args) { return _plugin.sendChatMessage(...args); }
