@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3, DISTRICTS, TERRAIN_FEATURES } from './constants.js';
+import { UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOCKS, UNIT_PROMOTIONS, PROMOTION_PATHS, PROMOTION_XP_THRESHOLDS, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, BASE_TERRAIN, RESOURCES, TILE_IMPROVEMENTS, MAX_TURNS, goldCost, UNIT_MAINTENANCE, CITY_DEFENSE, HEX_SIZE, SQRT3, DISTRICTS, TERRAIN_FEATURES, BARBARIAN_UNITS } from './constants.js';
 import { getNextUnitId } from './state.js';
 import { game, canvasW, canvasH, gameZoom } from './state.js';
 import { hexToPixel, hexDistance } from './hex.js';
@@ -486,6 +486,7 @@ function renderUnitsPanel() {
   container.appendChild(recruitHeader);
 
   for (const [typeId, ut] of Object.entries(UNIT_TYPES)) {
+    if (BARBARIAN_UNITS.includes(typeId)) continue;
     const requiredTech = UNIT_UNLOCKS[typeId];
     const techUnlocked = !requiredTech || game.techs.includes(requiredTech);
     const needsBarracks = !['scout', 'warrior', 'slinger', 'worker', 'settler'].includes(typeId);
@@ -813,6 +814,7 @@ function renderBuildPanel() {
   container.appendChild(uh);
 
   for (const [tid, ut] of Object.entries(UNIT_TYPES)) {
+    if (BARBARIAN_UNITS.includes(tid)) continue;
     const reqTech = UNIT_UNLOCKS[tid];
     const techOk = !reqTech || game.techs.includes(reqTech);
     const needsBarr = !['scout','warrior','slinger','worker','settler'].includes(tid);
