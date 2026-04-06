@@ -1,4 +1,4 @@
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, RESOURCES, TECHNOLOGIES, BUILDINGS, FACTIONS } from './constants.js';
+import { MAP_COLS, MAP_ROWS, UNIT_TYPES, FACTIONS } from './constants.js';
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { isTilePassable } from './map.js';
@@ -8,7 +8,6 @@ import { render } from './render.js';
 import { revealAround } from './discovery.js';
 import { getUnitAt, addDeathMarker } from './combat.js';
 import { updateUI } from './leaderboard.js';
-import { UNIT_TYPES } from './constants.js';
 
 const MINOR_FACTION_TYPES = {
   barbarian_camp: {

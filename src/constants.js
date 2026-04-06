@@ -76,11 +76,11 @@ export let UNIT_TYPES = {
 };
 
 export const BARBARIAN_UNITS = [
-  barbarian_warrior,
-  horse_raider,
-  berserker,
-  war_drummer,
-  shaman,
+  'barbarian_warrior',
+  'horse_raider',
+  'berserker',
+  'war_drummer',
+  'shaman',
 ];
 
 // ============================================

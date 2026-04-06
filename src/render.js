@@ -210,7 +210,7 @@ function computeVisibility() {
 }
 
 function render() {
-  if (!game) return;
+  if (!game || !ctx) return;
   // Kick off idle sprite animation loop on first render
   startSpriteAnimLoop();
   // Reset transform unconditionally — prevents accumulated scale from corrupted
