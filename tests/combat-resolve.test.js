@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { resolveCombat } from '../src/combat.js';
+import { resolveCombat, checkCityCapture, captureFactionCity, eliminateFaction, razeCity, aiCapturePlayerCity } from '../src/combat.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
 describe('resolveCombat()', () => {
@@ -61,6 +61,33 @@ describe('resolveCombat()', () => {
     expect(result.defenderDied).toBe(false);
     expect(defender.owner).toBe('player');
     expect(defender.moveLeft).toBe(0);
+  });
+
+  test('should not move attacker onto captured civilian tile if enemy military is there', () => {
+    // Barbarian attacks a settler that is stacked with a player warrior
+    const barbarian = makeUnit({ id: 1, col: 5, row: 5, type: 'warrior', owner: 'barbarian' });
+    const settler = makeUnit({ id: 2, col: 6, row: 5, type: 'settler', owner: 'player' });
+    const warrior = makeUnit({ id: 3, col: 6, row: 5, type: 'warrior', owner: 'player' });
+    state.units = [barbarian, settler, warrior];
+
+    const result = resolveCombat(barbarian, settler);
+    expect(result.captured).toBe(true);
+    expect(settler.owner).toBe('barbarian');
+    // Barbarian should NOT move onto the tile — player warrior is there
+    expect(barbarian.col).toBe(5);
+    expect(barbarian.row).toBe(5);
+  });
+
+  test('should move attacker onto captured civilian tile if no enemy military present', () => {
+    const barbarian = makeUnit({ id: 1, col: 5, row: 5, type: 'warrior', owner: 'barbarian' });
+    const settler = makeUnit({ id: 2, col: 6, row: 5, type: 'settler', owner: 'player' });
+    state.units = [barbarian, settler];
+
+    const result = resolveCombat(barbarian, settler);
+    expect(result.captured).toBe(true);
+    // Barbarian SHOULD move onto the tile — no enemy military present
+    expect(barbarian.col).toBe(6);
+    expect(barbarian.row).toBe(5);
   });
 
   // ── Defender death ──
@@ -253,5 +280,154 @@ describe('resolveCombat()', () => {
     const result = resolveCombat(attacker, defender);
     expect(result.defenderDied).toBe(true);
     expect(state.gold).toBeGreaterThan(goldBefore);
+  });
+});
+
+describe('checkCityCapture()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should capture an expansion city at 0 HP when a player unit is on its tile', () => {
+    // Give faction_a a capital so capturing the expansion doesn't trigger elimination
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 20, row: 20, hp: 100, color: '#f00', population: 1000, borderRadius: 2 },
+    };
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 0, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 1, col: 10, row: 10, owner: 'player' })];
+
+    checkCityCapture(10, 10);
+
+    // Expansion city should be removed from AI faction cities
+    expect(state.aiFactionCities.faction_a).toHaveLength(0);
+    // Should be converted to a player city
+    expect(state.cities.some(c => c.col === 10 && c.row === 10)).toBe(true);
+  });
+
+  test('should not capture an expansion city that still has HP', () => {
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 1, col: 10, row: 10, owner: 'player' })];
+
+    checkCityCapture(10, 10);
+
+    // Should NOT be captured
+    expect(state.aiFactionCities.faction_a).toHaveLength(1);
+    expect(state.cities).toHaveLength(0);
+  });
+});
+
+describe('eliminateFaction()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should remove expansion cities when a faction is eliminated', () => {
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 2, col: 12, row: 12, owner: 'faction_a' })];
+
+    eliminateFaction('faction_a', 'Test Faction');
+
+    expect(state.aiFactionCities.faction_a).toBeUndefined();
+    expect(state.units.filter(u => u.owner === 'faction_a')).toHaveLength(0);
+  });
+});
+
+describe('captureFactionCity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should not eliminate faction if they still have expansion cities', () => {
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 5, row: 5, hp: 0, color: '#f00', population: 1000, borderRadius: 2 },
+    };
+    state.aiFactionCities = {
+      faction_a: [
+        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
+      ],
+    };
+    state.units = [makeUnit({ id: 1, col: 5, row: 5, owner: 'player' })];
+
+    captureFactionCity('faction_a');
+
+    // Capital removed
+    expect(state.factionCities.faction_a).toBeUndefined();
+    // Expansion city still exists — faction NOT eliminated
+    expect(state.aiFactionCities.faction_a).toHaveLength(1);
+    expect(state.factionsEliminated || 0).toBe(0);
+  });
+});
+
+describe('razeCity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('should remove a player city from the map and grant gold', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+    const goldBefore = state.gold;
+
+    razeCity(10, 10, 'Outpost', 'faction_a');
+
+    expect(state.cities).toHaveLength(0);
+    expect(state.gold).toBeGreaterThan(goldBefore);
+    expect(state.population).toBe(0);
+  });
+});
+
+describe('aiCapturePlayerCity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('barbarians should always raze a captured player city', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+
+    aiCapturePlayerCity(0, 'barbarian');
+
+    // City should be razed (removed), not converted to AI
+    expect(state.cities).toHaveLength(0);
+    expect(state.aiFactionCities.barbarian || []).toHaveLength(0);
+  });
+
+  test('AI faction should capture or raze without crashing', () => {
+    state.cities = [{ name: 'Outpost', col: 10, row: 10, population: 500, borderRadius: 1 }];
+    state.population = 500;
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 20, row: 20, hp: 100, color: '#f00', borderRadius: 2 },
+    };
+
+    aiCapturePlayerCity(0, 'faction_a');
+
+    // City removed from player
+    expect(state.cities).toHaveLength(0);
+    // Either razed or converted to AI expansion city
+    const aiCities = state.aiFactionCities.faction_a || [];
+    // No crash — result depends on random roll
+    expect(state.population).toBeLessThanOrEqual(500);
   });
 });

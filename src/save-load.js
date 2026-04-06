@@ -8,6 +8,7 @@ function migrateTiles(state) {
   if (!state.tradeRoutes) state.tradeRoutes = [];
   if (state.maxTradeRoutes === undefined) state.maxTradeRoutes = 1;
   if (state.happiness === undefined) state.happiness = 5;
+  if (!state.resourceZones) state.resourceZones = [];
   // Ensure units have promotion fields
   if (state.units) {
     for (const u of state.units) {
@@ -72,8 +73,19 @@ function migrateTiles(state) {
       if (city.amenityFromLuxuries === undefined) city.amenityFromLuxuries = 0;
       if (city.amenityFromBuildings === undefined) city.amenityFromBuildings = 0;
       if (city.amenityFromAlliance === undefined) city.amenityFromAlliance = 0;
+      // Unrest fields
+      if (city.captured === undefined) city.captured = false;
+      if (city.capturedTurn === undefined) city.capturedTurn = -1;
+      if (city.unrestFromEmpireSize === undefined) city.unrestFromEmpireSize = 0;
+      if (city.unrestFromDistance === undefined) city.unrestFromDistance = 0;
+      if (city.unrestFromCapture === undefined) city.unrestFromCapture = 0;
+      if (city.unrestGarrisonBonus === undefined) city.unrestGarrisonBonus = 0;
+      if (city.rebellionSuppressed === undefined) city.rebellionSuppressed = false;
+      if (city.roadConnected === undefined) city.roadConnected = false;
+      if (city.amenityFromRoad === undefined) city.amenityFromRoad = 0;
     }
   }
+  if (state.rebellionsSuppressed === undefined) state.rebellionsSuppressed = 0;
   if (!state.aiFactions) state.aiFactions = {};
   if (!state.aiFactionCities) state.aiFactionCities = {};
   if (!state.barbarianCamps) state.barbarianCamps = [];
@@ -87,6 +99,7 @@ function migrateTiles(state) {
   if (!state.aiAlliances) state.aiAlliances = [];
   if (!state.aiTradeDeals) state.aiTradeDeals = [];
   if (!state.aiDenouncements) state.aiDenouncements = [];
+  if (!state.aiMotivations) state.aiMotivations = {};
   if (!state.rumourQueue) state.rumourQueue = [];
   // Ensure every tile has col/row (missing in saves before v4)
   if (state.map) {
@@ -94,6 +107,8 @@ function migrateTiles(state) {
       for (let c = 0; c < state.map[r].length; c++) {
         state.map[r][c].col = c;
         if (state.map[r][c].naturalWonder === undefined) state.map[r][c].naturalWonder = null;
+        if (state.map[r][c].resourceZone === undefined) state.map[r][c].resourceZone = null;
+        if (state.map[r][c].fortification === undefined) state.map[r][c].fortification = false;
         state.map[r][c].row = r;
       }
     }

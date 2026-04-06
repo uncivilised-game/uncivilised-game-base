@@ -1,14 +1,14 @@
-import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS } from './constants.js';
+import { MAX_TURNS, UNIT_TYPES, BUILDINGS, TECHNOLOGIES, CIVICS, GOVERNMENTS, WONDERS, FACTIONS, FACTION_TRAITS, GREAT_PEOPLE_TYPES, LUXURY_RESOURCES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_MAINTENANCE, WALL_HP, TILE_IMPROVEMENTS, CITY_DEFENSE, DISTRICTS, UNREST, ZOC_EXEMPT_CLASSES, UNIT_RESOURCE_REQUIREMENTS } from './constants.js';
 import { game, safeStorage, API } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
-import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed } from './map.js';
+import { getTileYields, updateFactionStats, initFactionStats, isResourceRevealed, hasResourceAccess } from './map.js';
 import { processAITurns, processBarbarianTurns, processAICommitments } from './diplomacy-api.js';
 import { processImprovements, getImprovementYields, getAvailableImprovements, startImprovement } from './improvements.js';
 import { addEvent, logAction, showToast, showCompletionNotification, generateFactionIntelReports, generateRumours, showIntelNotification, countPlayerTerritory, showWonderScoopedNotification, triggerEureka, triggerInspiration } from './events.js';
 import { processAIWonderTurns, cancelAIWonderBuilders, processAIDistrictTurns } from './ai.js';
 import { processEmbassyTurn, onRumourRevealed, ensureEmbassyState } from './embassy.js';
 import { render, markVisibilityDirty } from './render.js';
-import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement } from './ui-panels.js';
+import { checkVictoryConditions, hideSelectionPanel, closeAllPanels, placePlayerDistrict, findDistrictPlacement, openGovernmentPanel, isGovernmentUnlocked } from './ui-panels.js';
 import { updateUI, updateEnvoyUI, submitToLeaderboard, showLeaderboard } from './leaderboard.js';
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { discoverVisibleFactions, revealAround } from './discovery.js';
@@ -16,7 +16,7 @@ import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
 import { getUnitAt, processZOCCaptures } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
-import { createUnit, selectUnit, autoSelectNext } from './units.js';
+import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
 import { clampCamera } from './input.js';
 import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
@@ -40,6 +40,23 @@ function getAmenityMod(balance) {
   if (balance === -1) return -0.05; // -5% production and growth
   if (balance === -2) return -0.10; // -10% production and growth
   return -0.25; // -3 or worse: -25% production and growth
+}
+
+function areCitiesRoadConnected(c1, c2) {
+  const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
+  if (dist <= 1) return true; // Adjacent cities are always connected
+  if (dist > 30) return false; // Too far for road connection
+  let roadCount = 0;
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      if (game.map[r][c].road) {
+        const d1 = hexDistance(c, r, c1.col, c1.row);
+        const d2 = hexDistance(c, r, c2.col, c2.row);
+        if (d1 + d2 <= dist + 2) roadCount++;
+      }
+    }
+  }
+  return roadCount >= dist * UNREST.ROAD_COVERAGE_THRESHOLD;
 }
 
 function distributeLuxuries(cities, luxuryTypes) {
@@ -104,23 +121,92 @@ function calculateCityAmenities(events) {
   // 5. Distribute luxury amenities (each unique type -> +1 to up to 4 neediest cities)
   distributeLuxuries(game.cities, luxuryTypesInTerritory);
 
-  // 6. Calculate final balance, status, and modifier per city
+  // 6. Calculate unrest penalties per city
+  const capital = game.cities[0]; // First city is always the capital
+  const cityCount = game.cities.length;
+  for (const city of game.cities) {
+    city.unrestFromEmpireSize = 0;
+    city.unrestFromDistance = 0;
+    city.unrestFromCapture = 0;
+    city.unrestGarrisonBonus = 0;
+
+    // Empire size penalty: -1 per city beyond FREE_CITIES
+    if (cityCount > UNREST.FREE_CITIES) {
+      city.unrestFromEmpireSize = UNREST.EMPIRE_SIZE_PENALTY * (cityCount - UNREST.FREE_CITIES);
+    }
+
+    // Distance from capital penalty: -1 per DISTANCE_DIVISOR hexes
+    if (capital && (city.col !== capital.col || city.row !== capital.row)) {
+      const dist = hexDistance(city.col, city.row, capital.col, capital.row);
+      city.unrestFromDistance = -Math.floor(dist / UNREST.DISTANCE_DIVISOR);
+    }
+
+    // Captured city penalty
+    if (city.captured) {
+      city.unrestFromCapture = UNREST.CAPTURED_PENALTY;
+    }
+
+    // Garrison bonus: fortified military unit in the city
+    const garrison = game.units.find(u =>
+      u.col === city.col && u.row === city.row &&
+      u.owner === 'player' && u.fortified &&
+      UNIT_TYPES[u.type] && !ZOC_EXEMPT_CLASSES.includes(UNIT_TYPES[u.type].class)
+    );
+    if (garrison) {
+      city.unrestGarrisonBonus = UNREST.GARRISON_BONUS;
+    }
+
+    // Road connection bonus: connected to capital via roads
+    city.roadConnected = false;
+    city.amenityFromRoad = 0;
+    if (capital && city !== capital) {
+      if (areCitiesRoadConnected(city, capital)) {
+        city.roadConnected = true;
+        city.amenityFromRoad = UNREST.ROAD_CONNECTION_BONUS;
+      }
+    }
+  }
+
+  // 7. Calculate final balance, status, and modifier per city
   let totalBalance = 0;
   for (const city of game.cities) {
-    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance;
-    city.amenityBalance = totalAmenities - city.amenityRequired;
+    const totalAmenities = city.amenityFromLuxuries + city.amenityFromBuildings + city.amenityFromAlliance + (city.amenityFromRoad || 0);
+    const totalUnrest = city.unrestFromEmpireSize + city.unrestFromDistance + city.unrestFromCapture + city.unrestGarrisonBonus;
+    city.amenityBalance = totalAmenities - city.amenityRequired + totalUnrest;
     city.amenityStatus = getAmenityStatus(city.amenityBalance);
     city.amenityMod = getAmenityMod(city.amenityBalance);
     totalBalance += city.amenityBalance;
   }
 
-  // 7. Revolt risk: cities at -3 or worse have 5% chance of spawning a rebel warrior
-  for (const city of game.cities) {
-    if (city.amenityStatus === 'REVOLT_RISK' && Math.random() < 0.05) {
+  // 8. Rebellion: REVOLT_RISK cities may rebel and become barbarian
+  for (let i = game.cities.length - 1; i >= 0; i--) {
+    const city = game.cities[i];
+    if (city.amenityStatus !== 'REVOLT_RISK') continue;
+
+    // Garrison reduces rebellion chance
+    const hasGarrison = city.unrestGarrisonBonus > 0;
+    let rebellionChance = hasGarrison ? UNREST.REBELLION_GARRISON_CHANCE : UNREST.REBELLION_BASE_CHANCE;
+
+    // Suppression bonuses from recaptured rebel cities
+    const suppressed = game.rebellionsSuppressed || 0;
+    if (suppressed > 0) {
+      if (city.rebellionSuppressed) {
+        // This city was recaptured: 50% reduction + 10% per other suppression
+        rebellionChance *= 0.5 * Math.pow(0.9, suppressed - 1);
+      } else {
+        // Other cities: 10% reduction per suppression
+        rebellionChance *= Math.pow(0.9, suppressed);
+      }
+    }
+
+    if (Math.random() >= rebellionChance) continue;
+
+    // Capital cannot rebel — spawn a rebel unit instead
+    if (i === 0) {
       const neighbors = getHexNeighbors(city.col, city.row);
       for (const nb of neighbors) {
-        const tile = game.map[nb.row][nb.col];
-        if (!isTilePassable(tile)) continue;
+        const tile = game.map[nb.row]?.[nb.col];
+        if (!tile || !isTilePassable(tile)) continue;
         if (getUnitAt(nb.col, nb.row)) continue;
         const rebel = createUnit('warrior', nb.col, nb.row, 'barbarian');
         game.units.push(rebel);
@@ -128,7 +214,56 @@ function calculateCityAmenities(events) {
         addEvent(`Rebels have risen in ${city.name}!`, 'combat');
         break;
       }
+      continue;
     }
+
+    // Non-capital city: full rebellion — becomes a barbarian camp
+    const cityName = city.name;
+    const cityCol = city.col;
+    const cityRow = city.row;
+    const cityPop = city.population || 500;
+
+    // Remove city from player
+    game.cities.splice(i, 1);
+    game.population -= cityPop;
+    game.score = Math.max(0, game.score - 20);
+
+    // Create a barbarian camp at the city location
+    game.minorFactions.push({
+      id: `rebel_${cityName}_${game.turn}`,
+      type: 'barbarian_camp',
+      col: cityCol,
+      row: cityRow,
+      strength: 15 + Math.floor(Math.random() * 10),
+      gold: 10 + Math.floor(Math.random() * 20),
+      disposition: -20,
+      interacted: false,
+      defeated: false,
+      converted: false,
+      convertedRole: null,
+    });
+
+    // Spawn barbarian military units to defend the rebel city
+    const militaryTypes = Object.entries(UNIT_TYPES)
+      .filter(([, u]) => u.class === 'melee' || u.class === 'cavalry' || u.class === 'anti-cav')
+      .map(([k]) => k);
+    let spawned = 0;
+    const spawnTiles = [{ col: cityCol, row: cityRow }, ...getHexNeighbors(cityCol, cityRow)];
+    for (const tile of spawnTiles) {
+      if (spawned >= UNREST.REBEL_UNIT_COUNT) break;
+      const mapTile = game.map[tile.row]?.[tile.col];
+      if (!mapTile || !isTilePassable(mapTile)) continue;
+      if (getUnitAt(tile.col, tile.row)) continue;
+      const rebelType = militaryTypes[Math.floor(Math.random() * militaryTypes.length)];
+      const rebel = createUnit(rebelType, tile.col, tile.row, 'barbarian');
+      rebel.fortified = true;
+      game.units.push(rebel);
+      spawned++;
+    }
+
+    events.push(`\u{1F525} ${cityName} has fallen into rebellion!`);
+    addEvent(`\u{1F525} ${cityName} has fallen into rebellion! The city is lost!`, 'combat');
+    showToast('Rebellion!', `${cityName} has rebelled and is now under barbarian control!`);
   }
 
   // Keep game.happiness as a summary value for backward compat (UI top bar, save compat)
@@ -310,6 +445,11 @@ function endTurn() {
     processAITradeIncome();
   } catch (e) { console.error('Error in AI diplomacy:', e); }
 
+  // --- Eject any units trespassing after diplomacy changes (peace, expired borders) ---
+  try {
+    ejectTrespassingUnits();
+  } catch (e) { console.error('Error ejecting trespassing units:', e); }
+
   // --- Player turn processing (resilient — errors won't block turn advancement) ---
   let _turnSection = '';
   try {
@@ -353,18 +493,25 @@ function endTurn() {
 
 
   _turnSection = 'resources';
-  // --- Resource bonuses from territory (respects city border radius) ---
+  // --- Tile yields + resource bonuses from territory (respects city border radius) ---
   let resBonus = { food: 0, gold: 0, prod: 0 };
+  const countedTiles = new Set(); // avoid double-counting tiles in overlapping city borders
   for (const city of game.cities) {
     const bRadius = city.borderRadius || 2;
     for (let r = 0; r < MAP_ROWS; r++) {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, city.col, city.row) <= bRadius) {
+          const tileKey = r * MAP_COLS + c;
+          if (countedTiles.has(tileKey)) continue;
+          countedTiles.add(tileKey);
           const tile = game.map[r][c];
+          // Collect gold from tile improvements and terrain features
+          const tileYields = getTileYields(tile);
+          if (tileYields.gold > 0) resBonus.gold += tileYields.gold;
+          // Resource bonuses (food/prod) — kept separate from tile yields
           if (tile.resource && RESOURCES[tile.resource] && isResourceRevealed(tile.resource)) {
             const bonus = RESOURCES[tile.resource].bonus;
             if (bonus.food) resBonus.food += bonus.food;
-            if (bonus.gold) resBonus.gold += bonus.gold;
             if (bonus.prod) resBonus.prod += bonus.prod;
           }
         }
@@ -544,7 +691,11 @@ function endTurn() {
   } else if (game.currentUnitBuild) {
     game.unitBuildProgress += prodThisTurn;
     const ut = UNIT_TYPES[game.currentUnitBuild];
-    if (ut && game.unitBuildProgress >= ut.cost) {
+    // Substitute mechanic: check resource access for cost/stat penalties
+    const resReq = UNIT_RESOURCE_REQUIREMENTS[game.currentUnitBuild];
+    const hasResource = resReq ? hasResourceAccess(resReq.resource, 'player') : true;
+    const effectiveCost = hasResource ? ut.cost : Math.ceil(ut.cost * resReq.costMultiplier);
+    if (ut && game.unitBuildProgress >= effectiveCost) {
       // Place unit near the city that started the build (fallback to any city with room)
       const buildCityIdx = game.unitBuildCityIdx || 0;
       const cityOrder = [...game.cities];
@@ -563,6 +714,13 @@ function endTurn() {
           if (getUnitAt(nb.col, nb.row)) continue;
           const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
           newUnit.moveLeft = 0;
+          // Apply substitute penalties if no resource access
+          if (!hasResource && resReq) {
+            newUnit.combat = Math.max(0, (newUnit.combat || ut.combat) - resReq.combatPenalty);
+            if (resReq.rangedPenalty && newUnit.rangedCombat) newUnit.rangedCombat = Math.max(0, newUnit.rangedCombat - resReq.rangedPenalty);
+            if (resReq.movePenalty) newUnit.movePoints = Math.max(1, (newUnit.movePoints || ut.movePoints) - resReq.movePenalty);
+            newUnit.substitute = true;
+          }
           game.units.push(newUnit);
           game.military += Math.floor(ut.combat / 4);
           placed = true;
@@ -576,16 +734,17 @@ function endTurn() {
           game.population = Math.max(500, game.population - 500);
           if (placedCity) placedCity.population = Math.max(500, (placedCity.population || game.population) - 500);
         }
-        events.push(`${ut.name} trained!`);
-        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!`, 'combat');
+        const subLabel = (!hasResource && resReq) ? ` (substitute — no ${RESOURCES[resReq.resource]?.name || resReq.resource})` : '';
+        events.push(`${ut.name} trained!${subLabel}`);
+        addEvent(`${ut.name} trained in ${placedCity ? placedCity.name : 'city'}!${subLabel}`, 'combat');
         game.currentUnitBuild = null;
         game.unitBuildProgress = 0;
         game.unitBuildCityIdx = 0;
         showCompletionNotification('unit', ut.name, ut.desc);
-        if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!');
+        if (typeof showToast === 'function') showToast('\u2694 Unit Ready', ut.name + ' trained!' + subLabel);
       } else {
         addEvent(`${ut.name} ready but no room — clear tiles near city`, 'combat');
-        game.unitBuildProgress = ut.cost;
+        game.unitBuildProgress = effectiveCost;
       }
     }
   } else if (game.currentDistrictBuild) {
@@ -656,6 +815,8 @@ function endTurn() {
     if (!tdata) { game.currentResearch = null; game.researchProgress = 0; }
     else if (game.researchProgress >= tdata.cost) {
       const completedTechId = game.currentResearch;
+      // Snapshot unlocked governments before adding tech
+      const govsBefore = new Set(Object.keys(GOVERNMENTS).filter(gid => isGovernmentUnlocked(gid)));
       game.techs.push(completedTechId);
       events.push(`${tdata.name} discovered!`);
       addEvent(`Technology: ${tdata.name} discovered!`, 'science');
@@ -664,6 +825,15 @@ function endTurn() {
       // Show completion notification with prompt
       showCompletionNotification('research', tdata.name, tdata.desc);
       if (typeof showToast === 'function') showToast('\u{1F4A1} Research Complete', tdata.name + ' researched!');
+      // Check if this tech unlocked a new government
+      for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
+        if (gid === game.government) continue;
+        if (!govsBefore.has(gid) && isGovernmentUnlocked(gid)) {
+          showToast('\u{1F3DB} New Government', (gov.icon || '') + ' ' + gov.name + ' is now available!', 5000);
+          addEvent('New government unlocked: ' + gov.name, 'gold');
+          setTimeout(() => openGovernmentPanel(), 600);
+        }
+      }
 
       // --- Reveal strategic resources gated by this tech ---
       const newlyRevealed = Object.entries(RESOURCES)
@@ -745,12 +915,23 @@ function endTurn() {
     game.civicProgress += game.culturePerTurn;
     const cdata = CIVICS.find(c => c.id === game.currentCivic);
     if (cdata && game.civicProgress >= cdata.cost) {
+      // Snapshot unlocked governments before adding civic
+      const govsBefore = new Set(Object.keys(GOVERNMENTS).filter(gid => isGovernmentUnlocked(gid)));
       game.civics.push(game.currentCivic);
       events.push('Civic: ' + cdata.name + ' adopted!');
       addEvent('Civic: ' + cdata.name + ' adopted!', 'gold');
       // Check if unlocks pantheon
       if (cdata.unlocks && cdata.unlocks.includes('pantheon') && !game.pantheon) {
         setTimeout(() => showPantheonPicker(), 500);
+      }
+      // Check if this civic unlocked a new government
+      for (const [gid, gov] of Object.entries(GOVERNMENTS)) {
+        if (gid === game.government) continue;
+        if (!govsBefore.has(gid) && isGovernmentUnlocked(gid)) {
+          showToast('\u{1F3DB} New Government', (gov.icon || '') + ' ' + gov.name + ' is now available!', 5000);
+          addEvent('New government unlocked: ' + gov.name, 'gold');
+          setTimeout(() => openGovernmentPanel(), 600);
+        }
       }
       game.currentCivic = null;
       game.civicProgress = 0;
@@ -849,31 +1030,22 @@ function endTurn() {
 
   // --- Road trade income between cities ---
   if (game.cities.length > 1) {
+    let roadTradeGold = 0;
     for (let i = 0; i < game.cities.length; i++) {
       for (let j = i + 1; j < game.cities.length; j++) {
-        // Check if there's a road path between cities (simplified: just check distance and road density)
-        const c1 = game.cities[i], c2 = game.cities[j];
-        const dist = hexDistance(c1.col, c1.row, c2.col, c2.row);
-        if (dist <= 15) {
-          // Count road tiles between them
-          let roadCount = 0;
-          for (let r = 0; r < MAP_ROWS; r++) {
-            for (let c = 0; c < MAP_COLS; c++) {
-              if (game.map[r][c].road) {
-                const d1 = hexDistance(c, r, c1.col, c1.row);
-                const d2 = hexDistance(c, r, c2.col, c2.row);
-                if (d1 + d2 <= dist + 2) roadCount++; // Road is roughly between the cities
-              }
-            }
-          }
-          if (roadCount >= dist * 0.5) { // At least half the path has roads
-            game.gold += 3;
-            // Only log occasionally
-            if (game.turn % 10 === 1) addEvent('Trade route: ' + c1.name + ' \u2194 ' + c2.name + ' (+3 gold)', 'gold');
-          }
+        if (areCitiesRoadConnected(game.cities[i], game.cities[j])) {
+          roadTradeGold += 3;
+          if (game.turn % 10 === 1) addEvent('Trade route: ' + game.cities[i].name + ' \u2194 ' + game.cities[j].name + ' (+3 gold)', 'gold');
         }
       }
     }
+    // Bonus gold for each city road-connected to the capital
+    for (let i = 1; i < game.cities.length; i++) {
+      if (game.cities[i].roadConnected) {
+        roadTradeGold += UNREST.ROAD_TRADE_GOLD;
+      }
+    }
+    if (roadTradeGold > 0) game.gold += roadTradeGold;
   }
 
   // --- City cultural expansion ---
@@ -949,6 +1121,8 @@ function endTurn() {
     if (game.turn >= ob.startTurn + ob.duration) {
       delete game.openBorders[cid];
       addEvent(`Open borders with ${FACTIONS[cid]?.name || cid} expired`, 'diplomacy');
+      // Eject units that are now trespassing
+      ejectTrespassingUnits(cid);
     }
   }
 
@@ -1339,6 +1513,9 @@ function tryAIImprove(worker, priority) {
   const isCity = game.cities.some(c => c.col === worker.col && c.row === worker.row) ||
     Object.values(game.factionCities).some(fc => fc.col === worker.col && fc.row === worker.row);
   if (isCity) return false;
+  // Can only improve within own territory
+  const owner = getTileOwner(worker.col, worker.row);
+  if (owner !== worker.owner) return false;
 
   for (const impId of priority) {
     const imp = TILE_IMPROVEMENTS[impId];
@@ -1387,6 +1564,7 @@ function moveAIWorkerTowardWork(worker, fid, priority) {
       const t = game.map[nb.row]?.[nb.col];
       if (!t || !isTilePassable(t)) continue;
       if (getUnitAt(nb.col, nb.row)) continue;
+      if (isTerritoryBlocked(worker, nb.col, nb.row)) continue;
       const d = hexDistance(nb.col, nb.row, bestTile.col, bestTile.row);
       if (d < closestDist) { closestDist = d; closest = nb; }
     }
@@ -1399,6 +1577,9 @@ function canAIFoundCityAt(col, row, fid) {
   if (!tile) return false;
   if (tile.base === 'ocean' || tile.base === 'coast' || tile.base === 'lake') return false;
   if (tile.feature === 'mountain') return false;
+  // Cannot found city in another faction's or the player's territory
+  const owner = getTileOwner(col, row);
+  if (owner && owner !== fid) return false;
   for (const city of game.cities) {
     if (hexDistance(col, row, city.col, city.row) < 4) return false;
   }
@@ -1467,10 +1648,83 @@ function moveAISettlerTowardSite(settler, fid) {
     const t = game.map[nb.row]?.[nb.col];
     if (!t || !isTilePassable(t)) continue;
     if (getUnitAt(nb.col, nb.row)) continue;
+    if (isTerritoryBlocked(settler, nb.col, nb.row)) continue;
     const d = hexDistance(nb.col, nb.row, target.col, target.row);
     if (d < closestDist) { closestDist = d; closest = nb; }
   }
   if (closest) { settler.col = closest.col; settler.row = closest.row; settler.moveLeft--; }
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements };
+// ============================================
+// EJECT TRESPASSING UNITS
+// ============================================
+
+/**
+ * Eject all units that are trespassing in foreign territory they no longer
+ * have permission to be in (e.g. open borders expired, peace signed).
+ * Called with a specific factionId when a bilateral agreement changes,
+ * or with no argument to do a full sweep.
+ */
+function ejectTrespassingUnits(factionId) {
+  const unitsToEject = [];
+
+  for (const unit of game.units) {
+    // Only check units involved with this faction, or all if no factionId given
+    if (factionId) {
+      // When open borders with factionId expire:
+      // - eject AI faction's units from player territory
+      // - eject player's units from AI faction's territory
+      if (unit.owner !== factionId && unit.owner !== 'player') continue;
+    }
+    if (isTerritoryBlocked(unit, unit.col, unit.row)) {
+      unitsToEject.push(unit);
+    }
+  }
+
+  for (const unit of unitsToEject) {
+    const target = findNearestValidTile(unit);
+    if (target) {
+      unit.col = target.col;
+      unit.row = target.row;
+      unit.moveLeft = 0;
+      const unitName = UNIT_TYPES[unit.type]?.name || unit.type;
+      if (unit.owner === 'player') {
+        addEvent(`${unitName} ejected from foreign territory`, 'diplomacy');
+      }
+    }
+  }
+}
+
+/**
+ * Find the nearest passable tile that the unit is allowed to be on.
+ * Searches outward in rings from the unit's current position.
+ */
+function findNearestValidTile(unit) {
+  const visited = new Set();
+  const queue = [{ col: unit.col, row: unit.row }];
+  visited.add(`${unit.col},${unit.row}`);
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const nbs = getHexNeighbors(cur.col, cur.row);
+    for (const nb of nbs) {
+      const key = `${nb.col},${nb.row}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const tile = game.map[nb.row]?.[nb.col];
+      if (!tile || !isTilePassable(tile)) continue;
+      // Check if this tile is valid for the unit (not blocked by territory)
+      if (!isTerritoryBlocked(unit, nb.col, nb.row)) {
+        // Also make sure no enemy military unit is here
+        const occupant = game.units.find(u =>
+          u.col === nb.col && u.row === nb.row && u.id !== unit.id && u.owner !== unit.owner
+        );
+        if (!occupant) return nb;
+      }
+      queue.push(nb);
+    }
+  }
+  return null;
+}
+
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected, ejectTrespassingUnits };

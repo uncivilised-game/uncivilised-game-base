@@ -21,7 +21,7 @@ import { initInputHandlers, clampCamera, zoomAtCenter, panCameraTo } from './inp
 import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, handleHexClick, applyPromotion, computeMoveRange, computeAttackRange, moveUnitTo, placeFactionCities } from './units.js';
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
 import { endTurn, showTurnSummary, showGameOver, continueAfterVictory } from './turn.js';
-import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit } from './ui-panels.js';
+import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit, toggleGovernmentPanel, openGovernmentPanel, isGovernmentUnlocked } from './ui-panels.js';
 import { renderDiplomacyPanel, renderDiplomacyList, openChat, sendChatMessage, getRelationLabel, establishTradeRoute, cancelTradeRoute, processCharacterAction, isDiplomacyLoaded, registerTradeRouteCallback } from './diplomacy-api.js';
 import { applyGameMod, showModBanner, getModCombatBonus, getModYieldBonus } from './diplomacy-api.js';
 import { processAITurns, processBarbarianTurns, processAICommitments, moveAIUnitToward } from './diplomacy-api.js';
@@ -38,7 +38,7 @@ import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassabl
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
 import { BARBARIAN_UNITS, BASE_TERRAIN, MAP_COLS, MAP_ROWS } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
-import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals } from './ai-diplomacy.js';
+import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals, getRelationMotivations, getRelationSummary } from './ai-diplomacy.js';
 import { initTutorial, tutorialNext, tutorialPrev, closeTutorial } from './tutorial.js';
 import { renderDiplomacyWithIntel, switchDiploTab, getIntelSummary } from './intelligence.js';
 import { renderAdvisorPanel, openAdvisor, sendAdvisorMessage, closeAdvisorChat, isAdvisorChatActive } from './diplomacy-api.js';
@@ -70,6 +70,7 @@ window.openAdvisor = openAdvisor;
 window.sendAdvisorMessage = sendAdvisorMessage;
 window.toggleRankingsDropdown = toggleRankingsDropdown;
 window.togglePanel = togglePanel;
+window.toggleGovernmentPanel = toggleGovernmentPanel;
 window.openChat = openChat;
 window.startBuild = startBuild;
 window.startResearch = startResearch;
@@ -106,6 +107,8 @@ window.getAIWars = getAIWars;
 window.getAIAlliances = getAIAlliances;
 window.getAISecretPacts = getAISecretPacts;
 window.getAITradeDeals = getAITradeDeals;
+window.getRelationMotivations = getRelationMotivations;
+window.getRelationSummary = getRelationSummary;
 window.showGiftUnitPanel = showGiftUnitPanel;
 window.giftUnit = giftUnit;
 window.discoverVillage = discoverVillage;
@@ -250,6 +253,7 @@ function createInitialState() {
     cities: [],
     factionCities: factionCities,
     map: map,
+    resourceZones: map._resourceZones || [],
     riverPaths: riverPaths,
     techs: ['agriculture', 'mining'],
     revealedResources: buildRevealedResources(['agriculture', 'mining']),
@@ -261,7 +265,7 @@ function createInitialState() {
     barbarianCamps: [],
     continentId: continentId, mainContinent: mainContinent,
     aiFactions: {}, aiFactionCities: {},
-    selectedUnitId: null,
+    selectedUnitId: null, selectedCityIdx: null,
     relationships: {
       emperor_valerian: 0, shadow_kael: -10, merchant_prince_castellan: 10,
       pirate_queen_elara: -20, commander_thane: 5, rebel_leader_sera: 0,
@@ -313,7 +317,7 @@ async function startNewGame() {
   // Server-side access gate
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -406,7 +410,7 @@ async function continueGame() {
   }
   try {
     const gateRes = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': playerName },
+      headers: { 'x-player-name': playerName, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const gateData = await gateRes.json();
     if (gateData.role) setPlayerRole(gateData.role);
@@ -595,7 +599,7 @@ async function handleSignup(e) {
     if (data.status === 'active') {
       content.innerHTML = '<div class="auth-success-icon">\u2694\uFE0F</div>'
         + '<h2 class="auth-success-title">You\'re In!</h2>'
-        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 1,000, <strong>' + username + '</strong>.</p>'
+        + '<p class="auth-success-msg">Check your email for a link to start playing.<br>Welcome to the first 10,000, <strong>' + username + '</strong>.</p>'
         + '<button class="btn btn-primary auth-success-btn" onclick="closeAuthModals()">Got It</button>';
     } else {
       content.innerHTML = '<div class="auth-success-icon">\u23F3</div>'
@@ -782,7 +786,7 @@ async function refreshAuthUI() {
 
   try {
     const res = await fetch(API + '/api/verify-access', {
-      headers: { 'x-player-name': username },
+      headers: { 'x-player-name': username, 'x-access-token': safeStorage.getItem('uncivilised_access_token') || '' },
     });
     const data = await res.json();
     if (data.role) setPlayerRole(data.role);

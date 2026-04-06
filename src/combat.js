@@ -1,4 +1,4 @@
-import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER } from './constants.js';
+import { UNIT_TYPES, UNIT_PROMOTIONS, PROMOTION_XP_THRESHOLDS, CITY_DEFENSE, FACTIONS, FACTION_TRAITS, BASE_TERRAIN, BUILDINGS, ZOC_EXEMPT_CLASSES, WALL_HP, SIEGE_WALL_MULTIPLIER, TILE_IMPROVEMENTS } from './constants.js';
 import { game, CITY_WALL_DEFAULTS, deathMarkers } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { crossesRiver } from './map.js';
@@ -27,9 +27,20 @@ function resolveCombat(attacker, defender) {
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
     // Only melee units move onto the captured unit's tile (ranged stay put)
+    // But don't move if an enemy military unit already occupies that tile
     if (aType.rangedCombat <= 0 || aType.range <= 0) {
-      attacker.col = defender.col;
-      attacker.row = defender.row;
+      const occupants = game.units.filter(u =>
+        u.col === defender.col && u.row === defender.row &&
+        u.id !== attacker.id && u.id !== defender.id
+      );
+      const enemyMilitary = occupants.some(u => {
+        const ut = UNIT_TYPES[u.type];
+        return u.owner !== attacker.owner && ut && ut.class !== 'civilian';
+      });
+      if (!enemyMilitary) {
+        attacker.col = defender.col;
+        attacker.row = defender.row;
+      }
     }
     const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
     const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
@@ -55,6 +66,15 @@ function resolveCombat(attacker, defender) {
   const defTile = game.map[defender.row][defender.col];
   if (defTile.feature === 'hills') defPower += 3;
   if (defTile.feature === 'woods' || defTile.feature === 'rainforest') defPower += 3;
+
+  // Garrison improvement defense bonus
+  if (defTile.improvement === 'garrison') {
+    const garrisonDef = TILE_IMPROVEMENTS.garrison?.defenseBonus || 5;
+    defPower += garrisonDef;
+  }
+
+  // Fortification improvement defense bonus
+  if (defTile.fortification) defPower += 4;
 
   // River crossing penalty: attacker loses -3 combat when attacking across a river edge
   // (Classic Civ rule — rivers are natural defensive barriers)
@@ -156,11 +176,19 @@ function resolveCombat(attacker, defender) {
     // Check for city capture
     if (attacker.owner === 'player') {
       checkCityCapture(attacker.col, attacker.row);
+    } else {
+      // AI/barbarian melee unit killed a defender on a player city tile — capture it
+      const playerCityIdx = game.cities.findIndex(c => c.col === attacker.col && c.row === attacker.row);
+      if (playerCityIdx >= 0) {
+        aiCapturePlayerCity(playerCityIdx, attacker.owner);
+      }
     }
   }
 
   // Use movement points — ranged units can still move after attacking
-  if (aType.rangedCombat > 0 && aType.range > 0) {
+  if (attacker._tacticNoMoveCost) {
+    // Fire & Withdraw: no movement cost
+  } else if (aType.rangedCombat > 0 && aType.range > 0) {
     attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
   } else {
     attacker.moveLeft = 0;
@@ -394,6 +422,7 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   const { strength: cityDefence, garrison, hasWalls } = computeCityDefense(ec, factionId);
 
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
+  const noMoveCost = tacticResult.noMoveCost && aType.rangedCombat > 0;
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
 
   let atkPower = (aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat);
@@ -467,7 +496,9 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
     showModBanner('\u{2694}', ec.name + ': ' + ec.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
-  attacker.moveLeft = 0;
+  if (!noMoveCost) {
+    attacker.moveLeft = 0;
+  }
   attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
@@ -490,6 +521,8 @@ function captureExpansionCity(factionId, cityIdx) {
     borderRadius: ec.borderRadius || 1,
     cultureAccum: 0,
     owner: 'player',
+    captured: true,
+    capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
 
@@ -516,6 +549,9 @@ function captureExpansionCity(factionId, cityIdx) {
   if (!hasCapital && !hasExpCities) {
     eliminateFaction(factionId, factionName);
   }
+
+  // Show capture/raze dialog
+  showCaptureOrRazeDialog({ name: ec.name, col: ec.col, row: ec.row }, factionId);
 
   updateUI();
 }
@@ -572,6 +608,7 @@ function executeCityAttack(attacker, factionId, tactic) {
 
   // Apply tactic modifier
   const tacticResult = applyTacticModifier(tactic, 0, 0, attacker, { type: 'warrior', owner: factionId });
+  const noMoveCost = tacticResult.noMoveCost && aType.rangedCombat > 0;
   if (tacticResult.narrative) addEvent(tacticResult.narrative, 'combat');
 
   let atkPower = (aType.rangedCombat > 0 ? aType.rangedCombat : aType.combat);
@@ -647,18 +684,32 @@ function executeCityAttack(attacker, factionId, tactic) {
     showModBanner('\u{2694}', fc.name + ': ' + fc.hp + '/' + CITY_DEFENSE.BASE_HP + ' HP' + wallInfo, factionName);
   }
 
-  attacker.moveLeft = 0;
+  if (!noMoveCost) {
+    attacker.moveLeft = 0;
+  }
   attacker.hasAttackedThisTurn = true;
   updateUI();
   render();
 }
 
 function checkCityCapture(col, row) {
-  // Check if this tile has a faction city
+  // Check if this tile has a faction capital city
   for (const [fid, fc] of Object.entries(game.factionCities)) {
     if (fc.col === col && fc.row === row) {
       captureFactionCity(fid);
       return;
+    }
+  }
+  // Check AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (let i = 0; i < cities.length; i++) {
+        const ec = cities[i];
+        if (ec.col === col && ec.row === row && ec.hp <= 0) {
+          captureExpansionCity(fid, i);
+          return;
+        }
+      }
     }
   }
 }
@@ -678,6 +729,8 @@ function captureFactionCity(factionId) {
     population: 500,
     borderRadius: 2,
     cultureAccum: 0,
+    captured: true,
+    capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
 
@@ -703,8 +756,9 @@ function captureFactionCity(factionId) {
   addEvent(`🏛 CAPTURED: ${fc.name} (${factionName})! +${plunderGold} gold plundered`, 'combat');
 
   // Check if this was their last city — faction elimination
-  const remainingCities = Object.keys(game.factionCities).filter(fid => fid === factionId);
-  if (remainingCities.length === 0) {
+  const hasCapital = factionId in game.factionCities;
+  const hasExpansion = (game.aiFactionCities[factionId] || []).length > 0;
+  if (!hasCapital && !hasExpansion) {
     eliminateFaction(factionId, factionName);
   }
 
@@ -712,6 +766,9 @@ function captureFactionCity(factionId) {
   revealAround(fc.col, fc.row, 5);
 
   showModBanner('🏛', `${fc.name} captured from ${factionName}! +${plunderGold} gold`, 'Military Victory');
+
+  // Show capture/raze dialog (capital cities can be razed too)
+  showCaptureOrRazeDialog({ name: fc.name, col: fc.col, row: fc.row }, factionId);
 }
 
 function eliminateFaction(factionId, factionName) {
@@ -719,6 +776,9 @@ function eliminateFaction(factionId, factionName) {
   const removedUnits = game.units.filter(u => u.owner === factionId).length;
   game.units = game.units.filter(u => u.owner !== factionId);
   markVisibilityDirty();
+
+  // Remove any remaining expansion cities
+  delete game.aiFactionCities[factionId];
 
   // Remove from met factions tracking
   // (keep metFactions entry so they still show in history)
@@ -737,6 +797,167 @@ function eliminateFaction(factionId, factionName) {
   const remainingFactions = Object.keys(game.factionCities);
   if (remainingFactions.length === 0) {
     addEvent('🏆 DOMINATION VICTORY — You have conquered all civilizations!', 'combat');
+  }
+}
+
+// ============================================
+// RAZE CITY SYSTEM
+// ============================================
+
+/**
+ * Show a dialog letting the player choose to keep or raze a captured city.
+ * Called after capture instead of immediately adding the city.
+ */
+function showCaptureOrRazeDialog(cityData, factionId) {
+  const factionName = FACTIONS[factionId]?.name || 'Unknown';
+  const panel = document.getElementById('battle-panel');
+  if (!panel) return;
+
+  panel.innerHTML = `
+    <div style="padding:16px;text-align:center">
+      <div style="font-size:18px;font-weight:bold;margin-bottom:8px;color:#c9a84c">City Captured!</div>
+      <div style="margin-bottom:12px;color:#ddd">${cityData.name} (${factionName}) has fallen.</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button onclick="window._captureOrRazeChoice('keep')" style="padding:8px 20px;background:#4a7c4a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">
+          Keep City
+        </button>
+        <button onclick="window._captureOrRazeChoice('raze')" style="padding:8px 20px;background:#c04040;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">
+          Raze City
+        </button>
+      </div>
+    </div>`;
+  panel.style.display = 'block';
+
+  window._captureOrRazeChoice = function(choice) {
+    panel.style.display = 'none';
+    delete window._captureOrRazeChoice;
+    if (choice === 'raze') {
+      razeCity(cityData.col, cityData.row, cityData.name, factionId);
+    }
+    // 'keep' — city was already added to game.cities by the capture function
+    updateUI();
+    render();
+  };
+}
+
+/**
+ * Raze a player-owned city — removes it from the map entirely.
+ * Used when the player chooses to raze after capture, or when AI/barbarians destroy a city.
+ */
+function razeCity(col, row, cityName, originalFactionId) {
+  // Remove from player cities
+  const idx = game.cities.findIndex(c => c.col === col && c.row === row);
+  if (idx >= 0) {
+    const city = game.cities[idx];
+    game.population -= city.population || 0;
+    game.cities.splice(idx, 1);
+  }
+
+  // Bonus plunder gold for razing
+  const razeGold = 15 + Math.floor(Math.random() * 25);
+  game.gold += razeGold;
+
+  addEvent(`\u{1F525} ${cityName} has been RAZED! +${razeGold} gold from plunder`, 'combat');
+  showModBanner('\u{1F525}', `${cityName} razed to the ground! +${razeGold} gold`, 'Destruction');
+  logAction('combat', `Razed ${cityName}`, { col, row, originalFactionId });
+
+  markVisibilityDirty();
+}
+
+/**
+ * AI/barbarian raze of a player city — called when an AI unit captures a player city.
+ * The city is removed from game.cities and the faction may gain benefits.
+ * @param {number} cityIdx - index in game.cities
+ * @param {string} attackerFactionId - faction that captured the city (or 'barbarian')
+ */
+function aiRazePlayerCity(cityIdx, attackerFactionId) {
+  const city = game.cities[cityIdx];
+  if (!city) return;
+  const cityName = city.name;
+  const col = city.col, row = city.row;
+  const pop = city.population || 0;
+
+  // Remove city
+  game.cities.splice(cityIdx, 1);
+  game.population -= pop;
+  game.score = Math.max(0, game.score - 30);
+
+  const attackerName = attackerFactionId === 'barbarian'
+    ? 'Barbarians'
+    : (FACTIONS[attackerFactionId]?.name || attackerFactionId);
+
+  addEvent(`\u{1F525} ${attackerName} RAZED ${cityName}! The city is destroyed.`, 'combat');
+  showToast('City Razed', `${attackerName} razed ${cityName} to the ground!`, 6000);
+  logAction('combat', `${attackerName} razed ${cityName}`, { col, row, attackerFactionId });
+
+  markVisibilityDirty();
+  updateUI();
+}
+
+/**
+ * AI/barbarian capture of a player city — called when an enemy melee unit
+ * enters a player city tile. Decides whether to keep or raze based on personality.
+ * @param {number} cityIdx - index in game.cities
+ * @param {string} attackerFactionId - faction capturing the city (or 'barbarian')
+ */
+function aiCapturePlayerCity(cityIdx, attackerFactionId) {
+  const city = game.cities[cityIdx];
+  if (!city) return;
+
+  // Barbarians always raze
+  if (attackerFactionId === 'barbarian' || (attackerFactionId && attackerFactionId.startsWith('barbarian'))) {
+    aiRazePlayerCity(cityIdx, attackerFactionId);
+    return;
+  }
+
+  // AI decision based on personality
+  const traits = FACTION_TRAITS[attackerFactionId];
+  const factionName = FACTIONS[attackerFactionId]?.name || attackerFactionId;
+
+  // Militaristic factions raze more often; diplomatic/cultural factions prefer to keep
+  let razeChance = 0.3; // base 30%
+  if (traits) {
+    if (traits.archetype === 'militaristic') razeChance = 0.6;
+    else if (traits.archetype === 'expansionist') razeChance = 0.2;
+    else if (traits.archetype === 'diplomatic') razeChance = 0.1;
+    else if (traits.archetype === 'cultural') razeChance = 0.15;
+  }
+
+  // If AI already has many cities, more likely to raze
+  const aiCityCount = (game.aiFactionCities[attackerFactionId] || []).length + (game.factionCities[attackerFactionId] ? 1 : 0);
+  if (aiCityCount >= 3) razeChance += 0.15;
+
+  if (Math.random() < razeChance) {
+    // Raze
+    aiRazePlayerCity(cityIdx, attackerFactionId);
+  } else {
+    // Keep — convert to AI expansion city
+    const cityName = city.name;
+    const col = city.col, row = city.row;
+    const pop = city.population || 0;
+    const faction = FACTIONS[attackerFactionId];
+
+    game.cities.splice(cityIdx, 1);
+    game.population -= pop;
+    game.score = Math.max(0, game.score - 20);
+
+    if (!game.aiFactionCities[attackerFactionId]) game.aiFactionCities[attackerFactionId] = [];
+    game.aiFactionCities[attackerFactionId].push({
+      name: cityName,
+      col, row,
+      color: faction?.color || '#888',
+      hp: CITY_DEFENSE.BASE_HP,
+      population: Math.max(200, Math.floor(pop * 0.5)),
+      borderRadius: 1,
+      wallHP: 0, wallMaxHP: 0, wallLastAttackedTurn: -99,
+    });
+
+    addEvent(`\u{1F3F0} ${factionName} captured ${cityName}!`, 'combat');
+    showToast('City Lost', `${factionName} captured ${cityName}!`, 6000);
+    logAction('combat', `${factionName} captured ${cityName}`, { col, row, attackerFactionId });
+
+    markVisibilityDirty();
+    updateUI();
   }
 }
 
@@ -804,6 +1025,24 @@ function showBattlePanel(attacker, defender, onChoice) {
       <div class="battle-odds">Estimated victory: ${odds}%</div>
       <div class="battle-tactics-label">Choose your tactic:</div>
       <div class="battle-tactics">
+        ${aType.rangedCombat > 0 && aType.range > 0 ? `
+        <button class="battle-tactic" data-tactic="volley">
+          <strong>\u{1F3AF} Volley</strong>
+          <span>Concentrated barrage. +25% damage dealt.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="precision_shot">
+          <strong>\u{1F52B} Precision Shot</strong>
+          <span>Aimed shot. 60% chance of +35% damage, 40% chance of normal damage.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="suppressive_fire">
+          <strong>\u{1F6E1} Suppressive Fire</strong>
+          <span>Controlled fire. Guaranteed +10% damage.</span>
+        </button>
+        <button class="battle-tactic" data-tactic="fire_and_withdraw">
+          <strong>\u{1F3C3} Fire & Withdraw</strong>
+          <span>Shoot and reposition. -15% damage, but costs no movement.</span>
+        </button>
+        ` : `
         <button class="battle-tactic" data-tactic="charge">
           <strong>\u{2694} Charge</strong>
           <span>All-out attack. +20% damage dealt, +10% damage taken.</span>
@@ -820,6 +1059,7 @@ function showBattlePanel(attacker, defender, onChoice) {
           <strong>\u{1F3C3} Feigned Retreat</strong>
           <span>Lure them in. If enemy combat > yours: +25% damage. Otherwise: -10%.</span>
         </button>
+        `}
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
           <span>Withdraw without fighting. Unit loses 1 move point.</span>
@@ -872,6 +1112,29 @@ function applyTacticModifier(tactic, atkPower, defPower, attacker, defender) {
       break;
     case 'retreat':
       return { retreat: true, narrative: 'Your forces pull back from the engagement.' };
+
+    // --- Ranged tactics ---
+    case 'volley':
+      atkMod = 1.25; defMod = 1.0;
+      narrative = 'A concentrated volley rains down on the enemy!';
+      break;
+    case 'precision_shot':
+      if (Math.random() < 0.6) {
+        atkMod = 1.35; defMod = 1.0;
+        narrative = 'A precise shot finds its mark!';
+      } else {
+        atkMod = 1.0; defMod = 1.0;
+        narrative = 'The aimed shot flies wide — normal damage.';
+      }
+      break;
+    case 'suppressive_fire':
+      atkMod = 1.1; defMod = 1.0;
+      narrative = 'Steady, controlled fire keeps the enemy pinned.';
+      break;
+    case 'fire_and_withdraw':
+      atkMod = 0.85; defMod = 1.0;
+      narrative = 'A quick shot before pulling back to safety.';
+      return { atkMod, defMod, narrative, retreat: false, noMoveCost: true };
   }
 
   return { atkMod, defMod, narrative, retreat: false };
@@ -977,4 +1240,7 @@ export {
   processZOCCaptures,
   applyWallDamage,
   addDeathMarker,
+  razeCity,
+  aiCapturePlayerCity,
+  aiRazePlayerCity,
 };

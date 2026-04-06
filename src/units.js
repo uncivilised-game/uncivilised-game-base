@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, UNIT_UPGRADES, UNIT_UNLOC
 import { game, getNextUnitId } from './state.js';
 import { hexToPixel, pixelToHex, getHexNeighbors, hexDistance } from './hex.js';
 import { getTileMoveCost, isTilePassable, crossesRiver, roadBridgesRiver } from './map.js';
-import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
+import { resolveCombat, isAtWarWith, declareSurpriseWar, confirmAndDeclareWar, attackFactionCity, attackExpansionCity, checkCityCapture, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, applyTacticModifier } from './combat.js';
 import { showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult } from './ui-panels.js';
 import { showWorkerActions, showSettlerActions, moveTowardWaypoint } from './improvements.js';
 import { render, markVisibilityDirty } from './render.js';
@@ -29,8 +29,65 @@ function canStackWith(movingUnit, existingUnit) {
   return true;
 }
 
+// ---- Territory helpers ----
+
+/**
+ * Returns the faction ID that owns the tile at (col, row), or null if unclaimed.
+ * Checks player cities, faction capitals, and AI expansion cities.
+ */
+function getTileOwner(col, row) {
+  // Player cities
+  for (const city of (game.cities || [])) {
+    if (hexDistance(col, row, city.col, city.row) <= (city.borderRadius || 2)) return 'player';
+  }
+  // Faction capital cities
+  for (const [fid, fc] of Object.entries(game.factionCities || {})) {
+    if (hexDistance(col, row, fc.col, fc.row) <= (fc.borderRadius || 2)) return fid;
+  }
+  // AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (const ec of cities) {
+        if (hexDistance(col, row, ec.col, ec.row) <= (ec.borderRadius || 1)) return fid;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns true if the given unit is NOT allowed to enter (col, row) due to
+ * closed borders. At war or with open borders → entry allowed.
+ */
+function isTerritoryBlocked(unit, col, row) {
+  const owner = getTileOwner(col, row);
+  if (!owner) return false; // unclaimed land
+
+  if (unit.owner === 'player') {
+    if (owner === 'player') return false; // own territory
+    // At war → can enter enemy territory
+    if (isAtWarWith(owner)) return false;
+    // Open borders → can enter
+    if (game.openBorders && game.openBorders[owner]) return false;
+    return true; // peace + no open borders → blocked
+  }
+
+  // AI unit
+  if (owner === unit.owner) return false; // own territory
+  if (owner === 'player') {
+    // AI entering player territory — mirror the same check
+    if (isAtWarWith(unit.owner)) return false;
+    if (game.openBorders && game.openBorders[unit.owner]) return false;
+    return true;
+  }
+  // AI entering another AI's territory — let AI-to-AI rules handle this
+  return false;
+}
+
 /** Returns true if a hex is blocked for the given unit (can't enter or pass through) */
 function isHexBlockedForUnit(unit, col, row) {
+  // Territory restriction: can't enter foreign territory without open borders or war
+  if (isTerritoryBlocked(unit, col, row)) return true;
   const occupants = game.units.filter(u => u.col === col && u.row === row && u.id !== unit.id);
   if (occupants.length === 0) return false;
   // If there's already a stack of 2, it's full
@@ -291,7 +348,7 @@ function computeAttackRange() {
   const attackable = new Map();
   const ut = UNIT_TYPES[unit.type];
 
-  if (ut.rangedCombat > 0 && ut.range > 0 && (unit.moveLeft > 0 || !unit.hasAttackedThisTurn)) {
+  if (ut.rangedCombat > 0 && ut.range > 0 && unit.moveLeft > 0 && !unit.hasAttackedThisTurn) {
     for (let r = 0; r < MAP_ROWS; r++) {
       for (let c = 0; c < MAP_COLS; c++) {
         if (hexDistance(c, r, unit.col, unit.row) <= ut.range) {
@@ -317,7 +374,7 @@ function computeAttackRange() {
         }
       }
     }
-  } else if (unit.moveLeft > 0 || !unit.hasAttackedThisTurn) {
+  } else if (unit.moveLeft > 0 && !unit.hasAttackedThisTurn) {
     const neighbors = getHexNeighbors(unit.col, unit.row);
     for (const nb of neighbors) {
       const enemy = game.units.find(u => u.col === nb.col && u.row === nb.row && u.owner !== 'player');
@@ -381,7 +438,10 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
     revealAround(unit.col, unit.row, sightRange);
     logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
     checkAndClearBarbarianCamp(unit, targetCol, targetRow);
-    if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+    if (unit.owner === 'player') {
+      discoverVillage(targetCol, targetRow, unit);
+      checkCityCapture(targetCol, targetRow);
+    }
     render();
     if (onComplete) onComplete(true);
     return true;
@@ -428,7 +488,10 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
       game._unitMoveAnim = null;
       logAction('movement', UNIT_TYPES[unit.type]?.name + ' moved to (' + unit.col + ',' + unit.row + ')', { unitType: unit.type, col: unit.col, row: unit.row });
       checkAndClearBarbarianCamp(unit, targetCol, targetRow);
-      if (unit.owner === 'player') discoverVillage(targetCol, targetRow, unit);
+      if (unit.owner === 'player') {
+        discoverVillage(targetCol, targetRow, unit);
+        checkCityCapture(targetCol, targetRow);
+      }
       render();
       if (onComplete) onComplete(true);
     }
@@ -508,47 +571,8 @@ function checkAndClearBarbarianCamp(unit, col, row) {
   if (unit.owner !== 'player') return;
   if (unit.type === 'worker' || unit.type === 'settler') return; // Civilians can't clear camps
 
-  // Check AI-spawned barbarianCamps
-  if (game.barbarianCamps) {
-    const camp = game.barbarianCamps.find(bc => bc.col === col && bc.row === row && !bc.destroyed);
-    if (camp) {
-      // Check if camp is undefended (no barbarian units on or adjacent to camp)
-      const defenders = game.units.filter(u =>
-        u.owner === 'barbarian' && u.id !== unit.id && hexDistance(u.col, u.row, col, row) <= 1
-      );
-      if (defenders.length === 0) {
-        camp.destroyed = true;
-        const lootGold = 15 + Math.floor(camp.strength * 1.5);
-        game.gold += lootGold;
-        addEvent(`\u{1F525} Cleared barbarian camp! +${lootGold}g looted.`, 'combat');
-        showToast('Camp Cleared!', `Your ${UNIT_TYPES[unit.type]?.name || 'unit'} cleared an undefended barbarian camp.`);
-        logAction('combat', 'Cleared barbarian camp at (' + col + ',' + row + ')', { gold: lootGold });
-
-        // Reputation boost with nearby AI factions (Civ-style)
-        boostFactionReputation(col, row, 'barbarian camp');
-      }
-    }
-  }
-
-  // Check minorFaction barbarian_camps
-  if (game.minorFactions) {
-    const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated && m.type === 'barbarian_camp');
-    if (mf) {
-      const defenders = game.units.filter(u =>
-        u.owner === 'barbarian' && u.id !== unit.id && hexDistance(u.col, u.row, col, row) <= 1
-      );
-      if (defenders.length === 0) {
-        mf.defeated = true;
-        const lootGold = 10 + Math.floor(mf.strength);
-        game.gold += lootGold;
-        addEvent(`\u{1F525} Cleared ${MINOR_FACTION_TYPES[mf.type]?.name || 'barbarian camp'}! +${lootGold}g looted.`, 'combat');
-        showToast('Camp Cleared!', `Your ${UNIT_TYPES[unit.type]?.name || 'unit'} cleared an undefended barbarian camp.`);
-
-        // Reputation boost with nearby AI factions
-        boostFactionReputation(col, row, 'barbarian camp');
-      }
-    }
-  }
+  // Don't auto-clear camps — let the player interact via the negotiation panel.
+  // Camps are destroyed via the "Attack" / "Destroy" button in the interaction UI.
 }
 
 // ---- Boost reputation with nearby AI factions when clearing barbarian threats ----
@@ -659,6 +683,7 @@ function handleHexClick(col, row) {
             unit._tacticAtkMod = tacticResult.atkMod || 1;
             unit._tacticDefMod = tacticResult.defMod || 1;
             unit._tacticNarrative = tacticResult.narrative || '';
+            if (tacticResult.noMoveCost) unit._tacticNoMoveCost = true;
 
             const result = resolveCombat(unit, target);
             // Add tactic narrative to combat result
@@ -668,6 +693,7 @@ function handleHexClick(col, row) {
             delete unit._tacticAtkMod;
             delete unit._tacticDefMod;
             delete unit._tacticNarrative;
+            delete unit._tacticNoMoveCost;
 
             showCombatResult(unit, target, result);
             if (result.attackerDied) {
@@ -699,6 +725,22 @@ function handleHexClick(col, row) {
         });
         return;
       }
+
+      // If hex is adjacent but territory-blocked, offer to declare war
+      if (unit.moveLeft > 0 && hexDistance(col, row, unit.col, unit.row) <= 1) {
+        const owner = getTileOwner(col, row);
+        if (owner && owner !== 'player' && !isAtWarWith(owner) && !(game.openBorders && game.openBorders[owner])) {
+          if (confirmAndDeclareWar(owner)) {
+            // War declared — now the hex should be unblocked, try to move
+            moveUnitTo(unit, col, row, () => {
+              if (unit.moveLeft <= 0) autoSelectNext();
+              else { showSelectionPanel(unit); render(); }
+            });
+            return;
+          }
+          return; // Player declined war
+        }
+      }
     }
 
     // Clicked outside movement/attack range — set as multi-turn waypoint
@@ -711,6 +753,16 @@ function handleHexClick(col, row) {
         else { showSelectionPanel(unit); render(); }
       });
       return;
+    }
+
+    // Check for minor faction / barbarian camp FIRST — prioritize negotiation
+    if (game.minorFactions) {
+      const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated);
+      if (mf) { interactWithMinorFaction(mf.id); return; }
+    }
+    if (game.barbarianCamps) {
+      const bc = game.barbarianCamps.find(c => c.col === col && c.row === row && !c.destroyed);
+      if (bc) { interactWithBarbarianCamp(bc.id); return; }
     }
 
     // Check what's at this hex — cycle through stacked units on repeat clicks
@@ -748,17 +800,6 @@ function handleHexClick(col, row) {
       game.selectedHex = { col, row };
       showCityPanel(cityHere);
       return;
-    }
-
-    // Check for minor faction
-    if (game.minorFactions) {
-      const mf = game.minorFactions.find(m => m.col === col && m.row === row && !m.defeated);
-      if (mf) { interactWithMinorFaction(mf.id); return; }
-    }
-    // Check for barbarian camps (AI-spawned)
-    if (game.barbarianCamps) {
-      const bc = game.barbarianCamps.find(c => c.col === col && c.row === row && !c.destroyed);
-      if (bc) { interactWithBarbarianCamp(bc.id); return; }
     }
 
     // Deselect and show tile info
@@ -886,4 +927,6 @@ export {
   selectNextUnit,
   isInEnemyZOC,
   getEnemyZOCHexes,
+  getTileOwner,
+  isTerritoryBlocked,
 };
