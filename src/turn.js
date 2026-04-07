@@ -604,9 +604,10 @@ function endTurn() {
       if (!city.hp || city.hp <= 0) continue;
       const range = CITY_DEFENSE.RANGED_STRIKE_RANGE;
       let bestTarget = null, bestDist = Infinity;
-      // Find closest non-player unit within range
+      // Find closest non-player unit within range (skip factions with NAP or open borders)
       for (const unit of game.units) {
         if (unit.owner === 'player') continue;
+        if (game.nonAggressionPacts?.[unit.owner] || game.openBorders?.[unit.owner]) continue;
         const d = hexDistance(unit.col, unit.row, city.col, city.row);
         if (d <= range && d < bestDist) { bestDist = d; bestTarget = unit; }
       }
