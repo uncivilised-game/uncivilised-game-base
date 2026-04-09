@@ -354,18 +354,6 @@ function render() {
         }
       }
 
-      // Draw tile improvements as images
-      if (tile.improvement) {
-        const impImg = IMPROVEMENT_IMAGES[tile.improvement];
-        if (impImg && impImg.complete && impImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.75;
-          const impS = HEX_SIZE * 2.3;
-          ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
       // Draw district sprites (rendered on top of terrain, below units)
       if (tile.district) {
         const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
@@ -417,7 +405,20 @@ function render() {
           ctx.restore();
         }
       }
-      if (tile.road) {
+      // Draw tile improvements as images
+      else if (tile.improvement) {
+        const impImg = IMPROVEMENT_IMAGES[tile.improvement];
+        if (impImg && impImg.complete && impImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.75;
+          const impS = HEX_SIZE * 2.3;
+          ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+        }
+      }
+      // road has lower priority, otherwise it dominates vs. improvements
+      else if (tile.road) {
         const roadImg = IMPROVEMENT_IMAGES['road'];
         if (roadImg && roadImg.complete && roadImg.naturalWidth > 0) {
           ctx.save();
