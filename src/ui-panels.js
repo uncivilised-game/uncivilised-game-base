@@ -21,6 +21,7 @@ import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel }
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
 import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
+import { renderArmyActions, bindArmyActions } from './army.js';
 
 function showSelectionPanel(unit) {
   // Special panel for workers
@@ -85,6 +86,11 @@ function showSelectionPanel(unit) {
       html += '</div>';
     }
 
+
+    // Army panel for commanders (generals)
+    if (ut.class === 'commander') {
+      html += renderArmyActions(unit);
+    }
 
     // Action buttons
     html += `<div class="sel-actions">`;
@@ -200,6 +206,11 @@ function showSelectionPanel(unit) {
   panel.innerHTML = html;
   panel.style.display = 'block';
   document.getElementById('tile-info').style.display = 'none';
+
+  // Wire up army action buttons for commanders
+  if (isPlayer && ut.class === 'commander') {
+    bindArmyActions(unit);
+  }
 }
 
 function showGiftUnitPanel(unitId) {
