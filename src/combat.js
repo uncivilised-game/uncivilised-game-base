@@ -485,10 +485,10 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
       addEvent(ec.name + ' defenses broken! Send in melee to capture.', 'combat');
       showModBanner('\u{2694}', ec.name + ': 1 HP — melee unit needed to capture!', factionName);
     } else {
-      // Capture expansion city
+      // City falls — show capture dialog
       attacker.col = ec.col;
       attacker.row = ec.row;
-      captureExpansionCity(factionId, cityIdx);
+      showCityCaptureDialog(ec, factionId, 'expansion', cityIdx);
     }
   } else {
     const wallInfo = ec.wallHP > 0 ? ' [Walls: ' + ec.wallHP + '/' + ec.wallMaxHP + ']' : '';
@@ -673,10 +673,10 @@ function executeCityAttack(attacker, factionId, tactic) {
       addEvent(fc.name + ' defenses broken! Send in melee to capture.', 'combat');
       showModBanner('\u{2694}', fc.name + ': 1 HP \u2014 melee unit needed to capture!', factionName);
     } else {
-      // City captured! Move attacker onto city if melee
+      // City falls — show capture dialog
       attacker.col = fc.col;
       attacker.row = fc.row;
-      captureFactionCity(factionId);
+      showCityCaptureDialog(fc, factionId, 'capital', null);
     }
   } else {
     const wallInfo = fc.wallHP > 0 ? ' [Walls: ' + fc.wallHP + '/' + fc.wallMaxHP + ']' : '';
@@ -745,13 +745,13 @@ function captureFactionCity(factionId) {
   game.relationships[factionId] = -100;
 
   // Remove all agreements with this faction
-  delete game.activeAlliances[factionId];
-  delete game.tradeDeals[factionId];
-  delete game.defensePacts[factionId];
-  delete game.marriages[factionId];
-  delete game.openBorders[factionId];
-  delete game.ceasefires[factionId];
-  delete game.nonAggressionPacts[factionId];
+  if (game.activeAlliances) delete game.activeAlliances[factionId];
+  if (game.tradeDeals) delete game.tradeDeals[factionId];
+  if (game.defensePacts) delete game.defensePacts[factionId];
+  if (game.marriages) delete game.marriages[factionId];
+  if (game.openBorders) delete game.openBorders[factionId];
+  if (game.ceasefires) delete game.ceasefires[factionId];
+  if (game.nonAggressionPacts) delete game.nonAggressionPacts[factionId];
 
   addEvent(`🏛 CAPTURED: ${fc.name} (${factionName})! +${plunderGold} gold plundered`, 'combat');
 
@@ -769,6 +769,109 @@ function captureFactionCity(factionId) {
 
   // Show capture/raze dialog (capital cities can be razed too)
   showCaptureOrRazeDialog({ name: fc.name, col: fc.col, row: fc.row }, factionId);
+}
+
+function showCityCaptureDialog(city, factionId, cityType, cityIdx) {
+  const faction = FACTIONS[factionId];
+  const factionName = faction ? faction.name : 'Unknown';
+  const pop = city.population || 500;
+
+  let panel = document.getElementById('capture-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'capture-panel';
+    document.getElementById('game-main').appendChild(panel);
+  }
+
+  panel.innerHTML = `
+    <div class="capture-card">
+      <div class="capture-header">\u{1F3DB} City Captured!</div>
+      <div class="capture-city-name">${city.name} (${factionName})</div>
+      <div class="capture-info">Population: ${pop}</div>
+      <div class="capture-choices">
+        <button class="capture-choice capture-keep" data-choice="keep">
+          <strong>\u{1F3F0} Keep City</strong>
+          <span>Annex ${city.name} into your empire. Population reduced to ${Math.max(200, Math.floor(pop * 0.5))}.</span>
+        </button>
+        <button class="capture-choice capture-raze" data-choice="raze">
+          <strong>\u{1F525} Raze City</strong>
+          <span>Burn ${city.name} to the ground. Plunder extra gold but city is destroyed.</span>
+        </button>
+      </div>
+    </div>
+  `;
+  panel.style.display = 'flex';
+
+  panel.querySelectorAll('.capture-choice').forEach(btn => {
+    btn.addEventListener('click', () => {
+      panel.style.display = 'none';
+      if (btn.dataset.choice === 'keep') {
+        if (cityType === 'capital') {
+          captureFactionCity(factionId);
+        } else {
+          captureExpansionCity(factionId, cityIdx);
+        }
+      } else {
+        razeCapturedCity(city, factionId, cityType, cityIdx);
+      }
+    });
+  });
+}
+
+function razeCapturedCity(city, factionId, cityType, cityIdx) {
+  const faction = FACTIONS[factionId];
+  const factionName = faction ? faction.name : 'Unknown';
+
+  // Remove garrison units at city location
+  game.units = game.units.filter(u => !(u.col === city.col && u.row === city.row && u.owner === factionId));
+  markVisibilityDirty();
+
+  // Remove city from faction
+  if (cityType === 'capital') {
+    delete game.factionCities[factionId];
+    // Remove all agreements with this faction
+    if (game.activeAlliances) delete game.activeAlliances[factionId];
+    if (game.tradeDeals) delete game.tradeDeals[factionId];
+    if (game.defensePacts) delete game.defensePacts[factionId];
+    if (game.marriages) delete game.marriages[factionId];
+    if (game.openBorders) delete game.openBorders[factionId];
+    if (game.ceasefires) delete game.ceasefires[factionId];
+    if (game.nonAggressionPacts) delete game.nonAggressionPacts[factionId];
+    game.relationships[factionId] = -100;
+  } else {
+    const cities = game.aiFactionCities[factionId];
+    if (cities) cities.splice(cityIdx, 1);
+    game.relationships[factionId] = Math.min(-80, (game.relationships[factionId] || 0) - 40);
+  }
+
+  // Bonus plunder gold for razing (more than keeping)
+  const razePlunder = cityType === 'capital'
+    ? 50 + Math.floor(Math.random() * 80)
+    : 40 + Math.floor(Math.random() * 60);
+  game.gold += razePlunder;
+
+  // Remove any tile improvement at the city location
+  const tile = game.map[city.row]?.[city.col];
+  if (tile) {
+    tile.improvement = null;
+    tile.improvementProgress = 0;
+  }
+
+  revealAround(city.col, city.row, cityType === 'capital' ? 5 : 4);
+
+  addEvent(`\u{1F525} RAZED: ${city.name} (${factionName}) burned to the ground! +${razePlunder} gold plundered`, 'combat');
+  showModBanner('\u{1F525}', `${city.name} razed! +${razePlunder} gold plundered`, 'Military Victory');
+  logAction('combat', 'city_razed', { city: city.name, faction: factionName, gold: razePlunder });
+
+  // Check if faction lost ALL cities
+  const hasCapital = !!game.factionCities[factionId];
+  const hasExpCities = game.aiFactionCities[factionId]?.length > 0;
+  if (!hasCapital && !hasExpCities) {
+    eliminateFaction(factionId, factionName);
+  }
+
+  updateUI();
+  render();
 }
 
 function eliminateFaction(factionId, factionName) {
@@ -1236,6 +1339,8 @@ export {
   getEnemyUnitAt,
   getCityAt,
   showBattlePanel,
+  showCityCaptureDialog,
+  razeCapturedCity,
   applyTacticModifier,
   processZOCCaptures,
   applyWallDamage,

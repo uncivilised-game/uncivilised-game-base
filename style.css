@@ -1664,6 +1664,40 @@ a:hover { text-decoration: underline; }
 .battle-tactic-retreat { border-color: rgba(220,80,60,0.2); }
 .battle-tactic-retreat:hover { background: rgba(220,80,60,0.1); border-color: rgba(220,80,60,0.4); }
 
+/* ---- City Capture Dialog ---- */
+#capture-panel {
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 95; background: rgba(0,0,0,0.6);
+  align-items: center; justify-content: center;
+}
+.capture-card {
+  background: linear-gradient(135deg, #1a1210, #12100e); border: 1px solid rgba(201,168,76,0.3);
+  border-radius: 12px; padding: 24px; max-width: 380px; width: 90%;
+  box-shadow: 0 8px 32px rgba(201,168,76,0.15);
+}
+.capture-header {
+  text-align: center; font-size: var(--text-lg); font-weight: 700;
+  color: #c9a84c; font-family: var(--font-display); margin-bottom: 12px;
+}
+.capture-city-name {
+  text-align: center; font-size: var(--text-sm); font-weight: 600;
+  color: var(--color-text); margin-bottom: 4px;
+}
+.capture-info {
+  text-align: center; font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: 16px;
+}
+.capture-choices { display: flex; flex-direction: column; gap: 8px; }
+.capture-choice {
+  padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; cursor: pointer; text-align: left; color: var(--color-text); transition: all 0.15s;
+}
+.capture-choice strong { display: block; font-size: var(--text-sm); margin-bottom: 2px; }
+.capture-choice span { font-size: 10px; color: var(--color-text-muted); }
+.capture-keep { border-color: rgba(106,171,92,0.3); }
+.capture-keep:hover { background: rgba(106,171,92,0.1); border-color: rgba(106,171,92,0.5); }
+.capture-raze { border-color: rgba(220,80,60,0.3); }
+.capture-raze:hover { background: rgba(220,80,60,0.1); border-color: rgba(220,80,60,0.5); }
+
 /* ---- Minor Factions ---- */
 .minor-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .minor-btn {
