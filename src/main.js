@@ -36,7 +36,7 @@ import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
 import { generateMap, getTileYields, getTileName, getTileMoveCost, isTilePassable, initFactionStats, updateFactionStats, getPlayerStats, getComparisonData, getUnmetFactions, placeTribalVillages, getHexDirection, hasRiverBetween, hasRoadBridge } from './map.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance, createFogOfWar } from './hex.js';
-import { MAP_COLS, MAP_ROWS, BASE_TERRAIN } from './constants.js';
+import { BARBARIAN_UNITS, BASE_TERRAIN, MAP_COLS, MAP_ROWS } from './constants.js';
 import { drawDetailedHex } from './terrain-render.js';
 import { processAIDiplomacy, resetTurnActions, getAIRelation, getAIWars, getAIAlliances, getAISecretPacts, getAITradeDeals, getRelationMotivations, getRelationSummary } from './ai-diplomacy.js';
 import { initTutorial, tutorialNext, tutorialPrev, closeTutorial } from './tutorial.js';
@@ -194,6 +194,13 @@ function createInitialState() {
     startPositions.push({ col: fc.col, row: fc.row });
   }
   const tribalVillages = placeTribalVillages(map, startPositions);
+
+  // Upgrade barbarian types based on supertype (first type sharing class, or warrior if nonesuch)
+  BARBARIAN_UNITS.forEach((type) => {
+    const ut = { ...UNIT_TYPES[type] };
+    const st = UNIT_TYPES.find(t => t.class === ut.class && !BARBARIAN_UNITS.includes(t)) || UNIT_TYPES['warrior'];
+    Object.assign(UNIT_TYPES[type], st, ut);
+  });
 
   // Player starts with 4 units (no pre-founded city — settler lets player choose)
   const startingUnits = [];

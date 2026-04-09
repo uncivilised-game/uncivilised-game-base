@@ -66,7 +66,22 @@ export let UNIT_TYPES = {
   ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
   galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
   phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
+
+  // barbarians - inherit values from first type above sharing their class, or warrior if no match
+  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee',   desc: 'Basic barbarian raider' },
+  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast mounted raider, +3 move',    special: 'pillage', movePoints: 3 },
+  berserker:         { name: 'Berserker',         combat: 30, icon: '\u{1F4A2}', class: 'melee',   desc: '+50% attack but -25% defense',    special: 'frenzy' },
+  war_drummer:       { name: 'War Drummer',       combat: 10, icon: '\u{1F941}', class: 'support', desc: 'Adjacent allies +5 combat',       special: 'inspire' },
+  shaman:            { name: 'Shaman',            combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
 };
+
+export const BARBARIAN_UNITS = [
+  'barbarian_warrior',
+  'horse_raider',
+  'berserker',
+  'war_drummer',
+  'shaman',
+];
 
 // ============================================
 // ZONE OF CONTROL — civilian units don't project ZOC (but are still affected by it)
@@ -552,14 +567,6 @@ export const WONDER_PRIORITIES = {
     hanging_gardens: 1.0, oracle: 0.9, great_library: 0.7,
     pyramids: 0.5, petra: 0.4, colossus: 0.3, terracotta_army: 0.2, great_lighthouse: 0.5,
   },
-};
-
-export const BARBARIAN_UNITS = {
-  barbarian_warrior: { name: 'Barbarian Warrior', combat: 20, icon: '\u{1F9D4}', class: 'melee', desc: 'Basic barbarian raider' },
-  horse_raider:      { name: 'Horse Raider',      combat: 28, icon: '\u{1F40E}', class: 'cavalry', desc: 'Fast mounted raider, +3 move', movePoints: 3, special: 'pillage' },
-  berserker:         { name: 'Berserker',          combat: 30, icon: '\u{1F4A2}', class: 'melee', desc: '+50% attack but -25% defense', special: 'frenzy' },
-  war_drummer:       { name: 'War Drummer',        combat: 10, icon: '\u{1F941}', class: 'support', desc: 'Adjacent allies +5 combat', special: 'inspire' },
-  shaman:            { name: 'Shaman',             combat: 8,  icon: '\u{1F9D9}', class: 'support', desc: 'Heals adjacent units 10 HP/turn', special: 'heal_aura' },
 };
 
 export const UNREST = {
