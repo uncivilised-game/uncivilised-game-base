@@ -411,7 +411,6 @@ async function launchGame(playerName) {
   if (playerName) await registerActiveGame(playerName);
   await autoSave();
 }
-}
 
 async function continueGame() {
   const playerName = safeStorage.getItem('uncivilised_username');
