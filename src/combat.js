@@ -323,6 +323,7 @@ function attackFactionCity(attacker, factionId) {
     type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
   }, (tactic) => {
+    if (tactic === 'cancel') return;
     if (tactic === 'retreat') {
       attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
       addEvent('Withdrew from ' + factionName + '\'s city', 'combat');
@@ -401,6 +402,7 @@ function attackExpansionCity(attacker, factionId, cityIdx) {
     type: 'city_garrison', hp: ec.hp || CITY_DEFENSE.BASE_HP, col: ec.col, row: ec.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
   }, (tactic) => {
+    if (tactic === 'cancel') return;
     if (tactic === 'retreat') {
       attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
       addEvent('Withdrew from ' + ec.name, 'combat');
@@ -1089,6 +1091,10 @@ function showBattlePanel(attacker, defender, onChoice) {
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
           <span>Withdraw without fighting. Unit loses 1 move point.</span>
+        </button>
+        <button class="battle-tactic battle-tactic-cancel" data-tactic="cancel">
+          <strong>\u{2715} Cancel</strong>
+          <span>Return to map. No action taken.</span>
         </button>
       </div>
     </div>

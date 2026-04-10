@@ -671,6 +671,7 @@ function handleHexClick(col, row) {
           }
           // Show tactical battle panel for player attacks
           showBattlePanel(unit, target, (tactic) => {
+            if (tactic === 'cancel') return;
             const tacticResult = applyTacticModifier(tactic, 0, 0, unit, target);
             if (tacticResult.retreat) {
               unit.moveLeft = Math.max(0, unit.moveLeft - 1);
