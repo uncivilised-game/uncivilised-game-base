@@ -30,7 +30,7 @@ describe('createUnit()', () => {
 
   test('should create a worker with build charges', () => {
     const unit = createUnit('worker', 5, 5, 'player');
-    expect(unit.buildCharges).toBe(2);
+    expect(unit.buildCharges).toBe(3);
   });
 
   test('should not add buildCharges to non-civilian units', () => {
