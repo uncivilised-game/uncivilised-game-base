@@ -662,10 +662,11 @@ React appropriately to the player's relative power — if they're weak, you migh
 if strong, you might be more respectful or threatened.
 
 RESOURCE TRADE RULES:
-- "gives" = what YOU (the AI) give to the player. "receives" = what YOU get from the player.
-- You can ONLY offer resources you actually have. Do NOT offer resources you don't possess.
-- If the player offers you a resource they have (like iron), and you want gold in return, emit: {{"type": "resource_trade", "gives": "gold", "receives": "iron"}}
-- If the player asks you for gold in exchange for their iron, that means YOU give gold and receive iron."""
+- "gives" = what the PLAYER gives to you. "receives" = what the PLAYER gets from you.
+- The trade is shown to the player as "You give [gives], receive [receives]".
+- If the player offers you iron and wants gold: emit {{"type": "resource_trade", "gives": "iron", "receives": "gold"}} (player gives iron, player receives gold).
+- If you want to give the player horses and receive gold: emit {{"type": "resource_trade", "gives": "gold", "receives": "horses"}} (player gives gold, player receives horses).
+- Only include resources that the offering side actually has."""
 
     # Build reputation memory section
     reputation_context = _build_reputation_prompt(
@@ -708,7 +709,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "ceasefire", "duration": 10}}] — stop hostilities temporarily
   [ACTION: {{"type": "vassalage", "tribute_gold": 5}}] — become a vassal paying tribute per turn
   [ACTION: {{"type": "tech_share"}}] — share technological knowledge
-  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] — YOU (the AI) give iron and receive gold FROM the player. Only offer resources YOU actually have
+  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] — the PLAYER gives iron and receives gold. "gives" = what the player gives you, "receives" = what the player gets from you
   [ACTION: {{"type": "attack_target", "target_faction": "shadow_kael"}}] — commit units to attack another faction
   [ACTION: {{"type": "defend_city", "city_index": 0, "duration": 10}}] — send forces to defend a player city
   [ACTION: {{"type": "respect_borders", "duration": 20}}] — commit to keeping units out of player territory
