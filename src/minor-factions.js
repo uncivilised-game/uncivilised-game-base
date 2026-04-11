@@ -2,7 +2,7 @@ import { MAP_COLS, MAP_ROWS, BASE_TERRAIN, UNIT_TYPES, RESOURCES, TECHNOLOGIES, 
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { isTilePassable } from './map.js';
-import { createUnit } from './units.js';
+import { createUnit, boostFactionReputation } from './units.js';
 import { addEvent, logAction, showToast } from './events.js';
 import { render } from './render.js';
 import { revealAround } from './discovery.js';
@@ -229,9 +229,15 @@ function interactWithBarbarianCamp(campId) {
     }
   }
 
-  // 7. Raid / Attack — direct combat
-  html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','attack')">`;
-  html += `\u{1F525} Attack Camp — Destroy and loot (need adjacent unit)</button>`;
+  // 7. Raid / Attack — direct combat or instant destroy if unit is on camp
+  const unitOnCamp = game.units.find(u => u.owner === 'player' && u.col === bc.col && u.row === bc.row && UNIT_TYPES[u.type]?.combat > 0);
+  if (unitOnCamp) {
+    html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','destroy_camp')">`;
+    html += `\u{1F525} Destroy Camp — Raze and loot (+100g)</button>`;
+  } else {
+    html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','attack')">`;
+    html += `\u{1F525} Attack Camp — Destroy and loot (need adjacent unit)</button>`;
+  }
 
   html += '</div>';
   body.innerHTML = html;
@@ -395,6 +401,21 @@ window.barbCampAction = function(campId, action) {
         addEvent(`Your ${attackerType.name} was killed attacking the camp!`, 'combat');
       }
       bc.disposition -= 15; // Attacking makes them hostile
+      break;
+    }
+    case 'destroy_camp': {
+      // Instant destroy — unit is standing on the camp
+      bc.destroyed = true;
+      const lootGold = 100;
+      game.gold += lootGold;
+      game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 2));
+      if (bc.id && bc.id.startsWith('rebel_')) {
+        game.rebellionsSuppressed = (game.rebellionsSuppressed || 0) + 1;
+        addEvent('Rebellion suppressed! Other cities are less likely to revolt.', 'combat');
+      }
+      addEvent(`\u{1F525} Barbarian camp destroyed! +${lootGold}g looted.`, 'combat');
+      showToast('Camp Destroyed', 'Your warriors razed the barbarian camp! +100g');
+      boostFactionReputation(bc.col, bc.row, 'barbarian camp');
       break;
     }
     default: {
