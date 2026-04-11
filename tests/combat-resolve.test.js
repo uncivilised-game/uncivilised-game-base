@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { resolveCombat, checkCityCapture, captureFactionCity, eliminateFaction, razeCity, aiCapturePlayerCity } from '../src/combat.js';
+import { resolveCombat, checkCityCapture, captureFactionCity, eliminateFaction, razeCity, aiCapturePlayerCity, barbarianRazeAICity } from '../src/combat.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
 describe('resolveCombat()', () => {
@@ -432,5 +432,69 @@ describe('aiCapturePlayerCity()', () => {
     const aiCities = state.aiFactionCities.faction_a || [];
     // No crash — result depends on random roll
     expect(state.population).toBeLessThanOrEqual(500);
+  });
+});
+
+describe('barbarianRazeAICity()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  test('barbarians should raze an AI faction capital', () => {
+    state.factionCities = {
+      faction_a: { name: 'EnemyCapital', col: 5, row: 5, hp: 100, color: '#f00', borderRadius: 2 },
+    };
+    state.barbarianCamps = [{ id: 'camp1', col: 7, row: 7, destroyed: false, strength: 5, gold: 0 }];
+
+    const razed = barbarianRazeAICity(5, 5);
+
+    expect(razed).toBe(true);
+    expect(state.factionCities.faction_a).toBeUndefined();
+    // Plunder gold should go to nearest camp
+    expect(state.barbarianCamps[0].gold).toBeGreaterThan(0);
+  });
+
+  test('barbarians should raze an AI expansion city', () => {
+    // Faction keeps its capital so elimination doesn't fire
+    state.factionCities = {
+      faction_b: { name: 'Capital', col: 20, row: 20, hp: 100, color: '#0f0', borderRadius: 2 },
+    };
+    state.aiFactionCities = {
+      faction_b: [{ name: 'Outpost', col: 8, row: 8, hp: 0, color: '#0f0', borderRadius: 1, population: 500 }],
+    };
+    state.barbarianCamps = [{ id: 'camp2', col: 10, row: 10, destroyed: false, strength: 5, gold: 0 }];
+
+    const razed = barbarianRazeAICity(8, 8);
+
+    expect(razed).toBe(true);
+    expect(state.aiFactionCities.faction_b).toHaveLength(0);
+    expect(state.barbarianCamps[0].gold).toBeGreaterThan(0);
+  });
+
+  test('should return false when no city at location', () => {
+    state.factionCities = {};
+    state.aiFactionCities = {};
+
+    const razed = barbarianRazeAICity(5, 5);
+
+    expect(razed).toBe(false);
+  });
+
+  test('should eliminate faction when last city is razed', () => {
+    state.factionCities = {
+      faction_a: { name: 'LastCity', col: 5, row: 5, hp: 100, color: '#f00', borderRadius: 2 },
+    };
+    state.aiFactionCities = { faction_a: [] };
+    state.barbarianCamps = [];
+    // Add a faction unit to verify elimination cleans up
+    state.units.push(makeUnit('warrior', 6, 6, 'faction_a'));
+
+    barbarianRazeAICity(5, 5);
+
+    expect(state.factionCities.faction_a).toBeUndefined();
+    // Faction units should be removed by eliminateFaction
+    expect(state.units.filter(u => u.owner === 'faction_a')).toHaveLength(0);
   });
 });

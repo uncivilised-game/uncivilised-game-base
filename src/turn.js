@@ -14,7 +14,7 @@ import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from 
 import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
-import { getUnitAt, processZOCCaptures, resolveCombat, isAtWarWith } from './combat.js';
+import { getUnitAt, processZOCCaptures, barbarianRazeAICity, resolveCombat, isAtWarWith } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
@@ -435,6 +435,10 @@ function endTurn() {
   try {
     processZOCCaptures();
   } catch (e) { console.error('Error in processZOCCaptures:', e); }
+  // Barbarians on AI city tiles — raze and pillage
+  try {
+    processBarbarianCityRazes();
+  } catch (e) { console.error('Error in processBarbarianCityRazes:', e); }
   try {
     processAIWonderTurns();
   } catch (e) { console.error('Error in processAIWonderTurns:', e); }
@@ -1412,6 +1416,22 @@ function showGameOver(victory) {
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
   document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
+}
+
+// ============================================
+// BARBARIAN CITY RAZING
+// ============================================
+// Each turn, check if any barbarian units are sitting on AI faction cities
+// and raze them. This handles cases where barbarians moved onto city tiles
+// via the diplomacy plugin or other means without going through resolveCombat.
+
+function processBarbarianCityRazes() {
+  const barbUnits = game.units.filter(u => u.owner === 'barbarian' || (u.owner && u.owner.startsWith && u.owner.startsWith('barbarian')));
+  for (const unit of barbUnits) {
+    const ut = UNIT_TYPES[unit.type];
+    if (!ut || ut.combat <= 0) continue; // only military units raze
+    barbarianRazeAICity(unit.col, unit.row);
+  }
 }
 
 // ============================================
