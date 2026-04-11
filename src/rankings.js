@@ -50,7 +50,7 @@ export function renderRankingsDropdown(data) {
     const rc = rel !== null ? (rel > 20 ? 'rel-friendly' : rel < -20 ? 'rel-hostile' : 'rel-neutral') : '';
     const traits = !e.isPlayer && FACTION_TRAITS[e.factionId] ? FACTION_TRAITS[e.factionId] : null;
     const arc = traits ? (arcIcons[traits.archetype] || '') : '';
-    html += '<div class="rdd-row ' + (e.isPlayer ? 'rdd-player' : '') + '" ' + (!e.isPlayer ? 'onclick="togglePanel(\'diplomacy-panel\')"' : '') + '>';
+    html += '<div class="rdd-row ' + (e.isPlayer ? 'rdd-player' : '') + '" ' + (!e.isPlayer ? 'onclick="openChat(\'' + e.factionId + '\')"' : '') + ' style="cursor:' + (e.isPlayer ? 'default' : 'pointer') + '">';
     html += '<span class="rdd-pos">' + (i+1) + '</span>';
     html += '<span class="rdd-color" style="background:' + (e.color || 'var(--color-gold)') + '"></span>';
     html += '<span class="rdd-name">' + (e.isPlayer ? '\u{1F451} ' : '') + e.name + '</span>';
