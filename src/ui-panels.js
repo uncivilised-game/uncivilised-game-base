@@ -1195,7 +1195,7 @@ function purchaseDistrict(districtId) {
   placePlayerDistrict(districtId, target);
   addEvent(dd.icon + ' ' + dd.name + ' district purchased and placed!', 'gold');
   if (typeof showToast === 'function') showToast('\u{1F3D8} District Placed', dd.name + ' purchased with gold!');
-  updateUI(); renderBuildPanel();
+  updateUI(); renderBuildPanel(); render();
 }
 
 /** Place a completed player district on the map and apply yields. */
