@@ -1581,15 +1581,21 @@ function canAIFoundCityAt(col, row, fid) {
   // Cannot found city in another faction's or the player's territory
   const owner = getTileOwner(col, row);
   if (owner && owner !== fid) return false;
+  // Must be far enough from any existing city (use max potential border to prevent
+  // the AI settling just outside current borders that will grow to engulf the city)
+  const MIN_DIST_OWN = 4;     // minimum distance from own cities
+  const MIN_DIST_OTHER = 6;   // minimum distance from other factions' cities (accounts for border growth)
   for (const city of game.cities) {
-    if (hexDistance(col, row, city.col, city.row) < 4) return false;
+    if (hexDistance(col, row, city.col, city.row) < MIN_DIST_OTHER) return false;
   }
-  for (const fc of Object.values(game.factionCities)) {
-    if (hexDistance(col, row, fc.col, fc.row) < 4) return false;
+  for (const [cfid, fc] of Object.entries(game.factionCities)) {
+    const minDist = cfid === fid ? MIN_DIST_OWN : MIN_DIST_OTHER;
+    if (hexDistance(col, row, fc.col, fc.row) < minDist) return false;
   }
-  for (const cities of Object.values(game.aiFactionCities || {})) {
+  for (const [cfid, cities] of Object.entries(game.aiFactionCities || {})) {
+    const minDist = cfid === fid ? MIN_DIST_OWN : MIN_DIST_OTHER;
     for (const ec of cities) {
-      if (hexDistance(col, row, ec.col, ec.row) < 4) return false;
+      if (hexDistance(col, row, ec.col, ec.row) < minDist) return false;
     }
   }
   return true;

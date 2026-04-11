@@ -308,13 +308,17 @@ export function canFoundCityAt(col, row) {
   // Cannot found city in enemy territory
   const owner = getTileOwner(col, row);
   if (owner && owner !== 'player') return false;
-  // Must be 4+ hexes from any existing city
+  // Must be 4+ hexes from own cities, 6+ from foreign cities (border growth buffer)
   for (const city of game.cities) {
     if (hexDistance(col, row, city.col, city.row) < 4) return false;
   }
-  // Must be 4+ hexes from faction cities
-  for (const fc of Object.values(game.factionCities)) {
-    if (hexDistance(col, row, fc.col, fc.row) < 4) return false;
+  for (const [fid, fc] of Object.entries(game.factionCities || {})) {
+    if (hexDistance(col, row, fc.col, fc.row) < 6) return false;
+  }
+  for (const cities of Object.values(game.aiFactionCities || {})) {
+    for (const ec of cities) {
+      if (hexDistance(col, row, ec.col, ec.row) < 6) return false;
+    }
   }
   return true;
 }
