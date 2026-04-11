@@ -653,11 +653,19 @@ CURRENT GAME STATE:
 - Active Trade Deals: {gs.get('trade_deals', {}).get(msg.character_id, 'none')}
 - Marriage Bonds: {gs.get('marriages', {}).get(msg.character_id, 'none')}
 - Mutual Defense Pacts: {gs.get('defense_pacts', {}).get(msg.character_id, 'none')}
+- Player's Resources: {', '.join(gs.get('player_resources', ['unknown']))}
+- Your Resources (AI faction): {', '.join(gs.get('ai_resources', {}).get(msg.character_id, ['unknown']))}
 - Recent Events: {', '.join(gs.get('recent_events', ['none']))}
 
 Use this information to inform your responses. Reference specific numbers when relevant.
 React appropriately to the player's relative power — if they're weak, you might be dismissive;
-if strong, you might be more respectful or threatened."""
+if strong, you might be more respectful or threatened.
+
+RESOURCE TRADE RULES:
+- "gives" = what YOU (the AI) give to the player. "receives" = what YOU get from the player.
+- You can ONLY offer resources you actually have. Do NOT offer resources you don't possess.
+- If the player offers you a resource they have (like iron), and you want gold in return, emit: {{"type": "resource_trade", "gives": "gold", "receives": "iron"}}
+- If the player asks you for gold in exchange for their iron, that means YOU give gold and receive iron."""
 
     # Build reputation memory section
     reputation_context = _build_reputation_prompt(
@@ -700,7 +708,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "ceasefire", "duration": 10}}] — stop hostilities temporarily
   [ACTION: {{"type": "vassalage", "tribute_gold": 5}}] — become a vassal paying tribute per turn
   [ACTION: {{"type": "tech_share"}}] — share technological knowledge
-  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] — specific resource exchange
+  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] — YOU (the AI) give iron and receive gold FROM the player. Only offer resources YOU actually have
   [ACTION: {{"type": "attack_target", "target_faction": "shadow_kael"}}] — commit units to attack another faction
   [ACTION: {{"type": "defend_city", "city_index": 0, "duration": 10}}] — send forces to defend a player city
   [ACTION: {{"type": "respect_borders", "duration": 20}}] — commit to keeping units out of player territory
