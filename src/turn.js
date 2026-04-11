@@ -454,6 +454,8 @@ function endTurn() {
   } catch (e) { console.error('Error in AI diplomacy:', e); }
 
   // --- Eject any units trespassing after diplomacy changes (peace, expired borders) ---
+  // NOTE: A second, final ejection pass runs later (after AI unit spawning)
+  // to catch any units placed during the player-phase AI processing.
   try {
     ejectTrespassingUnits();
   } catch (e) { console.error('Error ejecting trespassing units:', e); }
@@ -1112,6 +1114,9 @@ function endTurn() {
   // --- AI worker auto-improve & settler auto-found ---
   processAIWorkerImprovements();
 
+  // --- Final trespass ejection — catches units spawned or moved during late AI processing ---
+  ejectTrespassingUnits();
+
   // --- Embassy turn processing (gossip accumulation) ---
   ensureEmbassyState();
   processEmbassyTurn();
@@ -1491,14 +1496,18 @@ function processAIUnitSpawning() {
 
 function findSpawnTile(col, row, factionId) {
   const neighbors = getHexNeighbors(col, row);
+  // Prefer tiles in own territory; fall back to unclaimed
+  let fallback = null;
   for (const nb of neighbors) {
     const tile = game.map[nb.row]?.[nb.col];
     if (!tile) continue;
     if (!isTilePassable(tile)) continue;
     if (getUnitAt(nb.col, nb.row)) continue;
-    return nb;
+    const owner = getTileOwner(nb.col, nb.row);
+    if (owner === factionId) return nb; // own territory — ideal
+    if (!owner && !fallback) fallback = nb; // unclaimed — acceptable
   }
-  return null;
+  return fallback;
 }
 
 // ============================================
