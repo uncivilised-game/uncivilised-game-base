@@ -466,59 +466,106 @@ function render() {
         ctx.textBaseline = 'alphabetic';
       }
 
-      // City territory with cultural borders (merged across all player cities)
+      // Unified territory rendering — each hex belongs to exactly one owner
       {
-        const inPlayerTerritory = game.cities.some(city =>
-          hexDistance(c, r, city.col, city.row) <= (city.borderRadius || 2)
-        );
-        if (inPlayerTerritory) {
-          drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          ctx.fillStyle = 'rgba(201,168,76,0.06)';
-          ctx.fill();
-          // Only draw border edge if the neighbor is outside ALL player cities
-          const nbs = getHexNeighbors(c, r);
-          for (const nb of nbs) {
-            const nbInPlayerTerritory = game.cities.some(city =>
-              hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
-            );
-            if (!nbInPlayerTerritory) {
-              const nbPos = hexToPixel(nb.col, nb.row);
-              const edx = (nbPos.x - (sx + camX)) * 0.48;
-              const edy = (nbPos.y - (sy + camY)) * 0.48;
-              ctx.strokeStyle = 'rgba(201,168,76,0.6)';
-              ctx.lineWidth = 2.5;
-              ctx.beginPath();
-              ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
-              ctx.lineTo(sx + edx + edy * 0.5, sy + edy - edx * 0.5);
-              ctx.stroke();
+        // Find the exclusive owner of this hex (closest city by culture strength)
+        let hexOwner = null, hexColor = null, bestClaim = 0;
+        // Player cities
+        for (const city of game.cities) {
+          const d = hexDistance(c, r, city.col, city.row);
+          const br = city.borderRadius || 2;
+          if (d <= br) {
+            const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
+            if (claim > bestClaim) { bestClaim = claim; hexOwner = 'player'; hexColor = 'rgba(201,168,76,'; }
+          }
+        }
+        // Faction cities (capital + expansion)
+        for (const [fid, fc] of Object.entries(game.factionCities)) {
+          if (!fc.color) continue;
+          const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
+          for (const city of allCities) {
+            const d = hexDistance(c, r, city.col, city.row);
+            const br = city.borderRadius || 2;
+            if (d <= br) {
+              const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
+              if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = fc.color; }
             }
           }
         }
-      }
+        // Also check expansion cities of factions without a capital
+        if (game.aiFactionCities) {
+          for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+            if (game.factionCities[fid]) continue; // already checked above
+            for (const city of cities) {
+              const d = hexDistance(c, r, city.col, city.row);
+              const br = city.borderRadius || 1;
+              if (d <= br) {
+                const claim = (br - d + 1);
+                if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = city.color || '#888'; }
+              }
+            }
+          }
+        }
 
-      // Faction territory with borders (merged across capital + expansion cities per faction)
-      for (const [fid, fc] of Object.entries(game.factionCities)) {
-        if (!fc.color) continue;
-        // Collect all cities for this faction (capital + expansions)
-        const allFactionCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
-        const inFactionTerritory = allFactionCities.some(city =>
-          hexDistance(c, r, city.col, city.row) <= (city.borderRadius || 2)
-        );
-        if (inFactionTerritory) {
+        if (hexOwner) {
+          // Territory fill
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          ctx.fillStyle = hexToRgba(fc.color, 0.05);
+          if (hexOwner === 'player') {
+            ctx.fillStyle = 'rgba(201,168,76,0.06)';
+          } else {
+            ctx.fillStyle = hexToRgba(hexColor, 0.05);
+          }
           ctx.fill();
-          // Only draw border edge if neighbor is outside ALL of this faction's cities
+
+          // Border edges — draw where neighbor has a different owner
           const nbs = getHexNeighbors(c, r);
           for (const nb of nbs) {
-            const nbInFactionTerritory = allFactionCities.some(city =>
-              hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
-            );
-            if (!nbInFactionTerritory) {
+            // Compute neighbor's owner using same logic
+            let nbOwner = null, nbBest = 0;
+            for (const city of game.cities) {
+              const d = hexDistance(nb.col, nb.row, city.col, city.row);
+              const br = city.borderRadius || 2;
+              if (d <= br) {
+                const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
+                if (claim > nbBest) { nbBest = claim; nbOwner = 'player'; }
+              }
+            }
+            for (const [fid, fc] of Object.entries(game.factionCities)) {
+              if (!fc.color) continue;
+              const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
+              for (const city of allCities) {
+                const d = hexDistance(nb.col, nb.row, city.col, city.row);
+                const br = city.borderRadius || 2;
+                if (d <= br) {
+                  const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
+                  if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
+                }
+              }
+            }
+            if (game.aiFactionCities) {
+              for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+                if (game.factionCities[fid]) continue;
+                for (const city of cities) {
+                  const d = hexDistance(nb.col, nb.row, city.col, city.row);
+                  const br = city.borderRadius || 1;
+                  if (d <= br) {
+                    const claim = (br - d + 1);
+                    if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
+                  }
+                }
+              }
+            }
+
+            // Draw border if neighbor is different owner (or unclaimed)
+            if (nbOwner !== hexOwner) {
               const nbPos = hexToPixel(nb.col, nb.row);
               const edx = (nbPos.x - (sx + camX)) * 0.48;
               const edy = (nbPos.y - (sy + camY)) * 0.48;
-              ctx.strokeStyle = hexToRgba(fc.color, 0.6);
+              if (hexOwner === 'player') {
+                ctx.strokeStyle = 'rgba(201,168,76,0.6)';
+              } else {
+                ctx.strokeStyle = hexToRgba(hexColor, 0.6);
+              }
               ctx.lineWidth = 2.5;
               ctx.beginPath();
               ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
@@ -660,44 +707,8 @@ function render() {
         if (game.visibleTiles && !(game.visibleTiles[aic.row] && game.visibleTiles[aic.row][aic.col])) continue;
         const ap = hexToPixel(aic.col, aic.row);
         const ax = ap.x - camX, ay = ap.y - camY;
-        // Territory (merged with same faction's other cities — borders handled in faction pass above)
-        const br = aic.borderRadius || 1;
+        // Territory fill/borders handled by unified per-hex system above
         const aColor = aic.color || '#888';
-        // Collect all cities for this faction
-        const allFidCities = [
-          ...(game.factionCities?.[fid] ? [game.factionCities[fid]] : []),
-          ...(game.aiFactionCities?.[fid] || []),
-        ];
-        for (let dr = -br; dr <= br; dr++) {
-          for (let dc = -br; dc <= br; dc++) {
-            const nr = aic.row + dr, nc = ((aic.col + dc) % MAP_COLS + MAP_COLS) % MAP_COLS;
-            if (nr < 0 || nr >= MAP_ROWS || hexDistance(nc, nr, aic.col, aic.row) > br) continue;
-            const bp = hexToPixel(nc, nr);
-            const bx = bp.x - camX, by = bp.y - camY;
-            ctx.fillStyle = hexToRgba(aColor, 0.05);
-            drawHex(ctx, bx, by, HEX_SIZE - 1); ctx.fill();
-            // Border edge segments — only if neighbor is outside ALL faction cities
-            if (hexDistance(nc, nr, aic.col, aic.row) === br) {
-              const nbs = getHexNeighbors(nc, nr);
-              for (const nb of nbs) {
-                const nbInFaction = allFidCities.some(city =>
-                  hexDistance(nb.col, nb.row, city.col, city.row) <= (city.borderRadius || 2)
-                );
-                if (!nbInFaction) {
-                  const nbPos = hexToPixel(nb.col, nb.row);
-                  const edx = (nbPos.x - (bx + camX)) * 0.48;
-                  const edy = (nbPos.y - (by + camY)) * 0.48;
-                  ctx.strokeStyle = hexToRgba(aColor, 0.6);
-                  ctx.lineWidth = 2.5;
-                  ctx.beginPath();
-                  ctx.moveTo(bx + edx - edy * 0.5, by + edy + edx * 0.5);
-                  ctx.lineTo(bx + edx + edy * 0.5, by + edy - edx * 0.5);
-                  ctx.stroke();
-                }
-              }
-            }
-          }
-        }
         // Faction ownership ring
         drawFactionRing(ctx, ax, ay, aColor);
         // Settlement sprite (based on population)
