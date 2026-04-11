@@ -1095,8 +1095,8 @@ function render() {
     // Unit vertical offset — shift down to avoid overlapping city icons
     let uy = sy + 12;
 
-    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
-    const isCiv = ut.class === 'civilian';
+    // Stacking offset: if a non-combat unit shares a tile with a military unit, offset the non-combat unit
+    const isCiv = ut.class === 'civilian' || ut.class === 'great_person';
     const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
     if (stackPartner && isCiv) {
       sx += 12;

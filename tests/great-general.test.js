@@ -1,5 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { attachToArmy, detachFromArmy, coordinatedAttack, getGeneralCapacity } from '../src/units.js';
+import { attachToArmy, detachFromArmy, coordinatedAttack, getGeneralCapacity, releaseGeneralArmy } from '../src/units.js';
+import { processZOCCaptures, resolveCombat } from '../src/combat.js';
+import { isInEnemyZOC } from '../src/units.js';
 import { setupGameState, makeUnit } from './fixtures.js';
 
 describe('Great General — Army Mechanics', () => {
@@ -151,5 +153,120 @@ describe('Great General — Army Mechanics', () => {
 
       expect(result).toBe(false);
     });
+  });
+});
+
+describe('Great General — ZOC and class', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  function makeGeneral(overrides = {}) {
+    return makeUnit({
+      id: 100, type: 'great_general', col: 5, row: 5, owner: 'player',
+      combat: 0, moveLeft: 3, army: [], armyCapacity: 3, xp: 0,
+      ...overrides,
+    });
+  }
+
+  test('Great General should not project ZOC', () => {
+    const general = makeGeneral({ owner: 'faction_a', col: 10, row: 10 });
+    state.units = [general];
+
+    // A unit adjacent to an enemy Great General should NOT be in ZOC
+    expect(isInEnemyZOC(11, 10, 'player')).toBe(false);
+  });
+
+  test('Great General should not be captured in ZOC even during war', () => {
+    const general = makeGeneral({ col: 10, row: 10, owner: 'player' });
+    const enemyWarrior = makeUnit({ id: 2, col: 11, row: 10, type: 'warrior', owner: 'faction_a' });
+    state.units = [general, enemyWarrior];
+    state.wars = [{ attacker: 'player', defender: 'faction_a' }];
+
+    processZOCCaptures();
+
+    // Great General should still be on the map, not captured or killed
+    expect(state.units.find(u => u.id === 100)).toBeDefined();
+  });
+
+  test('Great General with attached units should survive ZOC (units not lost)', () => {
+    const general = makeGeneral({
+      col: 10, row: 10, owner: 'player',
+      army: [{ id: 10, type: 'warrior', hp: 100, xp: 0, combat: 20, promotions: [], level: 1 }],
+    });
+    const enemyWarrior = makeUnit({ id: 2, col: 11, row: 10, type: 'warrior', owner: 'faction_a' });
+    state.units = [general, enemyWarrior];
+    state.wars = [{ attacker: 'player', defender: 'faction_a' }];
+
+    processZOCCaptures();
+
+    const survivingGeneral = state.units.find(u => u.id === 100);
+    expect(survivingGeneral).toBeDefined();
+    expect(survivingGeneral.army).toHaveLength(1);
+  });
+});
+
+describe('releaseGeneralArmy()', () => {
+  let state;
+
+  beforeEach(() => {
+    state = setupGameState();
+  });
+
+  function makeGeneral(overrides = {}) {
+    return makeUnit({
+      id: 100, type: 'great_general', col: 5, row: 5, owner: 'player',
+      combat: 0, moveLeft: 3, army: [], armyCapacity: 3, xp: 0,
+      ...overrides,
+    });
+  }
+
+  test('should release attached army units back onto the map', () => {
+    const general = makeGeneral({
+      army: [
+        { id: 10, type: 'warrior', hp: 80, xp: 5, combat: 20, promotions: [], level: 1 },
+        { id: 11, type: 'archer', hp: 60, xp: 2, combat: 15, promotions: [], level: 1 },
+      ],
+    });
+    state.units = [general];
+
+    releaseGeneralArmy(general);
+
+    expect(state.units.find(u => u.id === 10)).toBeDefined();
+    expect(state.units.find(u => u.id === 11)).toBeDefined();
+    expect(general.army).toHaveLength(0);
+  });
+
+  test('should preserve HP and XP of released units', () => {
+    const general = makeGeneral({
+      army: [{ id: 10, type: 'warrior', hp: 75, xp: 12, combat: 20, promotions: [], level: 2 }],
+    });
+    state.units = [general];
+
+    releaseGeneralArmy(general);
+
+    const released = state.units.find(u => u.id === 10);
+    expect(released.hp).toBe(75);
+    expect(released.xp).toBe(12);
+    expect(released.level).toBe(2);
+  });
+
+  test('should release army units when Great General is killed in combat', () => {
+    const attacker = makeUnit({ id: 1, col: 5, row: 6, type: 'warrior', owner: 'faction_a', hp: 100 });
+    const general = makeGeneral({
+      col: 5, row: 5, owner: 'player', hp: 1,
+      army: [{ id: 10, type: 'warrior', hp: 100, xp: 0, combat: 20, promotions: [], level: 1 }],
+    });
+    state.units = [attacker, general];
+    state.cities = [];
+
+    const result = resolveCombat(attacker, general);
+
+    expect(result.defenderDied).toBe(true);
+    expect(state.units.find(u => u.id === 100)).toBeUndefined();
+    // Army unit should be released, not lost
+    expect(state.units.find(u => u.id === 10)).toBeDefined();
   });
 });
