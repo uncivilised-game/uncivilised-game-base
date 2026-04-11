@@ -1308,6 +1308,19 @@ function processZOCCaptures() {
         if (zocUnit) { capturedBy = zocUnit.owner; break; }
       }
 
+      // Only capture during war — don't steal civilians during peacetime
+      if (capturedBy) {
+        const warCheck = capturedBy === 'player'
+          ? isAtWarWith(unit.owner)
+          : unit.owner === 'player'
+            ? isAtWarWith(capturedBy)
+            : (game.aiWars || []).some(w =>
+                (w.attacker === capturedBy && w.defender === unit.owner) ||
+                (w.attacker === unit.owner && w.defender === capturedBy)
+              );
+        if (!warCheck) continue;
+      }
+
       captured.push({ type: unit.type, prevOwner: unit.owner, col: unit.col, row: unit.row, capturedBy });
 
       // Transfer to capturing faction instead of deleting
