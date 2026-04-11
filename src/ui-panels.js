@@ -545,27 +545,50 @@ function renderUnitsPanel() {
 
   const playerUnits = game.units.filter(u => u.owner === 'player');
 
-  // Current units list
+  // Current units list — grouped by type
   if (playerUnits.length > 0) {
     const header = document.createElement('p');
     header.style.cssText = 'color:var(--color-text-muted); margin-bottom:8px; font-size:12px';
     header.textContent = `Your Forces (${playerUnits.length} units)`;
     container.appendChild(header);
 
+    // Group units by type
+    const grouped = {};
     for (const unit of playerUnits) {
-      const ut = UNIT_TYPES[unit.type];
+      if (!grouped[unit.type]) grouped[unit.type] = [];
+      grouped[unit.type].push(unit);
+    }
+
+    for (const [typeId, units] of Object.entries(grouped)) {
+      const ut = UNIT_TYPES[typeId];
+      if (!ut) continue;
+      const count = units.length;
+      const ready = units.filter(u => u.moveLeft > 0 && !u.sleeping && !u.fortified).length;
+      const wounded = units.filter(u => u.hp < 100).length;
+      const statusParts = [];
+      if (ready > 0) statusParts.push(ready + ' ready');
+      if (wounded > 0) statusParts.push(wounded + ' wounded');
+      const sleeping = units.filter(u => u.sleeping).length;
+      const fortified = units.filter(u => u.fortified).length;
+      if (sleeping > 0) statusParts.push(sleeping + ' \u{1F4A4}');
+      if (fortified > 0) statusParts.push(fortified + ' \u{1F6E1}');
+
       const div = document.createElement('div');
       div.className = 'build-item';
+      div.style.cursor = 'pointer';
       div.innerHTML = `
         <div class="item-info">
-          <div class="item-name">${ut.icon} ${ut.name} ${unit.fortified ? '\u{1F6E1}' : ''} ${unit.sleeping ? '\u{1F4A4}' : ''}</div>
-          <div class="item-desc">HP: ${unit.hp}% | Moves: ${unit.moveLeft}/${ut.movePoints} | Combat: ${ut.combat}</div>
+          <div class="item-name">${ut.icon} ${ut.name}${count > 1 ? ' \u00D7' + count : ''}</div>
+          <div class="item-desc">${statusParts.length ? statusParts.join(' \u00B7 ') : 'Idle'} | Combat: ${ut.combat}</div>
         </div>
         <div class="item-cost" style="color:#c9a84c">${ut.class}</div>
       `;
+      // Click cycles through units of this type
+      let clickIdx = 0;
       div.addEventListener('click', () => {
         closeAllPanels();
-        selectUnit(unit);
+        selectUnit(units[clickIdx % units.length]);
+        clickIdx++;
       });
       container.appendChild(div);
     }
