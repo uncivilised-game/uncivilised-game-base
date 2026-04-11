@@ -321,16 +321,18 @@ function endTurn() {
   const events = [];
 
   // --- Reset player unit move points and process waypoints ---
-  // Done BEFORE AI processing so an AI error can't block player movement reset
+  // Reset movement for ALL units (player + AI)
   for (const unit of game.units) {
-    if (unit.owner !== 'player') continue;
     const ut = UNIT_TYPES[unit.type];
-    const didIdleLastTurn = unit.moveLeft === ut.movePoints;
-    unit.moveLeft = ut.movePoints;
-    unit.hasAttackedThisTurn = false;
+    if (!ut) continue;
 
-    // Process multi-turn waypoint movement
-    if (unit.waypoint && !unit.sleeping && !unit.fortified) {
+    if (unit.owner === 'player') {
+      const didIdleLastTurn = unit.moveLeft === ut.movePoints;
+      unit.moveLeft = ut.movePoints;
+      unit.hasAttackedThisTurn = false;
+
+      // Process multi-turn waypoint movement
+      if (unit.waypoint && !unit.sleeping && !unit.fortified) {
       processUnitWaypoint(unit);
     }
 
@@ -418,6 +420,13 @@ function endTurn() {
         unit.sleeping = false;
         addEvent(`${ut.name} woke up — ${wakeReason}`, 'combat');
       }
+    }
+    } else {
+      // AI unit — reset movement and attack flag
+      unit.moveLeft = ut.movePoints;
+      unit.hasAttackedThisTurn = false;
+      // AI units heal passively (+5 HP per turn)
+      if (unit.hp < 100) unit.hp = Math.min(100, unit.hp + 5);
     }
   }
 
@@ -1727,7 +1736,7 @@ function processAIMilitaryTurns() {
     }
   }
 
-  // 2. Move and fight — each AI military unit gets one action
+  // 2. Move and fight — each AI military unit uses all movement points
   const aiMilitary = game.units.filter(u =>
     u.owner !== 'player' && u.owner !== 'barbarian' &&
     UNIT_TYPES[u.type]?.combat > 0 && u.moveLeft > 0
@@ -1747,69 +1756,89 @@ function processAIMilitaryTurns() {
 
     if (enemies.length === 0) continue;
 
-    // Check for adjacent enemy units to attack
-    const neighbors = getHexNeighbors(unit.col, unit.row);
-    let attacked = false;
-    for (const nb of neighbors) {
-      const target = game.units.find(u =>
-        u.col === nb.col && u.row === nb.row && enemies.includes(u.owner) && u.hp > 0
-      );
-      if (target) {
-        resolveCombat(unit, target);
-        attacked = true;
-        break;
+    // Use all movement points — move and fight each step
+    let movesLeft = unit.moveLeft;
+    while (movesLeft > 0 && unit.hp > 0) {
+      movesLeft--;
+
+      // Check for adjacent enemy units to attack (military or civilian)
+      const neighbors = getHexNeighbors(unit.col, unit.row);
+      let attacked = false;
+      for (const nb of neighbors) {
+        const target = game.units.find(u =>
+          u.col === nb.col && u.row === nb.row && enemies.includes(u.owner)
+        );
+        if (target) {
+          resolveCombat(unit, target);
+          attacked = true;
+          unit.moveLeft = 0;
+          break;
+        }
       }
-    }
-    if (attacked || unit.hp <= 0) continue;
+      if (attacked) break;
 
-    // No adjacent enemy — move toward nearest enemy unit or city
-    let bestTarget = null, bestDist = Infinity;
+      // Find nearest enemy target (units, civilians, cities)
+      let bestTarget = null, bestDist = Infinity;
 
-    // Enemy units
-    for (const enemy of game.units) {
-      if (!enemies.includes(enemy.owner)) continue;
-      if (enemy.hp <= 0) continue;
-      const d = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
-      if (d < bestDist) { bestDist = d; bestTarget = { col: enemy.col, row: enemy.row }; }
-    }
-
-    // Enemy cities (player cities)
-    if (enemies.includes('player')) {
-      for (const city of game.cities) {
-        const d = hexDistance(unit.col, unit.row, city.col, city.row);
-        if (d < bestDist) { bestDist = d; bestTarget = { col: city.col, row: city.row }; }
+      // All enemy units (including workers/settlers)
+      for (const enemy of game.units) {
+        if (!enemies.includes(enemy.owner)) continue;
+        const d = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
+        if (d < bestDist) { bestDist = d; bestTarget = { col: enemy.col, row: enemy.row }; }
       }
-    }
 
-    // Enemy AI faction cities
-    for (const enemyFid of enemies) {
-      if (enemyFid === 'player') continue;
-      const fc = game.factionCities[enemyFid];
-      if (fc) {
-        const d = hexDistance(unit.col, unit.row, fc.col, fc.row);
-        if (d < bestDist) { bestDist = d; bestTarget = { col: fc.col, row: fc.row }; }
+      // Player cities
+      if (enemies.includes('player')) {
+        for (const city of game.cities) {
+          const d = hexDistance(unit.col, unit.row, city.col, city.row);
+          if (d < bestDist) { bestDist = d; bestTarget = { col: city.col, row: city.row }; }
+        }
       }
-      for (const ec of (game.aiFactionCities[enemyFid] || [])) {
-        const d = hexDistance(unit.col, unit.row, ec.col, ec.row);
-        if (d < bestDist) { bestDist = d; bestTarget = { col: ec.col, row: ec.row }; }
+
+      // Enemy AI faction cities (capitals + expansion)
+      for (const enemyFid of enemies) {
+        if (enemyFid === 'player') continue;
+        const fc = game.factionCities[enemyFid];
+        if (fc) {
+          const d = hexDistance(unit.col, unit.row, fc.col, fc.row);
+          if (d < bestDist) { bestDist = d; bestTarget = { col: fc.col, row: fc.row }; }
+        }
+        for (const ec of (game.aiFactionCities[enemyFid] || [])) {
+          const d = hexDistance(unit.col, unit.row, ec.col, ec.row);
+          if (d < bestDist) { bestDist = d; bestTarget = { col: ec.col, row: ec.row }; }
+        }
       }
-    }
 
-    if (!bestTarget) continue;
+      if (!bestTarget) break;
 
-    // Move one step toward the target
-    let closestNb = null, closestDist = bestDist;
-    for (const nb of neighbors) {
-      const tile = game.map[nb.row]?.[nb.col];
-      if (!tile || !isTilePassable(tile)) continue;
-      if (game.units.some(u => u.col === nb.col && u.row === nb.row && u.owner === fid)) continue;
-      const d = hexDistance(nb.col, nb.row, bestTarget.col, bestTarget.row);
-      if (d < closestDist) { closestDist = d; closestNb = nb; }
-    }
-    if (closestNb) {
-      unit.col = closestNb.col;
-      unit.row = closestNb.row;
-      unit.moveLeft--;
+      // Move one step toward the target
+      let closestNb = null, closestDist = bestDist;
+      for (const nb of neighbors) {
+        const tile = game.map[nb.row]?.[nb.col];
+        if (!tile || !isTilePassable(tile)) continue;
+        // Don't stack with own units
+        if (game.units.some(u => u.col === nb.col && u.row === nb.row && u.owner === fid)) continue;
+        const d = hexDistance(nb.col, nb.row, bestTarget.col, bestTarget.row);
+        if (d < closestDist) { closestDist = d; closestNb = nb; }
+      }
+      if (closestNb) {
+        unit.col = closestNb.col;
+        unit.row = closestNb.row;
+        unit.moveLeft = movesLeft;
+
+        // Pillage enemy improvements as we pass through
+        const tile = game.map[unit.row]?.[unit.col];
+        if (tile && tile.improvement) {
+          const tileOwner = getTileOwner(unit.col, unit.row);
+          if (tileOwner && enemies.includes(tileOwner)) {
+            const impName = TILE_IMPROVEMENTS[tile.improvement]?.name || tile.improvement;
+            tile.improvement = null;
+            addEvent(`${FACTIONS[fid]?.name || fid} pillaged ${impName}!`, 'combat');
+          }
+        }
+      } else {
+        break; // Can't move closer — stuck
+      }
     }
   }
 }
