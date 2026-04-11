@@ -33,10 +33,11 @@ function isCivilian(unit) {
 }
 
 /** Returns true if the moving unit can stack on a tile that already has `existing` on it.
- *  Rule: one military + one civilian of the same owner may share a tile. */
+ *  Rule: one military + one non-combat unit (civilian or great_person) of the same owner may share a tile. */
 function canStackWith(movingUnit, existingUnit) {
   if (movingUnit.owner !== existingUnit.owner) return false;       // must be same owner
-  if (isCivilian(movingUnit) === isCivilian(existingUnit)) return false; // can't stack two of same class
+  const isNonCombat = (u) => ZOC_EXEMPT_CLASSES.includes(UNIT_TYPES[u.type]?.class);
+  if (isNonCombat(movingUnit) === isNonCombat(existingUnit)) return false; // can't stack two of same class
   return true;
 }
 
@@ -1035,6 +1036,38 @@ function detachFromArmy(generalId, armyIdx) {
   return true;
 }
 
+/** Release all army units back onto the map when a general dies.
+ *  Each unit is placed on the general's tile or the nearest passable adjacent tile. */
+function releaseGeneralArmy(general) {
+  if (!general.army || general.army.length === 0) return;
+  for (const stored of general.army) {
+    const ut = UNIT_TYPES[stored.type];
+    if (!ut) continue;
+    const candidates = [{ col: general.col, row: general.row }, ...getHexNeighbors(general.col, general.row)];
+    let spawnTile = null;
+    for (const tile of candidates) {
+      const t = game.map[tile.row]?.[tile.col];
+      if (!t || !isTilePassable(t)) continue;
+      const occupied = game.units.filter(u => u.col === tile.col && u.row === tile.row);
+      if (occupied.length >= 2) continue;
+      if (occupied.length === 1 && !canStackWith({ owner: general.owner, type: stored.type }, occupied[0])) continue;
+      spawnTile = tile;
+      break;
+    }
+    if (!spawnTile) spawnTile = { col: general.col, row: general.row }; // fallback
+    const newUnit = createUnit(stored.type, spawnTile.col, spawnTile.row, general.owner);
+    newUnit.id = stored.id;
+    newUnit.hp = stored.hp;
+    newUnit.xp = stored.xp || 0;
+    newUnit.combat = stored.combat;
+    newUnit.promotions = stored.promotions || [];
+    newUnit.level = stored.level || 1;
+    newUnit.moveLeft = 0;
+    game.units.push(newUnit);
+  }
+  general.army = [];
+}
+
 /** Move the general and all army units together */
 function moveArmyTo(general, col, row, callback) {
   // Standard movement — the general moves, army travels with it
@@ -1151,5 +1184,6 @@ export {
   getGeneralCapacity,
   attachToArmy,
   detachFromArmy,
+  releaseGeneralArmy,
   coordinatedAttack,
 };
