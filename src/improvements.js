@@ -1,4 +1,4 @@
-import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES } from './constants.js';
+import { TILE_IMPROVEMENTS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, MAP_COLS, MAP_ROWS, UNIT_TYPES, FACTIONS } from './constants.js';
 import { game, CITY_WALL_DEFAULTS } from './state.js';
 import { hexDistance, getHexNeighbors } from './hex.js';
 import { getTileMoveCost, isTilePassable, hasRoadBridge } from './map.js';
@@ -269,6 +269,11 @@ export function showWorkerActions(unitOrId) {
   html += `<div style="margin-top:8px;border-top:1px solid var(--color-border);padding-top:8px">`;
   html += `<button class="minor-btn" onclick="unitAction('skip')">Skip Turn</button>`;
   html += `<button class="minor-btn" onclick="unitAction('sleep')">Sleep</button>`;
+  // Gift worker button
+  const discoveredFactions = Object.keys(game.relationships || {}).filter(fid => FACTIONS[fid]);
+  if (discoveredFactions.length > 0 && unit.moveLeft > 0) {
+    html += `<button class="minor-btn" style="color:#9b59b6" onclick="showGiftUnitPanel(${unit.id})">\u{1F381} Gift Worker</button>`;
+  }
   html += `</div>`;
 
   html += `</div>`;
