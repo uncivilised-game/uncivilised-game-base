@@ -879,11 +879,19 @@ CURRENT GAME STATE:
 - Active Trade Deals: {_rel(gs.get('trade_deals', {}), msg.character_id)}
 - Marriage Bonds: {_rel(gs.get('marriages', {}), msg.character_id)}
 - Mutual Defense Pacts: {_rel(gs.get('defense_pacts', {}), msg.character_id)}
+- Player's Resources: {', '.join(gs.get('player_resources', ['unknown'])) if isinstance(gs.get('player_resources'), list) else 'unknown'}
+- Your Resources (AI faction): {', '.join(gs.get('ai_resources', {}).get(msg.character_id, ['unknown'])) if isinstance(gs.get('ai_resources', {}).get(msg.character_id), list) else 'unknown'}
 - Recent Events: {recent}
 
 Use this information to inform your responses. Reference specific numbers when relevant.
 React appropriately to the player's relative power \u2014 if they're weak, you might be dismissive;
-if strong, you might be more respectful or threatened."""
+if strong, you might be more respectful or threatened.
+
+RESOURCE TRADE RULES:
+- "gives" = what YOU (the AI) give to the player. "receives" = what YOU get from the player.
+- You can ONLY offer resources you actually have. Do NOT offer resources you don't possess.
+- If the player offers you a resource they have (like iron), and you want gold in return, emit: {{"type": "resource_trade", "gives": "gold", "receives": "iron"}}
+- If the player asks you for gold in exchange for their iron, that means YOU give gold and receive iron."""
 
     # Build reputation memory section
     reputation_context = _build_reputation_prompt(
@@ -926,7 +934,7 @@ INTERACTION RULES:
   [ACTION: {{"type": "ceasefire", "duration": 10}}] \u2014 stop hostilities temporarily
   [ACTION: {{"type": "vassalage", "tribute_gold": 5}}] \u2014 become a vassal paying tribute per turn
   [ACTION: {{"type": "tech_share"}}] \u2014 share technological knowledge
-  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] \u2014 specific resource exchange
+  [ACTION: {{"type": "resource_trade", "gives": "iron", "receives": "gold"}}] \u2014 YOU (the AI) give iron and receive gold FROM the player. Only offer resources YOU actually have
   [ACTION: {{"type": "attack_target", "target_faction": "shadow_kael"}}] \u2014 commit units to attack another faction
   [ACTION: {{"type": "defend_city", "city_index": 0, "duration": 10}}] \u2014 send forces to defend a player city
   [ACTION: {{"type": "respect_borders", "duration": 20}}] \u2014 commit to keeping units out of player territory
