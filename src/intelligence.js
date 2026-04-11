@@ -417,6 +417,24 @@ function renderRumoursTab() {
 
 function renderLedgerTab() {
   let html = '';
+
+  // Diplomatic notifications (persistent toast history)
+  const notifications = game.diploNotifications || [];
+  if (notifications.length > 0) {
+    html += `<div style="${S.card}">`;
+    html += `<div style="${S.cardHd}"><strong>\uD83D\uDD14 Diplomatic Notifications</strong></div>`;
+    for (const notif of [...notifications].reverse().slice(0, 20)) {
+      const turnLabel = notif.turn !== undefined ? `Turn ${notif.turn}` : '';
+      html += `<div style="padding:3px 0;font-size:11px;border-bottom:1px solid rgba(255,255,255,0.03);">`;
+      html += `<span style="color:#888;display:inline-block;width:50px;">${turnLabel}</span>`;
+      html += `<strong style="color:#ffd700;">${notif.title}</strong>`;
+      if (notif.message) html += ` <span style="color:#aaa;">${notif.message}</span>`;
+      html += '</div>';
+    }
+    if (notifications.length > 20) html += `<div style="color:#888;font-size:10px;text-align:center;margin-top:4px;">Showing 20 of ${notifications.length}</div>`;
+    html += '</div>';
+  }
+
   const allEntries = [];
   const ledger = game.diplomaticLedger || {};
   for (const [fid, entries] of Object.entries(ledger)) {
@@ -424,7 +442,7 @@ function renderLedgerTab() {
   }
   allEntries.sort((a, b) => (b.turn || 0) - (a.turn || 0));
 
-  if (allEntries.length === 0) {
+  if (allEntries.length === 0 && notifications.length === 0) {
     html += `<div style="${S.card}color:#666;font-style:italic;">The diplomatic ledger is empty. Your scribes await events to record.</div>`;
     return html;
   }

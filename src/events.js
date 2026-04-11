@@ -59,15 +59,36 @@ export function showToast(title, message, duration) {
     document.body.appendChild(container);
   }
   const toast = document.createElement('div');
-  toast.style.cssText = 'background:rgba(20,20,30,0.92);border:1px solid rgba(255,215,0,0.5);border-radius:8px;padding:10px 16px;color:#f0e8d0;font-size:13px;max-width:300px;box-shadow:0 4px 16px rgba(0,0,0,0.5);opacity:0;transform:translateX(40px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;';
-  toast.innerHTML = '<div style="font-weight:bold;color:#ffd700;margin-bottom:2px">' + title + '</div>' + (message ? '<div style="color:#bbb;font-size:11px">' + message + '</div>' : '');
-  container.appendChild(toast);
-  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
-  setTimeout(() => {
+  toast.style.cssText = 'background:rgba(20,20,30,0.92);border:1px solid rgba(255,215,0,0.5);border-radius:8px;padding:10px 16px;color:#f0e8d0;font-size:13px;max-width:300px;box-shadow:0 4px 16px rgba(0,0,0,0.5);opacity:0;transform:translateX(40px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;cursor:pointer;';
+  toast.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:start"><div><div style="font-weight:bold;color:#ffd700;margin-bottom:2px">' + title + '</div>' + (message ? '<div style="color:#bbb;font-size:11px">' + message + '</div>' : '') + '</div><span style="color:#666;font-size:16px;margin-left:8px;line-height:1">&times;</span></div>';
+  toast.onclick = () => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(40px)';
-    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350);
-  }, duration);
+    setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+  };
+  container.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
+  if (duration > 0) {
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(40px)';
+      setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 350);
+    }, duration);
+  }
+}
+
+/**
+ * Show a diplomacy toast that persists until dismissed (clicked) and
+ * logs the notification to game.diploNotifications for the Ledger tab.
+ */
+export function showDiploToast(title, message) {
+  // Persist until clicked (duration=0 means no auto-dismiss)
+  showToast(title, message, 0);
+  // Log to persistent notification history
+  if (!game.diploNotifications) game.diploNotifications = [];
+  game.diploNotifications.push({ title, message, turn: game.turn });
+  // Cap at 50 entries
+  while (game.diploNotifications.length > 50) game.diploNotifications.shift();
 }
 
 // ============================================
