@@ -5,7 +5,7 @@
 // Each turn, AI factions evaluate relationships with other AIs
 // and may initiate diplomatic actions with varying visibility.
 
-import { FACTIONS, FACTION_TRAITS, RESOURCE_ZONES, UNIT_RESOURCE_REQUIREMENTS, RESOURCES } from './constants.js';
+import { FACTIONS, FACTION_TRAITS, UNIT_TYPES, RESOURCE_ZONES, UNIT_RESOURCE_REQUIREMENTS, RESOURCES } from './constants.js';
 import { game } from './state.js';
 import { addEvent, logAction, showToast, showDiploToast } from './events.js';
 import { hexDistance } from './hex.js';
@@ -91,6 +91,11 @@ export function processAIDiplomacy() {
     computeBorderTension(factionIds);
   }
 
+  // 4b. Forward settle detection — player cities near AI borders cause tension
+  if (game.turn % 5 === 0) {
+    checkForwardSettleTension(factionIds);
+  }
+
   // 5. Balance of power — threat assessment
   computePowerBalance(factionIds);
 
@@ -129,6 +134,9 @@ export function processAIDiplomacy() {
 
   // 7. Player involvement — alliance/trade spillover
   processPlayerSpillover(factionIds);
+
+  // 7b. Military border pressure — AI detects player armies near its borders
+  checkMilitaryBorderPressure(factionIds);
 
   // 8. Check if any secret pacts should activate
   checkSecretPactActivation();
@@ -911,7 +919,151 @@ function processPlayerSpillover(factionIds) {
 }
 
 // ============================================
-// FEATURE 5: RESOURCE SCARCITY AWARENESS
+// FEATURE 4b: FORWARD SETTLE TENSION
+// ============================================
+// Player cities close to AI borders cause slow-building resentment.
+
+function checkForwardSettleTension(factionIds) {
+  const SETTLE_TENSION_RANGE = 8; // Cities within 8 hexes cause tension
+
+  for (const fid of factionIds) {
+    if (game.eliminatedFactions?.[fid]) continue;
+    const faction = FACTIONS[fid];
+    if (!faction) continue;
+
+    // Skip allies
+    const isAlly = (game.aiAlliances || []).some(a =>
+      a.factions.includes(fid) && a.factions.includes('player')
+    );
+    if (isAlly) continue;
+
+    const factionCities = getCitiesForFaction(fid);
+    if (factionCities.length === 0) continue;
+
+    // Count player cities near this faction's cities
+    let nearbyPlayerCities = 0;
+    for (const pCity of (game.cities || [])) {
+      for (const fCity of factionCities) {
+        if (hexDistance(pCity.col, pCity.row, fCity.col, fCity.row) <= SETTLE_TENSION_RANGE) {
+          nearbyPlayerCities++;
+          break;
+        }
+      }
+    }
+
+    if (nearbyPlayerCities > 0) {
+      // Gradual tension — small penalty that builds over time
+      const penalty = -1 * nearbyPlayerCities;
+      modifyRelation(fid, 'player', penalty, {
+        type: 'forward_settle',
+        detail: `${nearbyPlayerCities} ${nearbyPlayerCities === 1 ? 'city' : 'cities'} near border`,
+      });
+    }
+  }
+}
+
+// ============================================
+// FEATURE 5b: MILITARY BORDER PRESSURE
+// ============================================
+// Detects player military units near AI borders. After sustained presence,
+// the AI demands withdrawal. Refusal damages reputation and may trigger war.
+
+function checkMilitaryBorderPressure(factionIds) {
+  if (!game.borderPressure) game.borderPressure = {};
+  const BORDER_RANGE = 5;       // How close to an AI city counts as "near the border"
+  const WARN_THRESHOLD = 3;     // Turns of presence before AI demands withdrawal
+  const WAR_THRESHOLD = 6;      // Turns before AI considers pre-emptive war
+  const MIN_UNITS_TO_TRIGGER = 2; // Need at least 2 military units to be threatening
+
+  for (const fid of factionIds) {
+    if (game.eliminatedFactions?.[fid]) continue;
+    const faction = FACTIONS[fid];
+    if (!faction) continue;
+
+    // Skip allies and factions with open borders
+    const isAlly = (game.aiAlliances || []).some(a =>
+      a.factions.includes(fid) && a.factions.includes('player')
+    );
+    if (isAlly) { delete game.borderPressure[fid]; continue; }
+    if (game.openBorders?.[fid]) { delete game.borderPressure[fid]; continue; }
+
+    // Already at war — no need for border pressure
+    const atWar = (game.aiWars || []).some(w =>
+      (w.attacker === 'player' && w.defender === fid) ||
+      (w.attacker === fid && w.defender === 'player')
+    );
+    if (atWar) { delete game.borderPressure[fid]; continue; }
+
+    // Count player military units near this faction's cities
+    const factionCities = getCitiesForFaction(fid);
+    let nearbyMilitary = 0;
+    for (const unit of game.units) {
+      if (unit.owner !== 'player') continue;
+      const ut = UNIT_TYPES[unit.type];
+      if (!ut || ut.combat <= 0) continue;
+      for (const city of factionCities) {
+        if (hexDistance(unit.col, unit.row, city.col, city.row) <= BORDER_RANGE) {
+          nearbyMilitary++;
+          break; // Count each unit once
+        }
+      }
+    }
+
+    if (nearbyMilitary < MIN_UNITS_TO_TRIGGER) {
+      // Pressure relieved — reset counter
+      if (game.borderPressure[fid]) {
+        game.borderPressure[fid].turns = Math.max(0, game.borderPressure[fid].turns - 1);
+        if (game.borderPressure[fid].turns <= 0) delete game.borderPressure[fid];
+      }
+      continue;
+    }
+
+    // Pressure building
+    if (!game.borderPressure[fid]) {
+      game.borderPressure[fid] = { turns: 0, warned: false, demanded: false };
+    }
+    game.borderPressure[fid].turns++;
+    const pressure = game.borderPressure[fid];
+
+    // Relation penalty each turn units are near border
+    modifyRelation(fid, 'player', -3, { type: 'military_pressure', detail: `${nearbyMilitary} units near border` });
+
+    // After WARN_THRESHOLD turns — AI sends a warning
+    if (pressure.turns >= WARN_THRESHOLD && !pressure.warned) {
+      pressure.warned = true;
+      const fName = faction.name;
+      addEvent(`${fName} is concerned about your military presence near their borders.`, 'diplomacy');
+      showDiploToast('Border Warning', `${fName}: "Your armies near our borders make us uneasy. We advise you to withdraw."`);
+      logAction('diplomacy', `${fName} warned about border pressure`, { fid, units: nearbyMilitary });
+    }
+
+    // After WAR_THRESHOLD turns — AI demands withdrawal, major reputation hit
+    if (pressure.turns >= WAR_THRESHOLD && !pressure.demanded) {
+      pressure.demanded = true;
+      const fName = faction.name;
+      const traits = FACTION_TRAITS[fid];
+      modifyRelation(fid, 'player', -15, { type: 'border_aggression', detail: 'refused to withdraw armies' });
+
+      addEvent(`${fName} DEMANDS you remove your armies from their borders immediately!`, 'diplomacy');
+      showDiploToast('Border Ultimatum', `${fName}: "Remove your armies or face the consequences!"`);
+
+      // Militaristic factions may declare pre-emptive war
+      const warChance = traits?.archetype === 'militaristic' ? 0.5 : traits?.archetype === 'expansionist' ? 0.3 : 0.15;
+      if (Math.random() < warChance) {
+        // Pre-emptive war
+        if (!game.aiWars) game.aiWars = [];
+        game.aiWars.push({ attacker: fid, defender: 'player', startTurn: game.turn, turnsActive: 0 });
+        modifyRelation(fid, 'player', -30, { type: 'preemptive_war', detail: 'military aggression on border' });
+        game.relationships[fid] = Math.min(-50, (game.relationships[fid] || 0) - 30);
+        addEvent(`${fName} has declared a pre-emptive war against you!`, 'combat');
+        showDiploToast('War!', `${fName} launches a pre-emptive strike! Your border aggression pushed them too far.`);
+      }
+    }
+  }
+}
+
+// ============================================
+// FEATURE 5c: RESOURCE SCARCITY AWARENESS
 // ============================================
 
 // Strategic resources this faction lacks direct access to
