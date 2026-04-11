@@ -197,6 +197,15 @@ function renderOverview() {
     for (const fid of metFactions) {
       const faction = FACTIONS[fid];
       if (!faction) continue;
+      const isEliminated = game.eliminatedFactions?.[fid];
+      if (isEliminated) {
+        // Show dead faction with skull and elimination turn
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);opacity:0.5;">`;
+        html += `<span style="color:#666;text-decoration:line-through;">${faction.icon||'\uD83C\uDFF0'} ${faction.name}</span>`;
+        html += `<span style="${S.badge}background:rgba(180,40,40,0.3);color:#d44;">\uD83D\uDC80 Eliminated (Turn ${isEliminated.turn})</span>`;
+        html += '</div>';
+        continue;
+      }
       const rel = game.relationships?.[fid] || 0;
       const label = getRelationLabel(rel);
       const threat = assessThreat(fid);

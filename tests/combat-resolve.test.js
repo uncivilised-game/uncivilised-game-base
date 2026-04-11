@@ -355,23 +355,26 @@ describe('captureFactionCity()', () => {
     state = setupGameState();
   });
 
-  test('should not eliminate faction if they still have expansion cities', () => {
+  test('should promote expansion city to capital when capital is captured', () => {
     state.factionCities = {
       faction_a: { name: 'Capital', col: 5, row: 5, hp: 0, color: '#f00', population: 1000, borderRadius: 2 },
     };
     state.aiFactionCities = {
       faction_a: [
-        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
+        { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1, color: '#f00' },
       ],
     };
     state.units = [makeUnit({ id: 1, col: 5, row: 5, owner: 'player' })];
 
     captureFactionCity('faction_a');
 
-    // Capital removed
-    expect(state.factionCities.faction_a).toBeUndefined();
-    // Expansion city still exists — faction NOT eliminated
-    expect(state.aiFactionCities.faction_a).toHaveLength(1);
+    // Expansion city promoted to capital
+    expect(state.factionCities.faction_a).toBeDefined();
+    expect(state.factionCities.faction_a.name).toBe('Outpost');
+    expect(state.factionCities.faction_a.col).toBe(10);
+    // Expansion cities list is now empty (promoted out)
+    expect(state.aiFactionCities.faction_a).toHaveLength(0);
+    // Faction NOT eliminated
     expect(state.factionsEliminated || 0).toBe(0);
   });
 });
