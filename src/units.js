@@ -577,8 +577,8 @@ function checkAndClearBarbarianCamp(unit, col, row) {
 
 // ---- Boost reputation with nearby AI factions when clearing barbarian threats ----
 function boostFactionReputation(col, row, threatType) {
-  const REPUTATION_RANGE = 12; // How far away factions notice you clearing camps
-  const REPUTATION_BOOST = 8;  // +8 relationship points per camp cleared
+  const REPUTATION_RANGE = 14; // How far away factions notice you clearing threats
+  const REPUTATION_BOOST = 12; // +12 relationship points per threat cleared nearby
   if (!game.relationships) game.relationships = {};
 
   // Track best boost per faction (closest city = biggest boost, only applied once)
@@ -929,4 +929,5 @@ export {
   getEnemyZOCHexes,
   getTileOwner,
   isTerritoryBlocked,
+  boostFactionReputation,
 };

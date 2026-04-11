@@ -6,7 +6,7 @@ import { addEvent, logAction, triggerEureka, triggerInspiration } from './events
 import { render, markVisibilityDirty } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
-import { deselectUnit, autoSelectNext, isInEnemyZOC } from './units.js';
+import { deselectUnit, autoSelectNext, isInEnemyZOC, boostFactionReputation } from './units.js';
 import { updateUI } from './leaderboard.js';
 import { showToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
@@ -153,10 +153,12 @@ function resolveCombat(attacker, defender) {
       if (attacker.type === 'slinger') triggerEureka('archery');
       // Spearman kill triggers military_tactics eureka
       if (attacker.type === 'spearman') triggerEureka('military_tactics');
-      // Barbarian kill tracking
+      // Barbarian kill tracking + diplomacy boost with nearby factions
       if (defender.owner === 'barbarian' || (defender.owner && defender.owner.startsWith && defender.owner.startsWith('barbarian'))) {
         game.barbarianKills = (game.barbarianKills || 0) + 1;
         if (game.barbarianKills >= 3) triggerEureka('bronze_working');
+        // Boost reputation with AI factions near the kill
+        boostFactionReputation(defender.col, defender.row, 'barbarian raiders');
       }
     }
   }
@@ -734,8 +736,28 @@ function captureFactionCity(factionId) {
     ...CITY_WALL_DEFAULTS,
   });
 
-  // Remove from faction cities
+  // Remove capital from faction cities
   delete game.factionCities[factionId];
+
+  // Promote first expansion city to capital if any remain
+  const expansionCities = game.aiFactionCities[factionId] || [];
+  if (expansionCities.length > 0) {
+    const promoted = expansionCities.shift();
+    game.factionCities[factionId] = {
+      name: promoted.name,
+      col: promoted.col,
+      row: promoted.row,
+      color: promoted.color || faction?.color || '#888',
+      hp: CITY_DEFENSE.BASE_HP,
+      population: promoted.population || 500,
+      borderRadius: Math.max(promoted.borderRadius || 1, 2),
+      improvements: promoted.improvements || 0,
+      wallHP: promoted.wallHP || 0,
+      wallMaxHP: promoted.wallMaxHP || 0,
+      wallLastAttackedTurn: promoted.wallLastAttackedTurn || -99,
+    };
+    addEvent(`${factionName} relocated their capital to ${promoted.name}!`, 'diplomacy');
+  }
 
   // Gain gold from plunder
   const plunderGold = 30 + Math.floor(Math.random() * 50);
@@ -780,8 +802,12 @@ function eliminateFaction(factionId, factionName) {
   // Remove any remaining expansion cities
   delete game.aiFactionCities[factionId];
 
-  // Remove from met factions tracking
-  // (keep metFactions entry so they still show in history)
+  // Track as eliminated (kept in metFactions for history/display)
+  if (!game.eliminatedFactions) game.eliminatedFactions = {};
+  game.eliminatedFactions[factionId] = { turn: game.turn, name: factionName };
+
+  // Remove from active diplomatic systems
+  delete game.factionStats[factionId];
 
   // Big score bonus
   game.score += 100;
