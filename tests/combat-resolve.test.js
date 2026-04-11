@@ -310,7 +310,11 @@ describe('checkCityCapture()', () => {
     expect(state.cities.some(c => c.col === 10 && c.row === 10)).toBe(true);
   });
 
-  test('should not capture an expansion city that still has HP', () => {
+  test('should capture an expansion city even if it still has HP (melee entered tile)', () => {
+    // Faction keeps its capital so elimination doesn't delete the array
+    state.factionCities = {
+      faction_a: { name: 'Capital', col: 20, row: 20, hp: 100, color: '#f00', borderRadius: 2 },
+    };
     state.aiFactionCities = {
       faction_a: [
         { name: 'Outpost', col: 10, row: 10, hp: 50, population: 500, borderRadius: 1 },
@@ -320,9 +324,9 @@ describe('checkCityCapture()', () => {
 
     checkCityCapture(10, 10);
 
-    // Should NOT be captured
-    expect(state.aiFactionCities.faction_a).toHaveLength(1);
-    expect(state.cities).toHaveLength(0);
+    // Melee unit entered the tile — city should be captured regardless of HP
+    expect(state.aiFactionCities.faction_a).toHaveLength(0);
+    expect(state.cities.some(c => c.col === 10 && c.row === 10)).toBe(true);
   });
 });
 

@@ -709,12 +709,13 @@ function checkCityCapture(col, row) {
       return;
     }
   }
-  // Check AI expansion cities
+  // Check AI expansion cities — capture when a melee unit enters the tile
+  // (either by reducing city HP to 0 via direct attack, or by killing the last defender)
   if (game.aiFactionCities) {
     for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
       for (let i = 0; i < cities.length; i++) {
         const ec = cities[i];
-        if (ec.col === col && ec.row === row && ec.hp <= 0) {
+        if (ec.col === col && ec.row === row) {
           captureExpansionCity(fid, i);
           return;
         }
