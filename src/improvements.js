@@ -66,7 +66,10 @@ export function startImprovement(unitId, improvementId) {
   // Block if worker has no build charges left
   if (unit.buildCharges !== undefined && unit.buildCharges <= 0) return;
 
+  // Block if worker is already building something — must cancel first
   const tile = game.map[unit.row][unit.col];
+  if (tile.improvementBuilder && tile.improvementBuilder.unitId === unitId) return;
+
   const imp = TILE_IMPROVEMENTS[improvementId];
   if (!imp) return;
 
@@ -231,10 +234,11 @@ export function showWorkerActions(unitOrId) {
   if (tile.road) html += `<p style="color:var(--color-text-muted)">Has Road</p>`;
 
   const hasCharges = unit.buildCharges === undefined || unit.buildCharges > 0;
+  const isBuilding = tile.improvementBuilder && tile.improvementBuilder.unitId === unit.id;
 
-  if (!hasCharges && !tile.improvementBuilder) {
+  if (!hasCharges && !isBuilding) {
     html += `<p style="color:var(--color-text-faint);font-style:italic">No build charges remaining</p>`;
-  } else if (available.length === 0 && !tile.improvementBuilder) {
+  } else if (available.length === 0 && !isBuilding) {
     // Check if blocked by an unrevealed strategic resource
     if (tile.resource && RESOURCES[tile.resource] && RESOURCES[tile.resource].revealedBy && !isResourceRevealed(tile.resource)) {
       html += `<p style="color:var(--color-text-faint);font-style:italic">\u{2753} Unknown resource \u{2014} research needed</p>`;
@@ -247,7 +251,12 @@ export function showWorkerActions(unitOrId) {
       if (imp.yields.food) yieldParts.push(`+${imp.yields.food} Food`);
       if (imp.yields.prod) yieldParts.push(`+${imp.yields.prod} Prod`);
       if (imp.yields.gold) yieldParts.push(`+${imp.yields.gold} Gold`);
-      if (hasCharges) {
+      if (isBuilding) {
+        // Worker is busy — disable all improvement buttons
+        html += `<button class="minor-btn" disabled style="opacity:0.4;cursor:not-allowed">
+          ${imp.icon} <strong>${imp.name}</strong> (${imp.turns} turns) — ${imp.desc}
+        </button>`;
+      } else if (hasCharges) {
         html += `<button class="minor-btn" onclick="startImprovement(${unit.id},'${imp.id}');showWorkerActions(${unit.id})">
           ${imp.icon} <strong>${imp.name}</strong> (${imp.turns} turns) — ${imp.desc}
         </button>`;
