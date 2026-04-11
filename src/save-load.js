@@ -141,6 +141,7 @@ function migrateTiles(state) {
   if (!state.gameLog) state.gameLog = [];
   if (!state.aiCommitments) state.aiCommitments = [];
   if (!state.eliminatedFactions) state.eliminatedFactions = {};
+  if (!state.diploNotifications) state.diploNotifications = [];
   if (!state.tribalVillages) state.tribalVillages = [];
   // --- District system migration ---
   if (!state.playerDistricts) state.playerDistricts = [];

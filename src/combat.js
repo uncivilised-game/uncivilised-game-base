@@ -8,7 +8,7 @@ import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
 import { deselectUnit, autoSelectNext, isInEnemyZOC, boostFactionReputation } from './units.js';
 import { updateUI } from './leaderboard.js';
-import { showToast } from './events.js';
+import { showToast, showDiploToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
 import { panCameraTo } from './input.js';
 import { startAnimLoop } from './feedback.js';
@@ -231,7 +231,7 @@ function declareSurpriseWar(factionId, factionName) {
   game.aiWars.push({ attacker: 'player', defender: factionId, startTurn: game.turn, turnsActive: 0 });
   const msg = `War declared on ${factionName}! (Surprise attack)`;
   addEvent(msg, 'diplomacy');
-  showToast('War Declared', msg, 5000);
+  showDiploToast('War Declared', msg);
   logAction('diplomacy', msg, { type: 'player_surprise_attack', defender: factionId });
 
   // Break all agreements with this faction
@@ -262,7 +262,7 @@ function declareSurpriseWar(factionId, factionName) {
     if (game.nonAggressionPacts) delete game.nonAggressionPacts[allyId];
     game.relationships[allyId] = Math.min(-50, (game.relationships[allyId] || 0) - 40);
     addEvent(`${allyName} has joined the war against you! (Allied with ${factionName})`, 'diplomacy');
-    showToast('War Escalation', `${allyName} joins the war!`, 5000);
+    showDiploToast('War Escalation', `${allyName} joins the war!`);
   }
 }
 
@@ -913,7 +913,7 @@ function aiRazePlayerCity(cityIdx, attackerFactionId) {
     : (FACTIONS[attackerFactionId]?.name || attackerFactionId);
 
   addEvent(`\u{1F525} ${attackerName} RAZED ${cityName}! The city is destroyed.`, 'combat');
-  showToast('City Razed', `${attackerName} razed ${cityName} to the ground!`, 6000);
+  showDiploToast('City Razed', `${attackerName} razed ${cityName} to the ground!`);
   logAction('combat', `${attackerName} razed ${cityName}`, { col, row, attackerFactionId });
 
   markVisibilityDirty();
@@ -979,7 +979,7 @@ function aiCapturePlayerCity(cityIdx, attackerFactionId) {
     });
 
     addEvent(`\u{1F3F0} ${factionName} captured ${cityName}!`, 'combat');
-    showToast('City Lost', `${factionName} captured ${cityName}!`, 6000);
+    showDiploToast('City Lost', `${factionName} captured ${cityName}!`);
     logAction('combat', `${factionName} captured ${cityName}`, { col, row, attackerFactionId });
 
     markVisibilityDirty();
@@ -1229,7 +1229,7 @@ function processZOCCaptures() {
     const captorName = c.capturedBy ? (FACTIONS[c.capturedBy]?.name || c.capturedBy) : 'unknown';
     if (c.prevOwner === 'player') {
       addEvent(`${name} captured by ${captorName} in their Zone of Control!`, 'combat');
-      showToast('Unit Captured!', `Your ${name} was captured by ${captorName} — no military escort nearby.`);
+      showDiploToast('Unit Captured!', `Your ${name} was captured by ${captorName} — no military escort nearby.`);
     } else if (c.capturedBy === 'player') {
       const prevName = FACTIONS[c.prevOwner]?.name || c.prevOwner;
       addEvent(`Captured ${prevName}'s ${name} in your Zone of Control!`, 'combat');

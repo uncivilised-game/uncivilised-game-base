@@ -7,7 +7,7 @@
 
 import { FACTIONS, FACTION_TRAITS, RESOURCE_ZONES, UNIT_RESOURCE_REQUIREMENTS, RESOURCES } from './constants.js';
 import { game } from './state.js';
-import { addEvent, logAction, showToast } from './events.js';
+import { addEvent, logAction, showToast, showDiploToast } from './events.js';
 import { hexDistance } from './hex.js';
 import { hasResourceAccess } from './map.js';
 
@@ -210,7 +210,7 @@ function declareWar(a, b) {
   // PUBLIC — immediate event
   const msg = `War has broken out between ${factionA.name} and ${factionB.name}!`;
   addEvent(msg, 'diplomacy');
-  showToast('War Declared', msg, 5000);
+  showDiploToast('War Declared', msg);
   logAction('diplomacy', msg, { type: 'ai_war', attacker: a, defender: b });
 
   // Break any existing alliance or trade between them
@@ -464,7 +464,7 @@ function checkSecretPactActivation() {
     // Now PUBLIC — the secret is revealed through the joint declaration
     const msg = `${factionA.name} and ${factionB.name} suddenly declare war on ${factionT.name} simultaneously!`;
     addEvent(msg, 'diplomacy');
-    showToast('Secret Pact Revealed', msg, 6000);
+    showDiploToast('Secret Pact Revealed', msg);
     logAction('diplomacy', msg, {
       type: 'ai_secret_pact_activated', allies: [a, b], target,
     });
@@ -616,7 +616,7 @@ function processRumourQueue() {
   }
 
   if (newlyRevealed > 0) {
-    showToast('Rumours & Whispers', `${newlyRevealed} new rumour${newlyRevealed > 1 ? 's' : ''} heard`, 4000);
+    showDiploToast('Rumours & Whispers', `${newlyRevealed} new rumour${newlyRevealed > 1 ? 's' : ''} heard`);
   }
 }
 

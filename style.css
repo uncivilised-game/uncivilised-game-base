@@ -648,7 +648,7 @@ a:hover { text-decoration: underline; }
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(500px, 90vw);
-  max-height: 80vh;
+  max-height: 90vh;
 }
 
 .char-card {
