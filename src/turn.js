@@ -1078,6 +1078,11 @@ function endTurn() {
     }
   }
 
+  // --- Cultural border pressure ---
+  // When a city's culture is stronger than a neighboring faction's, borders push outward.
+  // When weaker, the neighbor's borders grow into yours.
+  processCulturalPressure();
+
   _turnSection = 'diplomacy_bonds';
   // --- Marriage bond upkeep ---
   for (const [cid, marriage] of Object.entries(game.marriages)) {
@@ -1426,6 +1431,80 @@ function showGameOver(victory) {
 
   document.getElementById('btn-show-leaderboard-end').addEventListener('click', () => showLeaderboard());
   document.getElementById('btn-continue-after-victory').addEventListener('click', () => continueAfterVictory());
+}
+
+// ============================================
+// CULTURAL BORDER PRESSURE
+// ============================================
+// When neighboring factions have touching borders, the faction with
+// stronger culture gradually pushes borders into the weaker one's territory.
+
+function processCulturalPressure() {
+  // Player culture strength (scaled 0-1 range for comparison with AI traits)
+  const playerCultureStrength = Math.min(1, (game.culturePerTurn || 1) / 15);
+
+  // Gather all cities with their culture strength
+  const allCities = [];
+  for (const city of game.cities) {
+    allCities.push({ city, owner: 'player', strength: playerCultureStrength });
+  }
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    const traits = FACTION_TRAITS[fid];
+    const cultureStr = traits ? traits.culture : 0.3;
+    allCities.push({ city: fc, owner: fid, strength: cultureStr });
+  }
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      const traits = FACTION_TRAITS[fid];
+      const cultureStr = traits ? traits.culture : 0.3;
+      for (const ec of cities) {
+        allCities.push({ city: ec, owner: fid, strength: cultureStr });
+      }
+    }
+  }
+
+  // Check each pair of cities from different factions
+  for (let i = 0; i < allCities.length; i++) {
+    for (let j = i + 1; j < allCities.length; j++) {
+      const a = allCities[i], b = allCities[j];
+      if (a.owner === b.owner) continue;
+
+      const dist = hexDistance(a.city.col, a.city.row, b.city.col, b.city.row);
+      const aRadius = a.city.borderRadius || 2;
+      const bRadius = b.city.borderRadius || 2;
+
+      // Borders are touching or overlapping if dist <= aRadius + bRadius
+      if (dist > aRadius + bRadius + 1) continue;
+
+      // Compare culture strength
+      const diff = a.strength - b.strength;
+      if (Math.abs(diff) < 0.1) continue; // too close to matter
+
+      // The stronger culture gains pressure points
+      const winner = diff > 0 ? a : b;
+      const loser = diff > 0 ? b : a;
+      const pressureAmount = Math.abs(diff) * 3; // 0.3 to 2.7 points per turn
+
+      // Boost winner's culture accumulation
+      if (!winner.city.cultureAccum) winner.city.cultureAccum = 0;
+      winner.city.cultureAccum += pressureAmount;
+
+      // Check if winner expands from pressure
+      const winnerRadius = winner.city.borderRadius || 2;
+      const winnerCost = winnerRadius * 15;
+      if (winner.city.cultureAccum >= winnerCost && winnerRadius < 5) {
+        winner.city.borderRadius = winnerRadius + 1;
+        winner.city.cultureAccum = 0;
+        const winnerName = winner.owner === 'player' ? 'Your' : (FACTIONS[winner.owner]?.name || winner.owner);
+        const loserName = loser.owner === 'player' ? 'your' : (FACTIONS[loser.owner]?.name || loser.owner) + '\'s';
+        if (winner.owner === 'player') {
+          addEvent('\u{1F30D} ' + (winner.city.name || 'Your city') + '\'s cultural influence expands into ' + loserName + ' territory!', 'diplomacy');
+        } else if (loser.owner === 'player') {
+          addEvent('\u{26A0} ' + winnerName + '\'s culture is pushing into ' + (loser.city.name || 'your city') + '\'s borders!', 'diplomacy');
+        }
+      }
+    }
+  }
 }
 
 // ============================================
