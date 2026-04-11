@@ -14,7 +14,7 @@ import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from 
 import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
-import { getUnitAt, processZOCCaptures, resolveCombat, isAtWarWith } from './combat.js';
+import { getUnitAt, processZOCCaptures, barbarianRazeAICity, resolveCombat, isAtWarWith } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
@@ -435,6 +435,10 @@ function endTurn() {
   try {
     processZOCCaptures();
   } catch (e) { console.error('Error in processZOCCaptures:', e); }
+  // Barbarians on AI city tiles — raze and pillage
+  try {
+    processBarbarianCityRazes();
+  } catch (e) { console.error('Error in processBarbarianCityRazes:', e); }
   try {
     processAIWonderTurns();
   } catch (e) { console.error('Error in processAIWonderTurns:', e); }
@@ -450,6 +454,8 @@ function endTurn() {
   } catch (e) { console.error('Error in AI diplomacy:', e); }
 
   // --- Eject any units trespassing after diplomacy changes (peace, expired borders) ---
+  // NOTE: A second, final ejection pass runs later (after AI unit spawning)
+  // to catch any units placed during the player-phase AI processing.
   try {
     ejectTrespassingUnits();
   } catch (e) { console.error('Error ejecting trespassing units:', e); }
@@ -973,10 +979,15 @@ function endTurn() {
       const prog = game.greatPeopleProgress[gp.trigger] || 0;
       if (prog >= gp.threshold) {
         game.greatPeopleProgress[gp.trigger] -= gp.threshold;
-        game.greatPeopleEarned.push({ type: gp.type, turn: game.turn, used: false });
+        const gpEntry = { type: gp.type, turn: game.turn, used: false };
+        game.greatPeopleEarned.push(gpEntry);
         events.push(gp.icon + ' ' + gp.name + ' has appeared!');
         addEvent(gp.icon + ' ' + gp.name + ' has appeared!', 'gold');
         showGreatPersonNotification(gp);
+        // Auto-use great people with immediate effects (no strategic timing)
+        if (gp.effectType === 'gold_bonus' || gp.effectType === 'golden_age' || gp.effectType === 'spawn_general') {
+          useGreatPerson(gpEntry, gp);
+        }
       }
     }
   }
@@ -1107,6 +1118,9 @@ function endTurn() {
 
   // --- AI worker auto-improve & settler auto-found ---
   processAIWorkerImprovements();
+
+  // --- Final trespass ejection — catches units spawned or moved during late AI processing ---
+  ejectTrespassingUnits();
 
   // --- Embassy turn processing (gossip accumulation) ---
   ensureEmbassyState();
@@ -1415,6 +1429,22 @@ function showGameOver(victory) {
 }
 
 // ============================================
+// BARBARIAN CITY RAZING
+// ============================================
+// Each turn, check if any barbarian units are sitting on AI faction cities
+// and raze them. This handles cases where barbarians moved onto city tiles
+// via the diplomacy plugin or other means without going through resolveCombat.
+
+function processBarbarianCityRazes() {
+  const barbUnits = game.units.filter(u => u.owner === 'barbarian' || (u.owner && u.owner.startsWith && u.owner.startsWith('barbarian')));
+  for (const unit of barbUnits) {
+    const ut = UNIT_TYPES[unit.type];
+    if (!ut || ut.combat <= 0) continue; // only military units raze
+    barbarianRazeAICity(unit.col, unit.row);
+  }
+}
+
+// ============================================
 // AI UNIT SPAWNING (same costs as player)
 // ============================================
 
@@ -1471,14 +1501,18 @@ function processAIUnitSpawning() {
 
 function findSpawnTile(col, row, factionId) {
   const neighbors = getHexNeighbors(col, row);
+  // Prefer tiles in own territory; fall back to unclaimed
+  let fallback = null;
   for (const nb of neighbors) {
     const tile = game.map[nb.row]?.[nb.col];
     if (!tile) continue;
     if (!isTilePassable(tile)) continue;
     if (getUnitAt(nb.col, nb.row)) continue;
-    return nb;
+    const owner = getTileOwner(nb.col, nb.row);
+    if (owner === factionId) return nb; // own territory — ideal
+    if (!owner && !fallback) fallback = nb; // unclaimed — acceptable
   }
-  return null;
+  return fallback;
 }
 
 // ============================================

@@ -13,6 +13,9 @@ export function preloadImprovementImages() {
     img.src = './assets/hex/' + name + '.png';
     IMPROVEMENT_IMAGES[name.replace('imp_','')] = img;
   }
+  // Fortification reuses garrison sprite
+  IMPROVEMENT_IMAGES['fortification'] = IMPROVEMENT_IMAGES['garrison'];
+
   // Tribal village sprite
   const villageImg = new Image();
   villageImg.crossOrigin = 'anonymous';

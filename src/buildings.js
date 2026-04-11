@@ -116,6 +116,29 @@ export function useGreatPerson(gpEntry, gpDef) {
       game.activeEvents.push({ type: 'combat_boost', name: 'Great General', bonus: 5, turnsLeft: 10 });
       addEvent(gpDef.icon + ' ' + gpDef.name + ': All units +5 combat for 10 turns!', 'combat');
       break;
+    case 'spawn_general': {
+      // Spawn a Great General unit near the capital
+      const city = game.cities[0];
+      if (city) {
+        const nbs = getHexNeighbors(city.col, city.row);
+        let spawnTile = null;
+        for (const nb of nbs) {
+          const t = game.map[nb.row]?.[nb.col];
+          if (!t || !isTilePassable(t)) continue;
+          if (getUnitAt(nb.col, nb.row)) continue;
+          spawnTile = nb;
+          break;
+        }
+        if (!spawnTile) spawnTile = { col: city.col, row: city.row };
+        const general = createUnit('great_general', spawnTile.col, spawnTile.row, 'player');
+        general.armyCapacity = 3;
+        general.army = [];
+        game.units.push(general);
+        addEvent(gpDef.icon + ' ' + gpDef.name + ' has arrived! A legendary commander awaits orders.', 'combat');
+        showToast('\u{2694} Great General', 'A Great General unit has appeared near your capital!');
+      }
+      break;
+    }
     case 'found_religion':
       if (!game.religion) {
         game.religion = { name: 'The Faith', founded: game.turn };
