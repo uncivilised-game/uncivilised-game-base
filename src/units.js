@@ -388,26 +388,31 @@ function computeAttackRange() {
   } else if (unit.moveLeft > 0 && !unit.hasAttackedThisTurn) {
     const neighbors = getHexNeighbors(unit.col, unit.row);
     for (const nb of neighbors) {
-      const enemy = game.units.find(u => u.col === nb.col && u.row === nb.row && u.owner !== 'player');
-      if (enemy) {
-        attackable.set(`${nb.col},${nb.row}`, enemy.id);
-      } else {
-        // Check for enemy cities (can attack even if no garrison)
-        for (const [fid, fc] of Object.entries(game.factionCities)) {
-          if (fc.col === nb.col && fc.row === nb.row) {
-            attackable.set(`${nb.col},${nb.row}`, 'city_' + fid);
-          }
+      const nbKey = `${nb.col},${nb.row}`;
+      // Check for enemy cities FIRST — city attack takes priority over garrison units
+      let cityFound = false;
+      for (const [fid, fc] of Object.entries(game.factionCities)) {
+        if (fc.col === nb.col && fc.row === nb.row) {
+          attackable.set(nbKey, 'city_' + fid);
+          cityFound = true;
         }
-        // Check AI expansion cities
-        if (game.aiFactionCities) {
-          for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
-            for (let ei = 0; ei < cities.length; ei++) {
-              const ec = cities[ei];
-              if (ec.col === nb.col && ec.row === nb.row) {
-                if (!attackable.has(`${nb.col},${nb.row}`)) attackable.set(`${nb.col},${nb.row}`, 'expcity_' + fid + '_' + ei);
-              }
+      }
+      if (!cityFound && game.aiFactionCities) {
+        for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+          for (let ei = 0; ei < cities.length; ei++) {
+            const ec = cities[ei];
+            if (ec.col === nb.col && ec.row === nb.row) {
+              attackable.set(nbKey, 'expcity_' + fid + '_' + ei);
+              cityFound = true;
             }
           }
+        }
+      }
+      // If no city, check for enemy units
+      if (!cityFound) {
+        const enemy = game.units.find(u => u.col === nb.col && u.row === nb.row && u.owner !== 'player');
+        if (enemy) {
+          attackable.set(nbKey, enemy.id);
         }
       }
     }
