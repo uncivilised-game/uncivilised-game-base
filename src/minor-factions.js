@@ -310,7 +310,7 @@ window.barbCampAction = function(campId, action) {
       }
       // Success — camp disperses
       bc.destroyed = true;
-      const lootGold = Math.floor(bc.strength * 1.5) + 10;
+      const lootGold = 100;
       game.gold += lootGold;
       // Remove barbarian units near this camp
       game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 3));
@@ -376,7 +376,7 @@ window.barbCampAction = function(campId, action) {
       attacker.hp -= retaliation;
       if (bc.strength <= 0) {
         bc.destroyed = true;
-        const lootGold = 15 + Math.floor(Math.random() * 20);
+        const lootGold = 100;
         game.gold += lootGold;
         game.units = game.units.filter(u => !(u.owner === 'barbarian' && hexDistance(u.col, u.row, bc.col, bc.row) <= 2));
         // Track rebellion suppression for rebel camps
@@ -513,7 +513,7 @@ window.minorAction = function(mfId, action) {
         return;
       }
       mf.defeated = true;
-      const lootGold = Math.floor(mf.strength * 1.5) + 10;
+      const lootGold = 100;
       game.gold += lootGold;
       addEvent(`\u{1F4E2} The barbarians flee before your might! +${lootGold}g recovered.`, 'combat');
       showToast('Camp Dispersed', 'Your military strength forced the barbarians to abandon their camp.');
@@ -546,10 +546,11 @@ window.minorAction = function(mfId, action) {
         addEvent(`Your forces are not strong enough to destroy this camp (need ${mf.strength} military).`, 'combat');
         return;
       }
-      game.gold += mf.gold;
+      const destroyGold = 100;
+      game.gold += destroyGold;
       game.military -= Math.floor(mf.strength / 3);
       mf.defeated = true;
-      addEvent('\u{1F525} Barbarian camp destroyed! +' + mf.gold + ' gold', 'combat');
+      addEvent('\u{1F525} Barbarian camp destroyed! +' + destroyGold + ' gold', 'combat');
       break;
     }
     case 'commune': {
