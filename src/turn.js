@@ -979,10 +979,15 @@ function endTurn() {
       const prog = game.greatPeopleProgress[gp.trigger] || 0;
       if (prog >= gp.threshold) {
         game.greatPeopleProgress[gp.trigger] -= gp.threshold;
-        game.greatPeopleEarned.push({ type: gp.type, turn: game.turn, used: false });
+        const gpEntry = { type: gp.type, turn: game.turn, used: false };
+        game.greatPeopleEarned.push(gpEntry);
         events.push(gp.icon + ' ' + gp.name + ' has appeared!');
         addEvent(gp.icon + ' ' + gp.name + ' has appeared!', 'gold');
         showGreatPersonNotification(gp);
+        // Auto-use great people with immediate effects (no strategic timing)
+        if (gp.effectType === 'gold_bonus' || gp.effectType === 'golden_age') {
+          useGreatPerson(gpEntry, gp);
+        }
       }
     }
   }
