@@ -463,7 +463,7 @@ export const TILE_IMPROVEMENTS = {
 
   // Military
   garrison:    { name: 'Garrison',      icon: '🏰', turns: 4, requires: 'iron_working', validOn: ['grassland','plains','desert','tundra','hills'], yields: { prod: 1 }, defenseBonus: 5, desc: '+5 defense to units on tile, +1 Production' },
-  fortification: { name: 'Fortification', icon: '🏰', turns: 4, requires: 'masonry', validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, defense: 4, desc: '+4 Defense for garrisoned units, blocks enemy movement' },
+  fortification: { name: 'Fortification', icon: '🏰', turns: 4, requires: 'fortification', validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, defense: 4, desc: '+4 Defense for garrisoned units, blocks enemy movement' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },

@@ -13,6 +13,17 @@ import { updateUI } from './leaderboard.js';
 import { startAnimLoop } from './feedback.js';
 import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
 
+function findNearestBarbarianCamp(col, row) {
+  if (!game.barbarianCamps) return null;
+  let best = null, bestDist = Infinity;
+  for (const c of game.barbarianCamps) {
+    if (c.destroyed) continue;
+    const d = hexDistance(col, row, c.col, c.row);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
 // ---- Civilian / Military stacking helpers ----
 
 /** Returns true if the unit is a civilian (worker, settler, etc.) */
@@ -791,6 +802,12 @@ function handleHexClick(col, row) {
       }
       return;
     } else if (unitsHere.length > 0) {
+      // Barbarian units → open camp interaction if a camp exists
+      const barbUnit = unitsHere.find(u => u.owner === 'barbarian');
+      if (barbUnit && game.barbarianCamps) {
+        const camp = findNearestBarbarianCamp(barbUnit.col, barbUnit.row);
+        if (camp) { interactWithBarbarianCamp(camp.id); return; }
+      }
       selectUnit(unitsHere[0]);
       return;
     }
@@ -839,6 +856,12 @@ function handleHexClick(col, row) {
 
   // Non-player units
   if (unitsAtHex.length > 0) {
+    // Barbarian units → open camp interaction if a camp exists
+    const barbUnit = unitsAtHex.find(u => u.owner === 'barbarian');
+    if (barbUnit && game.barbarianCamps) {
+      const camp = findNearestBarbarianCamp(barbUnit.col, barbUnit.row);
+      if (camp) { interactWithBarbarianCamp(camp.id); return; }
+    }
     selectUnit(unitsAtHex[0]);
     return;
   }

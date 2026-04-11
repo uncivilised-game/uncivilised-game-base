@@ -558,6 +558,13 @@ function switchProduction(startFn) {
   startFn();
 }
 
+function switchBuildCity(dir) {
+  if (game.cities.length <= 1) return;
+  const idx = (game.selectedCityIdx || 0) + dir;
+  game.selectedCityIdx = ((idx % game.cities.length) + game.cities.length) % game.cities.length;
+  renderBuildPanel();
+}
+
 function getNearestCityIndex() {
   if (game.cities.length <= 1) return 0;
   // Use explicitly selected city if available
@@ -732,6 +739,21 @@ function renderBuildPanel() {
   container.innerHTML = '';
   const prodBusy = game.currentBuild || game.currentUnitBuild || game.currentWonderBuild || game.currentDistrictBuild;
   const prodRate = Math.max(1, game.productionPerTurn);
+
+  // City selector — show which city production targets
+  if (game.cities.length > 0) {
+    if (game.selectedCityIdx == null || game.selectedCityIdx >= game.cities.length) {
+      game.selectedCityIdx = 0;
+    }
+    const city = game.cities[game.selectedCityIdx];
+    const citySelector = document.createElement('div');
+    citySelector.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:8px 10px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.3);border-radius:6px';
+    const hasMult = game.cities.length > 1;
+    citySelector.innerHTML = (hasMult ? '<button style="background:none;border:none;color:var(--color-gold);font-size:16px;cursor:pointer;padding:0 4px" onclick="switchBuildCity(-1)">\u25C0</button>' : '')
+      + '<span style="color:var(--color-gold);font-size:12px;font-weight:600">\u2605 ' + (city.name || 'Capital') + '</span>'
+      + (hasMult ? '<button style="background:none;border:none;color:var(--color-gold);font-size:16px;cursor:pointer;padding:0 4px" onclick="switchBuildCity(1)">\u25B6</button>' : '');
+    container.appendChild(citySelector);
+  }
 
   // Current production status
   if (game.currentBuild) {
@@ -1790,7 +1812,8 @@ export {
   clearTechGoal,
   startResearch,
   showGiftUnitPanel,
-  giftUnit
+  giftUnit,
+  switchBuildCity
 };
 
 window.unitAction = function(action) {

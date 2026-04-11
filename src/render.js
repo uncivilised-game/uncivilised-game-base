@@ -366,6 +366,18 @@ function render() {
           ctx.restore();
         }
       }
+      // Draw fortification overlay
+      if (tile.fortification) {
+        const fortImg = IMPROVEMENT_IMAGES['fortification'];
+        if (fortImg && fortImg.complete && fortImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.75;
+          const fortS = HEX_SIZE * 2.3;
+          ctx.drawImage(fortImg, sx - fortS/2, sy - fortS/2, fortS, fortS);
+          ctx.globalAlpha = 1.0;
+          ctx.restore();
+        }
+      }
       // Draw district sprites (rendered on top of terrain, below units)
       if (tile.district) {
         const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
@@ -1430,6 +1442,7 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
     const dist = DISTRICTS[tile.district];
     lines.push({ text: `${dist.icon} ${dist.name} District`, bold: true, color: '#f0c848' });
   }
+  if (tile.fortification) lines.push({ text: '\u{1F3F0} Fortification (+4 defense)', color: '#c9a84c' });
   if (tile.road) lines.push({ text: '\u{1F6E4}\uFE0F Road (half move cost)', color: '#8a7a5a' });
   if (tile.improvementBuilder) {
     const bImp = TILE_IMPROVEMENTS[tile.improvementBuilder.improvementId];
