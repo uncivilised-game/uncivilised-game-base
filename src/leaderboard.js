@@ -137,7 +137,7 @@ function showLeaderboard(tab) {
   // Default to weekly if competition is currently running, otherwise all-time
   const now = new Date();
   const compActive = currentCompetition && new Date(currentCompetition.starts_at) <= now && new Date(currentCompetition.ends_at) >= now;
-  const activeTab = tab || (compActive ? 'weekly' : 'alltime');
+  const activeTab = tab || 'weekly';
   const compName = currentCompetition ? currentCompetition.name : 'This Week';
 
   panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
@@ -152,8 +152,14 @@ function showLeaderboard(tab) {
 
   const body = document.getElementById('leaderboard-body');
   let query = 'leaderboard?select=*&order=score.desc&limit=50';
-  if (activeTab === 'weekly' && currentCompetition) {
-    query += '&competition_id=eq.' + currentCompetition.id;
+  if (activeTab === 'weekly') {
+    if (currentCompetition) {
+      query += '&competition_id=eq.' + currentCompetition.id;
+    } else {
+      // No active competition — fall back to entries from the last 7 days
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      query += '&created_at=gte.' + weekAgo;
+    }
   }
 
   sbFetch(query)
