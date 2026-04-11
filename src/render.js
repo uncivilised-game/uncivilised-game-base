@@ -1007,6 +1007,47 @@ function render() {
     ctx.fillText(city.name, sx, sy - HEX_SIZE * 1.2);
     ctx.shadowBlur = 0;
 
+    // City yield overlay — compact stats on the hex
+    {
+      const pop = Math.floor((city.population || 1000) / 500);
+      // Compute yields from surrounding tiles
+      let yFood = 0, yProd = 0, yGold = 0;
+      const bR = city.borderRadius || 2;
+      for (let dr = -bR; dr <= bR; dr++) {
+        for (let dc = -bR; dc <= bR; dc++) {
+          const tr = city.row + dr;
+          const tc = ((city.col + dc) % MAP_COLS + MAP_COLS) % MAP_COLS;
+          if (tr < 0 || tr >= MAP_ROWS) continue;
+          if (hexDistance(tc, tr, city.col, city.row) > bR) continue;
+          const tile = game.map[tr]?.[tc];
+          if (tile) {
+            const y = getTileYields(tile);
+            yFood += y.food; yProd += y.prod; yGold += y.gold;
+          }
+        }
+      }
+      // Background pill
+      const statsText = `${pop}\u{1F464}  ${yFood}\u{1F33E} ${yProd}\u{2699} ${yGold}\u{1F4B0}`;
+      ctx.font = '600 9px Inter, sans-serif';
+      const tw = ctx.measureText(statsText).width;
+      const pillW = tw + 10, pillH = 14;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      const px = sx - pillW / 2, py = sy + HEX_SIZE * 0.55;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(px, py, pillW, pillH, 3);
+      } else {
+        ctx.rect(px, py, pillW, pillH);
+      }
+      ctx.fill();
+      // Text
+      ctx.fillStyle = '#ddd';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(statsText, sx, sy + HEX_SIZE * 0.55 + pillH / 2);
+      ctx.textBaseline = 'alphabetic';
+    }
+
     // Dual HP bars for player cities with walls
     if (city.wallHP !== undefined && city.wallMaxHP > 0) {
       const hpW = 26;
