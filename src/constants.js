@@ -66,6 +66,7 @@ export let UNIT_TYPES = {
   ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
   galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
   phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
+  great_general: { name: 'Great General', cost: 0, combat: 0, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{2694}', class: 'civilian', desc: 'Legendary commander. Attach military units to form an army that moves and fights together.' },
 };
 
 // ============================================
@@ -176,7 +177,7 @@ export const GREAT_PEOPLE_TYPES = [
   { type: 'great_scientist', name: 'Great Scientist', trigger: 'science', threshold: 100, icon: '\u{1F9EA}', effect: 'Instantly completes current research', effectType: 'instant_research' },
   { type: 'great_engineer', name: 'Great Engineer', trigger: 'production', threshold: 120, icon: '\u{1F527}', effect: 'Instantly completes current production', effectType: 'instant_production' },
   { type: 'great_merchant', name: 'Great Merchant', trigger: 'gold', threshold: 150, icon: '\u{1F4B0}', effect: '+100 Gold immediately', effectType: 'gold_bonus' },
-  { type: 'great_general', name: 'Great General', trigger: 'military', threshold: 80, icon: '\u{2694}', effect: 'All units +5 combat for 10 turns', effectType: 'combat_bonus' },
+  { type: 'great_general', name: 'Great General', trigger: 'military', threshold: 80, icon: '\u{2694}', effect: 'Spawns a Great General unit near your capital', effectType: 'spawn_general' },
   { type: 'great_prophet', name: 'Great Prophet', trigger: 'culture', threshold: 100, icon: '\u{1F54C}', effect: 'Found a Religion', effectType: 'found_religion' },
   { type: 'great_artist', name: 'Great Artist', trigger: 'culture', threshold: 130, icon: '\u{1F3A8}', effect: '+50 Culture, Golden Age for 5 turns', effectType: 'golden_age' },
 ];
@@ -463,7 +464,7 @@ export const TILE_IMPROVEMENTS = {
 
   // Military
   garrison:    { name: 'Garrison',      icon: '🏰', turns: 4, requires: 'iron_working', validOn: ['grassland','plains','desert','tundra','hills'], yields: { prod: 1 }, defenseBonus: 5, desc: '+5 defense to units on tile, +1 Production' },
-  fortification: { name: 'Fortification', icon: '🏰', turns: 4, requires: 'masonry', validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, defense: 4, desc: '+4 Defense for garrisoned units, blocks enemy movement' },
+  fortification: { name: 'Fortification', icon: '🏰', turns: 4, requires: 'fortification', validOn: ['grassland','plains','desert','tundra','snow','hills'], yields: {}, defense: 4, desc: '+4 Defense for garrisoned units, blocks enemy movement' },
 
   // Terraforming
   clear_forest:{ name: 'Clear Forest', icon: '🪓', turns: 2, requires: 'mining',      validFeature: ['woods','rainforest'], yields: {}, terraform: { removeFeature: true, prodBonus: 20 }, desc: 'Remove forest, gain 20 production' },

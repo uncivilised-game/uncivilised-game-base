@@ -184,6 +184,11 @@ function resolveCombat(attacker, defender) {
       if (playerCityIdx >= 0) {
         aiCapturePlayerCity(playerCityIdx, attacker.owner);
       }
+      // Barbarians on AI faction city tile — always raze and pillage
+      const isBarbarian = attacker.owner === 'barbarian' || (attacker.owner && attacker.owner.startsWith && attacker.owner.startsWith('barbarian'));
+      if (isBarbarian) {
+        barbarianRazeAICity(attacker.col, attacker.row);
+      }
     }
   }
 
@@ -323,6 +328,7 @@ function attackFactionCity(attacker, factionId) {
     type: 'city_garrison', hp: 100, col: fc.col, row: fc.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
   }, (tactic) => {
+    if (tactic === 'cancel') return;
     if (tactic === 'retreat') {
       attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
       addEvent('Withdrew from ' + factionName + '\'s city', 'combat');
@@ -401,6 +407,7 @@ function attackExpansionCity(attacker, factionId, cityIdx) {
     type: 'city_garrison', hp: ec.hp || CITY_DEFENSE.BASE_HP, col: ec.col, row: ec.row, owner: factionId,
     _isCityAttack: true, _factionId: factionId, _factionName: factionName
   }, (tactic) => {
+    if (tactic === 'cancel') return;
     if (tactic === 'retreat') {
       attacker.moveLeft = Math.max(0, attacker.moveLeft - 1);
       addEvent('Withdrew from ' + ec.name, 'combat');
@@ -702,12 +709,13 @@ function checkCityCapture(col, row) {
       return;
     }
   }
-  // Check AI expansion cities
+  // Check AI expansion cities — capture when a melee unit enters the tile
+  // (either by reducing city HP to 0 via direct attack, or by killing the last defender)
   if (game.aiFactionCities) {
     for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
       for (let i = 0; i < cities.length; i++) {
         const ec = cities[i];
-        if (ec.col === col && ec.row === row && ec.hp <= 0) {
+        if (ec.col === col && ec.row === row) {
           captureExpansionCity(fid, i);
           return;
         }
@@ -987,6 +995,100 @@ function aiCapturePlayerCity(cityIdx, attackerFactionId) {
   }
 }
 
+/**
+ * Barbarian razes an AI faction city at the given tile.
+ * Barbarians always raze — they pillage for gold which goes to their nearest camp.
+ * Handles both faction capitals and expansion cities.
+ * @returns {boolean} true if a city was razed
+ */
+function barbarianRazeAICity(col, row) {
+  // Check faction capitals
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    if (fc.col === col && fc.row === row) {
+      const factionName = FACTIONS[fid]?.name || fid;
+      const plunderGold = 30 + Math.floor(Math.random() * 50);
+
+      // Remove garrison units
+      game.units = game.units.filter(u => !(u.col === col && u.row === row && u.owner === fid));
+
+      // Remove the capital
+      delete game.factionCities[fid];
+
+      // Award plunder to nearest barbarian camp
+      awardPlunderToCamp(col, row, plunderGold);
+
+      addEvent(`\u{1F525} Barbarians RAZED ${fc.name} (${factionName})! The city is pillaged and burned.`, 'combat');
+      showToast('City Razed', `Barbarians razed ${fc.name}!`, 6000);
+      logAction('combat', `Barbarians razed ${fc.name} (${factionName})`, { col, row, factionId: fid, plunderGold });
+
+      // Check faction elimination
+      const hasExpCities = (game.aiFactionCities[fid] || []).length > 0;
+      if (!hasExpCities) {
+        eliminateFaction(fid, factionName);
+      }
+
+      markVisibilityDirty();
+      updateUI();
+      return true;
+    }
+  }
+
+  // Check AI expansion cities
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      for (let i = 0; i < cities.length; i++) {
+        const ec = cities[i];
+        if (ec.col === col && ec.row === row) {
+          const factionName = FACTIONS[fid]?.name || fid;
+          const plunderGold = 20 + Math.floor(Math.random() * 40);
+
+          // Remove garrison units
+          game.units = game.units.filter(u => !(u.col === col && u.row === row && u.owner === fid));
+
+          // Remove the expansion city
+          cities.splice(i, 1);
+
+          // Award plunder to nearest barbarian camp
+          awardPlunderToCamp(col, row, plunderGold);
+
+          addEvent(`\u{1F525} Barbarians RAZED ${ec.name} (${factionName})! The settlement is pillaged.`, 'combat');
+          showToast('City Razed', `Barbarians razed ${ec.name}!`, 6000);
+          logAction('combat', `Barbarians razed ${ec.name} (${factionName})`, { col, row, factionId: fid, plunderGold });
+
+          // Check faction elimination
+          const hasCapital = !!game.factionCities[fid];
+          const hasExpCities = cities.length > 0;
+          if (!hasCapital && !hasExpCities) {
+            eliminateFaction(fid, factionName);
+          }
+
+          markVisibilityDirty();
+          updateUI();
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Award plunder gold to the nearest non-destroyed barbarian camp.
+ */
+function awardPlunderToCamp(col, row, gold) {
+  if (!game.barbarianCamps || game.barbarianCamps.length === 0) return;
+  let best = null, bestDist = Infinity;
+  for (const c of game.barbarianCamps) {
+    if (c.destroyed) continue;
+    const d = hexDistance(col, row, c.col, c.row);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  if (best) {
+    best.gold = (best.gold || 0) + gold;
+    best.strength = Math.min(30, (best.strength || 5) + Math.floor(gold / 10));
+  }
+}
+
 function getUnitAt(col, row) {
   return game.units.find(u => u.col === col && u.row === row);
 }
@@ -1089,6 +1191,10 @@ function showBattlePanel(attacker, defender, onChoice) {
         <button class="battle-tactic battle-tactic-retreat" data-tactic="retreat">
           <strong>\u{1F6A9} Retreat</strong>
           <span>Withdraw without fighting. Unit loses 1 move point.</span>
+        </button>
+        <button class="battle-tactic battle-tactic-cancel" data-tactic="cancel">
+          <strong>\u{2715} Cancel</strong>
+          <span>Return to map. No action taken.</span>
         </button>
       </div>
     </div>
@@ -1269,4 +1375,5 @@ export {
   razeCity,
   aiCapturePlayerCity,
   aiRazePlayerCity,
+  barbarianRazeAICity,
 };

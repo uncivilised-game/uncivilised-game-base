@@ -13,6 +13,17 @@ import { updateUI } from './leaderboard.js';
 import { startAnimLoop } from './feedback.js';
 import { MINOR_FACTION_TYPES, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
 
+function findNearestBarbarianCamp(col, row) {
+  if (!game.barbarianCamps) return null;
+  let best = null, bestDist = Infinity;
+  for (const c of game.barbarianCamps) {
+    if (c.destroyed) continue;
+    const d = hexDistance(col, row, c.col, c.row);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
 // ---- Civilian / Military stacking helpers ----
 
 /** Returns true if the unit is a civilian (worker, settler, etc.) */
@@ -671,6 +682,7 @@ function handleHexClick(col, row) {
           }
           // Show tactical battle panel for player attacks
           showBattlePanel(unit, target, (tactic) => {
+            if (tactic === 'cancel') return;
             const tacticResult = applyTacticModifier(tactic, 0, 0, unit, target);
             if (tacticResult.retreat) {
               unit.moveLeft = Math.max(0, unit.moveLeft - 1);
@@ -790,6 +802,12 @@ function handleHexClick(col, row) {
       }
       return;
     } else if (unitsHere.length > 0) {
+      // Barbarian units → open camp interaction if a camp exists
+      const barbUnit = unitsHere.find(u => u.owner === 'barbarian');
+      if (barbUnit && game.barbarianCamps) {
+        const camp = findNearestBarbarianCamp(barbUnit.col, barbUnit.row);
+        if (camp) { interactWithBarbarianCamp(camp.id); return; }
+      }
       selectUnit(unitsHere[0]);
       return;
     }
@@ -838,6 +856,12 @@ function handleHexClick(col, row) {
 
   // Non-player units
   if (unitsAtHex.length > 0) {
+    // Barbarian units → open camp interaction if a camp exists
+    const barbUnit = unitsAtHex.find(u => u.owner === 'barbarian');
+    if (barbUnit && game.barbarianCamps) {
+      const camp = findNearestBarbarianCamp(barbUnit.col, barbUnit.row);
+      if (camp) { interactWithBarbarianCamp(camp.id); return; }
+    }
     selectUnit(unitsAtHex[0]);
     return;
   }
@@ -910,6 +934,195 @@ function selectNextUnit() {
   selectUnit(movableUnits[idx]);
 }
 
+// ============================================
+// GREAT GENERAL — ARMY MECHANICS
+// ============================================
+
+/** Get the max army capacity for a general based on XP level */
+function getGeneralCapacity(general) {
+  if (general.armyCapacity) return general.armyCapacity;
+  // Base capacity 3, +1 at level 2 (20 XP), +1 at level 3 (50 XP)
+  const xp = general.xp || 0;
+  if (xp >= 50) return 5;
+  if (xp >= 20) return 4;
+  return 3;
+}
+
+/** Attach a military unit to a general's army */
+function attachToArmy(generalId, unitId) {
+  const general = game.units.find(u => u.id === generalId);
+  const unit = game.units.find(u => u.id === unitId);
+  if (!general || !unit) return false;
+  if (general.type !== 'great_general') return false;
+  if (unit.owner !== general.owner) return false;
+  const ut = UNIT_TYPES[unit.type];
+  if (!ut || ut.combat <= 0) return false; // only military units
+  if (unit.type === 'great_general') return false; // can't nest generals
+
+  if (!general.army) general.army = [];
+  const cap = getGeneralCapacity(general);
+  if (general.army.length >= cap) {
+    addEvent('Army is full (' + cap + '/' + cap + '). General needs more experience.', 'combat');
+    return false;
+  }
+
+  // Check unit is adjacent to or on same tile as general
+  const dist = hexDistance(unit.col, unit.row, general.col, general.row);
+  if (dist > 1) {
+    addEvent('Unit must be adjacent to the General to join the army.', 'combat');
+    return false;
+  }
+
+  // Remove unit from map — it's now inside the army
+  general.army.push({
+    id: unit.id, type: unit.type, hp: unit.hp, xp: unit.xp || 0,
+    promotions: unit.promotions || [], combat: unit.combat || ut.combat,
+    level: unit.level || 1, pendingPromotion: unit.pendingPromotion || false,
+  });
+  game.units = game.units.filter(u => u.id !== unitId);
+
+  const unitName = ut.name;
+  addEvent(unitName + ' joined the General\'s army (' + general.army.length + '/' + cap + ')', 'combat');
+  showToast('\u{2694} Army', unitName + ' attached to Great General');
+  return true;
+}
+
+/** Detach a unit from a general's army back onto the map */
+function detachFromArmy(generalId, armyIdx) {
+  const general = game.units.find(u => u.id === generalId);
+  if (!general || !general.army || armyIdx >= general.army.length) return false;
+
+  const stored = general.army[armyIdx];
+  const ut = UNIT_TYPES[stored.type];
+  if (!ut) return false;
+
+  // Find an adjacent empty tile to place the unit
+  const nbs = getHexNeighbors(general.col, general.row);
+  let spawnTile = null;
+  for (const nb of nbs) {
+    const t = game.map[nb.row]?.[nb.col];
+    if (!t || !isTilePassable(t)) continue;
+    const occupied = game.units.filter(u => u.col === nb.col && u.row === nb.row);
+    if (occupied.length >= 2) continue;
+    if (occupied.length === 1 && !canStackWith({ owner: general.owner, type: stored.type }, occupied[0])) continue;
+    spawnTile = nb;
+    break;
+  }
+  if (!spawnTile) {
+    addEvent('No room to detach unit — clear adjacent tiles first.', 'combat');
+    return false;
+  }
+
+  // Create unit back on the map
+  const newUnit = createUnit(stored.type, spawnTile.col, spawnTile.row, general.owner);
+  newUnit.id = stored.id; // preserve original ID
+  newUnit.hp = stored.hp;
+  newUnit.xp = stored.xp;
+  newUnit.combat = stored.combat;
+  newUnit.promotions = stored.promotions;
+  newUnit.level = stored.level;
+  newUnit.pendingPromotion = stored.pendingPromotion;
+  newUnit.moveLeft = 0; // can't move the turn they detach
+  game.units.push(newUnit);
+
+  general.army.splice(armyIdx, 1);
+  addEvent(ut.name + ' detached from army', 'combat');
+  return true;
+}
+
+/** Move the general and all army units together */
+function moveArmyTo(general, col, row, callback) {
+  // Standard movement — the general moves, army travels with it
+  moveUnitTo(general, col, row, () => {
+    // Grant XP to general for army movement (small amount)
+    general.xp = (general.xp || 0) + 1;
+    // Update capacity if XP threshold crossed
+    general.armyCapacity = getGeneralCapacity(general);
+    if (callback) callback();
+  });
+}
+
+/**
+ * Coordinated attack: general orders up to 2 army units to attack
+ * a target simultaneously, applying flanking bonuses.
+ */
+function coordinatedAttack(generalId, targetCol, targetRow) {
+  const general = game.units.find(u => u.id === generalId);
+  if (!general || !general.army || general.army.length === 0) return false;
+
+  const target = game.units.find(u => u.col === targetCol && u.row === targetRow && u.owner !== general.owner);
+  if (!target) return false;
+
+  // Check general is adjacent to target
+  const dist = hexDistance(general.col, general.row, targetCol, targetRow);
+  if (dist > 1) {
+    addEvent('General must be adjacent to the target for a coordinated attack.', 'combat');
+    return false;
+  }
+
+  // Pick up to 2 strongest army units for the attack
+  const attackers = general.army
+    .filter(u => UNIT_TYPES[u.type]?.combat > 0)
+    .sort((a, b) => (b.combat || UNIT_TYPES[b.type].combat) - (a.combat || UNIT_TYPES[a.type].combat))
+    .slice(0, 2);
+
+  if (attackers.length === 0) {
+    addEvent('No combat units in the army to attack with.', 'combat');
+    return false;
+  }
+
+  const targetType = UNIT_TYPES[target.type];
+  const targetName = targetType ? targetType.name : 'enemy';
+
+  addEvent('\u{2694} Great General orders a coordinated attack on ' + targetName + '!', 'combat');
+
+  // Execute attacks sequentially — each attacker gets a flanking bonus
+  for (let i = 0; i < attackers.length; i++) {
+    if (target.hp <= 0) break; // target already dead
+
+    const stored = attackers[i];
+    const aType = UNIT_TYPES[stored.type];
+    const atkPower = stored.combat || aType.combat;
+    const defPower = targetType.combat || 10;
+
+    // Coordinated attack bonus: +30% for flanking
+    const flankMod = attackers.length > 1 ? 1.3 : 1.15;
+    const damage = Math.max(5, Math.floor(30 * flankMod * (atkPower / Math.max(1, defPower)) * (stored.hp / 100)));
+    const returnDmg = Math.max(3, Math.floor(15 * (defPower / Math.max(1, atkPower)) * (target.hp / 100)));
+
+    target.hp -= damage;
+    stored.hp = Math.max(0, stored.hp - returnDmg);
+
+    addEvent('  ' + aType.name + ' deals ' + damage + ' dmg, takes ' + returnDmg + ' return dmg', 'combat');
+
+    // Grant XP to the attacking unit and the general
+    stored.xp = (stored.xp || 0) + 10;
+    general.xp = (general.xp || 0) + 5;
+
+    // Remove dead army units
+    if (stored.hp <= 0) {
+      const idx = general.army.findIndex(u => u.id === stored.id);
+      if (idx >= 0) general.army.splice(idx, 1);
+      addEvent('  ' + aType.name + ' was destroyed in the assault!', 'combat');
+    }
+  }
+
+  // Update general capacity from XP gain
+  general.armyCapacity = getGeneralCapacity(general);
+
+  // Handle target death
+  if (target.hp <= 0) {
+    game.units = game.units.filter(u => u.id !== target.id);
+    addEvent(targetName + ' destroyed by coordinated attack!', 'combat');
+    showToast('\u{2694} Victory', targetName + ' destroyed by the General\'s army!');
+    markVisibilityDirty();
+  }
+
+  general.moveLeft = 0; // coordinated attack uses the general's turn
+  general.hasAttackedThisTurn = true;
+  return true;
+}
+
 export {
   createUnit,
   placeFactionCities,
@@ -930,4 +1143,8 @@ export {
   getTileOwner,
   isTerritoryBlocked,
   boostFactionReputation,
+  getGeneralCapacity,
+  attachToArmy,
+  detachFromArmy,
+  coordinatedAttack,
 };
