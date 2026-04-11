@@ -51,7 +51,7 @@ describe('migrateTiles()', () => {
     expect(state.units[0].buildCharges).toBeUndefined(); // not a worker
 
     // Worker gets buildCharges
-    expect(state.units[1].buildCharges).toBe(2);
+    expect(state.units[1].buildCharges).toBe(3);
   });
 
   test('does not overwrite existing unit fields', () => {

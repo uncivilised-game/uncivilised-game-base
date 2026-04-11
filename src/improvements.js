@@ -167,13 +167,10 @@ export function processImprovements() {
           if (worker.buildCharges !== undefined) {
             worker.buildCharges--;
             if (worker.buildCharges <= 0) {
+              // Workers are consumed after exhausting charges (player and AI)
+              game.units = game.units.filter(u => u.id !== worker.id);
               if (isPlayer) {
-                // Player workers are consumed after exhausting charges
-                game.units = game.units.filter(u => u.id !== worker.id);
                 addEvent('Worker has used all build charges and was consumed', 'warning');
-              } else {
-                // AI workers refresh charges — AI has no unit recruitment UI
-                worker.buildCharges = 2;
               }
             }
           }
