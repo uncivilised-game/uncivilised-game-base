@@ -985,7 +985,7 @@ function endTurn() {
         addEvent(gp.icon + ' ' + gp.name + ' has appeared!', 'gold');
         showGreatPersonNotification(gp);
         // Auto-use great people with immediate effects (no strategic timing)
-        if (gp.effectType === 'gold_bonus' || gp.effectType === 'golden_age') {
+        if (gp.effectType === 'gold_bonus' || gp.effectType === 'golden_age' || gp.effectType === 'spawn_general') {
           useGreatPerson(gpEntry, gp);
         }
       }

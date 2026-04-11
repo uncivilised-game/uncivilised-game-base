@@ -18,7 +18,7 @@ import {
 import { setRenderCallback } from './assets.js';
 import { render, resizeCanvas, centerCameraOnCity, computeVisibility } from './render.js';
 import { initInputHandlers, clampCamera, zoomAtCenter, panCameraTo } from './input.js';
-import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, handleHexClick, applyPromotion, computeMoveRange, computeAttackRange, moveUnitTo, placeFactionCities } from './units.js';
+import { createUnit, selectUnit, deselectUnit, selectNextUnit, autoSelectNext, handleHexClick, applyPromotion, computeMoveRange, computeAttackRange, moveUnitTo, placeFactionCities, attachToArmy, detachFromArmy, coordinatedAttack } from './units.js';
 import { resolveCombat, getUnitAt, getPlayerUnitAt, getEnemyUnitAt, getCityAt, showBattlePanel, attackFactionCity, attackExpansionCity } from './combat.js';
 import { endTurn, showTurnSummary, showGameOver, continueAfterVictory } from './turn.js';
 import { togglePanel, closeAllPanels, renderBuildPanel, startBuild, cancelProduction, startWonderBuild, renderResearchPanel, startResearch, setTechGoal, clearTechGoal, renderUnitsPanel, recruitUnit, renderCivicsPanel, toggleCivicsPanel, renderVictoryPanel, toggleVictoryPanel, checkVictoryConditions, showSelectionPanel, hideSelectionPanel, showCityPanel, showTileInfo, showCombatResult, showDeleteConfirm, ensureVictoryPanel, ensureCivicsPanel, computeCityYields, showGiftUnitPanel, giftUnit, toggleGovernmentPanel, openGovernmentPanel, isGovernmentUnlocked, switchBuildCity } from './ui-panels.js';
@@ -91,6 +91,9 @@ window.cancelTradeRoute = cancelTradeRoute;
 window.clearTechGoal = clearTechGoal;
 window.showWorkerActions = showWorkerActions;
 window.switchBuildCity = switchBuildCity;
+window.attachToArmy = function(gid, uid) { if (attachToArmy(gid, uid)) { const g = game.units.find(u => u.id === gid); if (g) showSelectionPanel(g); render(); } };
+window.detachFromArmy = function(gid, idx) { if (detachFromArmy(gid, idx)) { const g = game.units.find(u => u.id === gid); if (g) showSelectionPanel(g); render(); } };
+window.coordinatedAttack = function(gid, col, row) { if (coordinatedAttack(gid, col, row)) { const g = game.units.find(u => u.id === gid); if (g) showSelectionPanel(g); updateUI(); render(); } };
 
 // --- Expose testing/debug functions ---
 window.triggerEureka = triggerEureka;

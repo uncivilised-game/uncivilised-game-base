@@ -20,6 +20,7 @@ import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
+import { attachToArmy, detachFromArmy, coordinatedAttack, getGeneralCapacity } from './units.js';
 import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
 
 function showSelectionPanel(unit) {
@@ -31,6 +32,11 @@ function showSelectionPanel(unit) {
   // Special panel for settlers
   if (unit.type === 'settler' && unit.owner === 'player') {
     showSettlerActions(unit);
+    return;
+  }
+  // Special panel for Great General
+  if (unit.type === 'great_general' && unit.owner === 'player') {
+    showGeneralPanel(unit);
     return;
   }
   const panel = document.getElementById('selection-panel');
@@ -261,6 +267,87 @@ function giftUnit(unitId, factionId) {
   // Deselect and close panel
   hideSelectionPanel();
   deselectUnit();
+}
+
+function showGeneralPanel(unit) {
+  const panel = document.getElementById('selection-panel');
+  const ut = UNIT_TYPES[unit.type];
+  const army = unit.army || [];
+  const cap = getGeneralCapacity(unit);
+  const xp = unit.xp || 0;
+  const nextThreshold = xp < 20 ? 20 : xp < 50 ? 50 : null;
+
+  let html = `<div class="sel-header">
+    <div class="sel-icon" style="background:rgba(201,168,76,0.2);border-color:#c9a84c">${ut.icon}</div>
+    <div class="sel-info">
+      <div class="sel-name" style="color:#ffd700">Great General</div>
+      <div class="sel-sub">Army: ${army.length}/${cap} units${nextThreshold ? ' \u00B7 Next slot at ' + nextThreshold + ' XP' : ' \u00B7 Max capacity'}</div>
+    </div>
+  </div>`;
+
+  html += `<div class="sel-stats">
+    <div class="sel-stat"><span class="sel-stat-label">Moves</span><span class="sel-stat-value">${unit.moveLeft}/${ut.movePoints}</span></div>
+    <div class="sel-stat"><span class="sel-stat-label">XP</span><span class="sel-stat-value">${xp}</span></div>
+    <div class="sel-stat"><span class="sel-stat-label">Capacity</span><span class="sel-stat-value">${cap} units</span></div>
+  </div>`;
+
+  // Army roster
+  if (army.length > 0) {
+    html += '<div style="margin:8px 0;border-top:1px solid var(--color-border);padding-top:6px">';
+    html += '<p style="color:#c9a84c;font-size:11px;margin-bottom:4px;font-weight:600">Army Roster:</p>';
+    for (let i = 0; i < army.length; i++) {
+      const u = army[i];
+      const aut = UNIT_TYPES[u.type];
+      if (!aut) continue;
+      const hpColor = u.hp > 60 ? '#6aab5c' : u.hp > 30 ? '#ddc060' : '#d9534f';
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:12px">
+        <span>${aut.icon} ${aut.name} <span style="color:${hpColor}">${u.hp}HP</span> <span style="color:#888">C:${u.combat || aut.combat}</span></span>
+        <button class="sel-btn" style="padding:2px 8px;font-size:10px;margin:0" onclick="window.detachFromArmy(${unit.id},${i})">Detach</button>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="sel-actions">';
+
+  // Attach nearby units button
+  if (army.length < cap) {
+    const nearby = game.units.filter(u =>
+      u.owner === 'player' && u.id !== unit.id &&
+      UNIT_TYPES[u.type]?.combat > 0 && u.type !== 'great_general' &&
+      hexDistance(u.col, u.row, unit.col, unit.row) <= 1
+    );
+    for (const nu of nearby) {
+      const nut = UNIT_TYPES[nu.type];
+      html += `<button class="sel-btn" style="border-color:#c9a84c" onclick="window.attachToArmy(${unit.id},${nu.id})"><span>${nut.icon} Attach ${nut.name}</span></button>`;
+    }
+    if (nearby.length === 0 && army.length === 0) {
+      html += '<div style="color:#888;font-size:11px;padding:6px;text-align:center;font-style:italic">Move adjacent to military units to attach them</div>';
+    }
+  }
+
+  // Coordinated attack button — show enemy targets adjacent to general
+  if (army.length > 0 && unit.moveLeft > 0 && !unit.hasAttackedThisTurn) {
+    const adjEnemies = game.units.filter(u =>
+      u.owner !== 'player' &&
+      hexDistance(u.col, u.row, unit.col, unit.row) <= 1 &&
+      UNIT_TYPES[u.type]?.combat > 0
+    );
+    for (const enemy of adjEnemies) {
+      const et = UNIT_TYPES[enemy.type];
+      const fName = FACTIONS[enemy.owner]?.name || enemy.owner;
+      html += `<button class="sel-btn" style="border-color:#e03030;color:#ff4444;background:rgba(220,40,40,0.15);font-weight:bold" onclick="window.coordinatedAttack(${unit.id},${enemy.col},${enemy.row})"><span>\u{2694} Coordinated Attack: ${et.name} (${fName})</span></button>`;
+    }
+  }
+
+  html += `<button class="sel-btn" onclick="unitAction('fortify')"><span>Fortify</span><span class="sel-key">F</span></button>`;
+  html += `<button class="sel-btn" onclick="unitAction('sleep')"><span>Sleep</span><span class="sel-key">Z</span></button>`;
+  html += `<button class="sel-btn sel-btn-danger" onclick="unitAction('delete')"><span>Delete</span><span class="sel-key">Del</span></button>`;
+  html += '</div>';
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+  document.getElementById('tile-info').style.display = 'none';
 }
 
 function hideSelectionPanel() {
