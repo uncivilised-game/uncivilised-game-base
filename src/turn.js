@@ -14,7 +14,7 @@ import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from 
 import { discoverVisibleFactions, revealAround } from './discovery.js';
 import { processUnitWaypoint } from './improvements.js';
 import { isTilePassable } from './map.js';
-import { getUnitAt, processZOCCaptures } from './combat.js';
+import { getUnitAt, processZOCCaptures, resolveCombat, isAtWarWith } from './combat.js';
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
@@ -428,6 +428,10 @@ function endTurn() {
   try {
     processAITurns();
   } catch (e) { console.error('Error in processAITurns:', e); }
+  // Base-game AI military: move units toward enemies and fight
+  try {
+    processAIMilitaryTurns();
+  } catch (e) { console.error('Error in processAIMilitaryTurns:', e); }
   try {
     processZOCCaptures();
   } catch (e) { console.error('Error in processZOCCaptures:', e); }
@@ -1663,6 +1667,120 @@ function moveAISettlerTowardSite(settler, fid) {
 }
 
 // ============================================
+// AI MILITARY COMBAT — BASE GAME
+// ============================================
+// Moves AI military units toward enemies they're at war with and resolves combat.
+// This provides functional AI warfare without the diplomacy plugin.
+
+function processAIMilitaryTurns() {
+  // 1. Process commitments — ensure wage_war_on commitments become actual wars
+  for (const commit of (game.aiCommitments || [])) {
+    if (commit.type === 'wage_war_on' && commit.factionId && commit.target) {
+      const alreadyAtWar = (game.aiWars || []).some(w =>
+        (w.attacker === commit.factionId && w.defender === commit.target) ||
+        (w.attacker === commit.target && w.defender === commit.factionId)
+      );
+      if (!alreadyAtWar) {
+        if (!game.aiWars) game.aiWars = [];
+        game.aiWars.push({
+          attacker: commit.factionId, defender: commit.target,
+          startTurn: game.turn, turnsActive: 0,
+        });
+        const aName = FACTIONS[commit.factionId]?.name || commit.factionId;
+        const bName = FACTIONS[commit.target]?.name || commit.target;
+        addEvent(`${aName} has declared war on ${bName}!`, 'diplomacy');
+      }
+    }
+  }
+
+  // 2. Move and fight — each AI military unit gets one action
+  const aiMilitary = game.units.filter(u =>
+    u.owner !== 'player' && u.owner !== 'barbarian' &&
+    UNIT_TYPES[u.type]?.combat > 0 && u.moveLeft > 0
+  );
+
+  for (const unit of aiMilitary) {
+    if (unit.hp <= 0) continue;
+    const fid = unit.owner;
+
+    // Find enemies this faction is at war with
+    const enemies = (game.aiWars || [])
+      .filter(w => w.attacker === fid || w.defender === fid)
+      .map(w => w.attacker === fid ? w.defender : w.attacker);
+
+    // Also include player if at war
+    if (isAtWarWith(fid)) enemies.push('player');
+
+    if (enemies.length === 0) continue;
+
+    // Check for adjacent enemy units to attack
+    const neighbors = getHexNeighbors(unit.col, unit.row);
+    let attacked = false;
+    for (const nb of neighbors) {
+      const target = game.units.find(u =>
+        u.col === nb.col && u.row === nb.row && enemies.includes(u.owner) && u.hp > 0
+      );
+      if (target) {
+        resolveCombat(unit, target);
+        attacked = true;
+        break;
+      }
+    }
+    if (attacked || unit.hp <= 0) continue;
+
+    // No adjacent enemy — move toward nearest enemy unit or city
+    let bestTarget = null, bestDist = Infinity;
+
+    // Enemy units
+    for (const enemy of game.units) {
+      if (!enemies.includes(enemy.owner)) continue;
+      if (enemy.hp <= 0) continue;
+      const d = hexDistance(unit.col, unit.row, enemy.col, enemy.row);
+      if (d < bestDist) { bestDist = d; bestTarget = { col: enemy.col, row: enemy.row }; }
+    }
+
+    // Enemy cities (player cities)
+    if (enemies.includes('player')) {
+      for (const city of game.cities) {
+        const d = hexDistance(unit.col, unit.row, city.col, city.row);
+        if (d < bestDist) { bestDist = d; bestTarget = { col: city.col, row: city.row }; }
+      }
+    }
+
+    // Enemy AI faction cities
+    for (const enemyFid of enemies) {
+      if (enemyFid === 'player') continue;
+      const fc = game.factionCities[enemyFid];
+      if (fc) {
+        const d = hexDistance(unit.col, unit.row, fc.col, fc.row);
+        if (d < bestDist) { bestDist = d; bestTarget = { col: fc.col, row: fc.row }; }
+      }
+      for (const ec of (game.aiFactionCities[enemyFid] || [])) {
+        const d = hexDistance(unit.col, unit.row, ec.col, ec.row);
+        if (d < bestDist) { bestDist = d; bestTarget = { col: ec.col, row: ec.row }; }
+      }
+    }
+
+    if (!bestTarget) continue;
+
+    // Move one step toward the target
+    let closestNb = null, closestDist = bestDist;
+    for (const nb of neighbors) {
+      const tile = game.map[nb.row]?.[nb.col];
+      if (!tile || !isTilePassable(tile)) continue;
+      if (game.units.some(u => u.col === nb.col && u.row === nb.row && u.owner === fid)) continue;
+      const d = hexDistance(nb.col, nb.row, bestTarget.col, bestTarget.row);
+      if (d < closestDist) { closestDist = d; closestNb = nb; }
+    }
+    if (closestNb) {
+      unit.col = closestNb.col;
+      unit.row = closestNb.row;
+      unit.moveLeft--;
+    }
+  }
+}
+
+// ============================================
 // EJECT TRESPASSING UNITS
 // ============================================
 
@@ -1734,4 +1852,4 @@ function findNearestValidTile(unit) {
   return null;
 }
 
-export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected, ejectTrespassingUnits };
+export { endTurn, showTurnSummary, showGameOver, continueAfterVictory, processAIUnitSpawning, processAIWorkerImprovements, calculateCityAmenities, getAmenityStatus, getAmenityMod, areCitiesRoadConnected, ejectTrespassingUnits, processAIMilitaryTurns };
