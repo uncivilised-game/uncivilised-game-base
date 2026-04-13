@@ -6,7 +6,7 @@ import { addEvent, logAction, triggerEureka, triggerInspiration } from './events
 import { render, markVisibilityDirty } from './render.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { revealAround } from './discovery.js';
-import { deselectUnit, autoSelectNext, isInEnemyZOC, boostFactionReputation } from './units.js';
+import { deselectUnit, autoSelectNext, isInEnemyZOC, boostFactionReputation, releaseGeneralArmy } from './units.js';
 import { updateUI } from './leaderboard.js';
 import { showToast, showDiploToast } from './events.js';
 import { showModBanner } from './diplomacy-api.js';
@@ -21,22 +21,8 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
-  // Civilian capture — attacker takes ownership (great generals are killed instead)
+  // Civilian capture — attacker takes ownership
   if (dType.class === 'civilian') {
-    if (defender.type === 'great_general') {
-      // Great generals cannot be captured — they are killed
-      const prevOwner = defender.owner;
-      addDeathMarker(defender.col, defender.row);
-      game.units = game.units.filter(u => u.id !== defender.id);
-      const ownerName = FACTIONS[prevOwner]?.name || prevOwner;
-      const captorName = FACTIONS[attacker.owner]?.name || attacker.owner;
-      if (prevOwner === 'player') {
-        addEvent(`Your Great General was slain by ${captorName}!`, 'combat');
-      } else if (attacker.owner === 'player') {
-        addEvent(`Slew ${ownerName}'s Great General!`, 'combat');
-      }
-      return { attackerDied: false, defenderDied: true, captured: false };
-    }
     const prevOwner = defender.owner;
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
@@ -153,6 +139,8 @@ function resolveCombat(attacker, defender) {
   // Remove dead units
   if (defender.hp <= 0) {
     addDeathMarker(defender.col, defender.row);
+    // Release army units before removing the general
+    if (defender.type === 'great_general') releaseGeneralArmy(defender);
     game.units = game.units.filter(u => u.id !== defender.id);
     markVisibilityDirty();
     result.defenderDied = true;
@@ -1296,7 +1284,8 @@ function processZOCCaptures() {
   for (let i = game.units.length - 1; i >= 0; i--) {
     const unit = game.units[i];
     const ut = UNIT_TYPES[unit.type];
-    if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only civilians
+    if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only non-combat units
+    if (ut.class === 'great_person') continue; // great persons are immune to ZOC capture
 
     if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;
 
@@ -1336,13 +1325,6 @@ function processZOCCaptures() {
       }
 
       captured.push({ type: unit.type, prevOwner: unit.owner, col: unit.col, row: unit.row, capturedBy });
-
-      // Great generals are killed, not captured
-      if (unit.type === 'great_general') {
-        addDeathMarker(unit.col, unit.row);
-        game.units.splice(i, 1);
-        continue;
-      }
 
       // Transfer to capturing faction instead of deleting
       if (capturedBy) {

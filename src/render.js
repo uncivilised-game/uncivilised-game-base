@@ -12,7 +12,7 @@ import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
 
 // ============================================
-// SPRITE ANIMATION — idle frame cycling
+// SPRITE ANIMATION — idle frame cyclig
 // ============================================
 const SPRITE_ANIM_FRAME_COUNT = 8;
 const SPRITE_ANIM_FRAME_MS = 150; // milliseconds per frame (~5.3 FPS idle bob)
@@ -108,6 +108,92 @@ function drawCapitalStar(cx, sx, sy, color) {
 
   cx.shadowBlur = 0;
   cx.restore();
+}
+
+// ============================================
+// TERRAIN-AWARE IMPROVEMENT RENDERING
+// ============================================
+
+// Per-improvement layout: how big relative to hex, and vertical offset
+// Positive dy = lower in hex. Scale is fraction of HEX_SIZE*2
+const IMP_LAYOUT = {
+  farm:          { scale: 0.72, dy:  0.18, dx: 0 },
+  irrigation:    { scale: 0.70, dy:  0.15, dx: 0 },
+  pasture:       { scale: 0.68, dy:  0.12, dx: 0 },
+  camp:          { scale: 0.62, dy:  0.05, dx: 0 },
+  fishing_boats: { scale: 0.70, dy:  0.20, dx: 0 },
+  mine:          { scale: 0.65, dy: -0.15, dx: 0 },
+  quarry:        { scale: 0.65, dy: -0.12, dx: 0.05 },
+  lumber_mill:   { scale: 0.70, dy:  0.00, dx: 0 },
+};
+
+// Simple deterministic hash from tile coordinates — stable per tile, no flicker
+function tileHash(col, row) {
+  return ((col * 7919) + (row * 104729)) & 0xFFFF;
+}
+
+// Draw a contextually-positioned improvement sprite with terrain colour tint overlay
+function drawTintedImprovement(mainCtx, impImg, tile, sx, sy, col, row) {
+  const layout = IMP_LAYOUT[tile.improvement] || { scale: 0.65, dy: 0, dx: 0 };
+  const spriteSize = HEX_SIZE * 2 * layout.scale;
+
+  // Deterministic mirror based on tile position (~50% of tiles get flipped)
+  const mirror = (tileHash(col, row) % 2) === 0;
+
+  // Position offset within the hex (flip dx when mirrored)
+  const ox = sx + (mirror ? -layout.dx : layout.dx) * HEX_SIZE;
+  const oy = sy + layout.dy * HEX_SIZE;
+
+  // Draw the improvement sprite directly onto the main canvas
+  mainCtx.save();
+  mainCtx.globalAlpha = 0.85;
+  if (mirror) {
+    mainCtx.translate(ox, oy);
+    mainCtx.scale(-1, 1);
+    mainCtx.drawImage(impImg, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+  } else {
+    mainCtx.drawImage(impImg, ox - spriteSize / 2, oy - spriteSize / 2, spriteSize, spriteSize);
+  }
+  mainCtx.restore();
+}
+
+// Draw roads as connecting paths between hex centres
+function drawRoadConnections(mainCtx, tile, c, r, sx, sy, camOffX, camOffY) {
+  const neighbors = getHexNeighbors(c, r);
+  let hasConnection = false;
+
+  mainCtx.save();
+  mainCtx.strokeStyle = 'rgba(160,130,75,0.7)';
+  mainCtx.lineWidth = HEX_SIZE * 0.16;
+  mainCtx.lineCap = 'round';
+
+  for (const n of neighbors) {
+    if (n.row < 0 || n.row >= MAP_ROWS || n.col < 0 || n.col >= MAP_COLS) continue;
+    const nTile = game.map[n.row][n.col];
+    if (!nTile.road) continue;
+
+    hasConnection = true;
+    const nPos = hexToPixel(n.col, n.row);
+    const nx = nPos.x - camOffX;
+    const ny = nPos.y - camOffY;
+
+    const edgeX = (sx + nx) / 2;
+    const edgeY = (sy + ny) / 2;
+
+    mainCtx.beginPath();
+    mainCtx.moveTo(sx, sy);
+    mainCtx.lineTo(edgeX, edgeY);
+    mainCtx.stroke();
+  }
+
+  if (!hasConnection) {
+    mainCtx.fillStyle = 'rgba(160,130,75,0.55)';
+    mainCtx.beginPath();
+    mainCtx.arc(sx, sy, HEX_SIZE * 0.15, 0, Math.PI * 2);
+    mainCtx.fill();
+  }
+
+  mainCtx.restore();
 }
 
 function resizeCanvas() {
@@ -211,6 +297,7 @@ function computeVisibility() {
 
 function render() {
   if (!game) return;
+  if (!ctx) return;
   // Kick off idle sprite animation loop on first render
   startSpriteAnimLoop();
   // Reset transform unconditionally — prevents accumulated scale from corrupted
@@ -253,6 +340,63 @@ function render() {
   const attackRange = computeAttackRange();
   // ZOC overlay: show enemy ZOC hexes when a player unit is selected
   const zocHexes = game.selectedUnitId ? getEnemyZOCHexes('player') : null;
+
+  // Pre-compute territory ownership for the viewport (+ 2-tile buffer for border lookups).
+  // This avoids recomputing ownership 7× per hex (once for the hex + once per neighbour)
+  // which was causing severe GC pressure and frame drops on mid/late-game maps.
+  const _tBuf = 2;
+  const _tR0 = Math.max(0, startRow - _tBuf);
+  const _tR1 = Math.min(MAP_ROWS, endRow + _tBuf);
+  const _tC0 = Math.max(0, startCol - _tBuf);
+  const _tC1 = Math.min(MAP_COLS, endCol + _tBuf);
+  // _tOwner is keyed by r*MAP_COLS+c; value is { owner, color } or undefined (unclaimed)
+  const _tOwner = new Array(MAP_ROWS * MAP_COLS); // sparse — only territory hexes are set
+  // Pre-build per-faction city lists once (avoids allCities array creation in inner loop)
+  const _factionCityLists = []; // [{ fid, color, cities[] }]
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    if (!fc.color) continue;
+    _factionCityLists.push({ fid, color: fc.color, cities: [fc, ...(game.aiFactionCities?.[fid] || [])] });
+  }
+  const _expansionOnlyLists = []; // factions with expansion cities but no capital
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      if (!game.factionCities[fid]) _expansionOnlyLists.push({ fid, cities });
+    }
+  }
+  for (let r = _tR0; r < _tR1; r++) {
+    for (let c = _tC0; c < _tC1; c++) {
+      let bestClaim = 0, hexOwner = null, hexColor = null;
+      for (const city of (game.cities || [])) {
+        const d = hexDistance(c, r, city.col, city.row);
+        const br = city.borderRadius || 2;
+        if (d <= br) {
+          const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
+          if (claim > bestClaim) { bestClaim = claim; hexOwner = 'player'; hexColor = 'player'; }
+        }
+      }
+      for (const { fid, color, cities } of _factionCityLists) {
+        for (const city of cities) {
+          const d = hexDistance(c, r, city.col, city.row);
+          const br = city.borderRadius || 2;
+          if (d <= br) {
+            const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
+            if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = color; }
+          }
+        }
+      }
+      for (const { fid, cities } of _expansionOnlyLists) {
+        for (const city of cities) {
+          const d = hexDistance(c, r, city.col, city.row);
+          const br = city.borderRadius || 1;
+          if (d <= br) {
+            const claim = (br - d + 1);
+            if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = city.color || '#888888'; }
+          }
+        }
+      }
+      if (hexOwner) _tOwner[r * MAP_COLS + c] = { owner: hexOwner, color: hexColor };
+    }
+  }
 
   // Draw hex tiles
   for (let r = startRow; r < endRow; r++) {
@@ -355,89 +499,15 @@ function render() {
       }
 
       // Draw tile improvements as images
+      // Draw roads as connecting paths (render before improvements so they sit beneath)
+      if (tile.road) {
+        drawRoadConnections(ctx, tile, c, r, sx, sy, camX, camY);
+      }
+      // Draw tile improvements — terrain-tinted, partial coverage, randomly mirrored
       if (tile.improvement) {
         const impImg = IMPROVEMENT_IMAGES[tile.improvement];
         if (impImg && impImg.complete && impImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.75;
-          const impS = HEX_SIZE * 2.3;
-          ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      // Draw fortification overlay
-      if (tile.fortification) {
-        const fortImg = IMPROVEMENT_IMAGES['fortification'];
-        if (fortImg && fortImg.complete && fortImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.75;
-          const fortS = HEX_SIZE * 2.3;
-          ctx.drawImage(fortImg, sx - fortS/2, sy - fortS/2, fortS, fortS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      // Draw district sprites (rendered on top of terrain, below units)
-      if (tile.district) {
-        const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
-        if (distImg && distImg.complete && distImg.naturalWidth > 0) {
-          ctx.save();
-          // Clip to hex shape
-          ctx.beginPath();
-          for (let i = 0; i < 6; i++) {
-            const angle = Math.PI / 180 * (60 * i - 30);
-            const hx = sx + HEX_SIZE * Math.cos(angle);
-            const hy = sy + HEX_SIZE * Math.sin(angle);
-            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
-          }
-          ctx.closePath();
-          ctx.clip();
-          ctx.globalAlpha = 0.85;
-          const distS = HEX_SIZE * 2.3;
-
-          // Harbour: rotate sprite to face adjacent water
-          let distRotation = 0;
-          if (tile.district === 'harbor') {
-            const nbs = getHexNeighbors(c, r);
-            // Average the direction vectors toward all adjacent water tiles
-            let wx = 0, wy = 0, waterCount = 0;
-            for (const nb of nbs) {
-              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
-              if (nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake')) {
-                const { x: nbx, y: nby } = hexToPixel(nb.col, nb.row);
-                wx += nbx - sx; wy += nby - sy;
-                waterCount++;
-              }
-            }
-            if (waterCount > 0) {
-              // Sprite default faces south (π/2 rad = down).
-              // Rotate so the dock side points toward water.
-              const waterAngle = Math.atan2(wy, wx);
-              distRotation = waterAngle - Math.PI / 2; // offset from default south-facing
-            }
-          }
-
-          if (distRotation !== 0) {
-            ctx.translate(sx, sy);
-            ctx.rotate(distRotation);
-            ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
-          } else {
-            ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
-          }
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      if (tile.road) {
-        const roadImg = IMPROVEMENT_IMAGES['road'];
-        if (roadImg && roadImg.complete && roadImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.5;
-          const rS = HEX_SIZE * 2.2;
-          ctx.drawImage(roadImg, sx - rS/2, sy - rS/2, rS, rS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
+          drawTintedImprovement(ctx, impImg, tile, sx, sy, c, r);
         }
       }
       // Show improvement in progress (circular progress indicator)
@@ -466,106 +536,26 @@ function render() {
         ctx.textBaseline = 'alphabetic';
       }
 
-      // Unified territory rendering — each hex belongs to exactly one owner
+      // Territory rendering — uses pre-computed ownership cache
       {
-        // Find the exclusive owner of this hex (closest city by culture strength)
-        let hexOwner = null, hexColor = null, bestClaim = 0;
-        // Player cities
-        for (const city of game.cities) {
-          const d = hexDistance(c, r, city.col, city.row);
-          const br = city.borderRadius || 2;
-          if (d <= br) {
-            const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
-            if (claim > bestClaim) { bestClaim = claim; hexOwner = 'player'; hexColor = 'rgba(201,168,76,'; }
-          }
-        }
-        // Faction cities (capital + expansion)
-        for (const [fid, fc] of Object.entries(game.factionCities)) {
-          if (!fc.color) continue;
-          const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
-          for (const city of allCities) {
-            const d = hexDistance(c, r, city.col, city.row);
-            const br = city.borderRadius || 2;
-            if (d <= br) {
-              const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
-              if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = fc.color; }
-            }
-          }
-        }
-        // Also check expansion cities of factions without a capital
-        if (game.aiFactionCities) {
-          for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
-            if (game.factionCities[fid]) continue; // already checked above
-            for (const city of cities) {
-              const d = hexDistance(c, r, city.col, city.row);
-              const br = city.borderRadius || 1;
-              if (d <= br) {
-                const claim = (br - d + 1);
-                if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = city.color || '#888'; }
-              }
-            }
-          }
-        }
-
-        if (hexOwner) {
+        const tEntry = _tOwner[r * MAP_COLS + c];
+        if (tEntry) {
+          const { owner: hexOwner, color: hexColor } = tEntry;
           // Territory fill
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          if (hexOwner === 'player') {
-            ctx.fillStyle = 'rgba(201,168,76,0.06)';
-          } else {
-            ctx.fillStyle = hexToRgba(hexColor, 0.05);
-          }
+          ctx.fillStyle = hexOwner === 'player' ? 'rgba(201,168,76,0.06)' : hexToRgba(hexColor, 0.05);
           ctx.fill();
 
-          // Border edges — draw where neighbor has a different owner
+          // Border edges — draw where neighbour has a different owner (cache lookup, no recompute)
           const nbs = getHexNeighbors(c, r);
           for (const nb of nbs) {
-            // Compute neighbor's owner using same logic
-            let nbOwner = null, nbBest = 0;
-            for (const city of game.cities) {
-              const d = hexDistance(nb.col, nb.row, city.col, city.row);
-              const br = city.borderRadius || 2;
-              if (d <= br) {
-                const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
-                if (claim > nbBest) { nbBest = claim; nbOwner = 'player'; }
-              }
-            }
-            for (const [fid, fc] of Object.entries(game.factionCities)) {
-              if (!fc.color) continue;
-              const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
-              for (const city of allCities) {
-                const d = hexDistance(nb.col, nb.row, city.col, city.row);
-                const br = city.borderRadius || 2;
-                if (d <= br) {
-                  const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
-                  if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
-                }
-              }
-            }
-            if (game.aiFactionCities) {
-              for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
-                if (game.factionCities[fid]) continue;
-                for (const city of cities) {
-                  const d = hexDistance(nb.col, nb.row, city.col, city.row);
-                  const br = city.borderRadius || 1;
-                  if (d <= br) {
-                    const claim = (br - d + 1);
-                    if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
-                  }
-                }
-              }
-            }
-
-            // Draw border if neighbor is different owner (or unclaimed)
+            const nbEntry = _tOwner[nb.row * MAP_COLS + nb.col];
+            const nbOwner = nbEntry ? nbEntry.owner : null;
             if (nbOwner !== hexOwner) {
               const nbPos = hexToPixel(nb.col, nb.row);
               const edx = (nbPos.x - (sx + camX)) * 0.48;
               const edy = (nbPos.y - (sy + camY)) * 0.48;
-              if (hexOwner === 'player') {
-                ctx.strokeStyle = 'rgba(201,168,76,0.6)';
-              } else {
-                ctx.strokeStyle = hexToRgba(hexColor, 0.6);
-              }
+              ctx.strokeStyle = hexOwner === 'player' ? 'rgba(201,168,76,0.6)' : hexToRgba(hexColor, 0.6);
               ctx.lineWidth = 2.5;
               ctx.beginPath();
               ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
@@ -1118,8 +1108,8 @@ function render() {
     // Unit vertical offset — shift down to avoid overlapping city icons
     let uy = sy + 12;
 
-    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
-    const isCiv = ut.class === 'civilian';
+    // Stacking offset: if a non-combat unit shares a tile with a military unit, offset the non-combat unit
+    const isCiv = ut.class === 'civilian' || ut.class === 'great_person';
     const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
     if (stackPartner && isCiv) {
       sx += 12;
