@@ -1,4 +1,4 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS, BASE_COLORS } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
@@ -12,7 +12,7 @@ import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
 
 // ============================================
-// SPRITE ANIMATION — idle frame cycling
+// SPRITE ANIMATION — idle frame cyclig
 // ============================================
 const SPRITE_ANIM_FRAME_COUNT = 8;
 const SPRITE_ANIM_FRAME_MS = 150; // milliseconds per frame (~5.3 FPS idle bob)
@@ -114,19 +114,6 @@ function drawCapitalStar(cx, sx, sy, color) {
 // TERRAIN-AWARE IMPROVEMENT RENDERING
 // ============================================
 
-// Offscreen canvas for terrain-tinted improvement compositing
-let _impCanvas = null;
-let _impCtx = null;
-function getImpCanvas() {
-  if (!_impCanvas) {
-    _impCanvas = document.createElement('canvas');
-    _impCanvas.width = 128;
-    _impCanvas.height = 128;
-    _impCtx = _impCanvas.getContext('2d');
-  }
-  return { cv: _impCanvas, cx: _impCtx };
-}
-
 // Per-improvement layout: how big relative to hex, and vertical offset
 // Positive dy = lower in hex. Scale is fraction of HEX_SIZE*2
 const IMP_LAYOUT = {
@@ -140,15 +127,12 @@ const IMP_LAYOUT = {
   lumber_mill:   { scale: 0.70, dy:  0.00, dx: 0 },
 };
 
-// Tint strength per terrain — how much the terrain colour shifts the sprite
-const TINT_STRENGTH = 0.35;
-
 // Simple deterministic hash from tile coordinates — stable per tile, no flicker
 function tileHash(col, row) {
   return ((col * 7919) + (row * 104729)) & 0xFFFF;
 }
 
-// Draw a terrain-tinted, contextually-positioned improvement sprite
+// Draw a contextually-positioned improvement sprite with terrain colour tint overlay
 function drawTintedImprovement(mainCtx, impImg, tile, sx, sy, col, row) {
   const layout = IMP_LAYOUT[tile.improvement] || { scale: 0.65, dy: 0, dx: 0 };
   const spriteSize = HEX_SIZE * 2 * layout.scale;
@@ -156,69 +140,20 @@ function drawTintedImprovement(mainCtx, impImg, tile, sx, sy, col, row) {
   // Deterministic mirror based on tile position (~50% of tiles get flipped)
   const mirror = (tileHash(col, row) % 2) === 0;
 
-  // Get terrain base colour for tinting
-  const terrainKey = tile.feature || tile.base;
-  const tintRGB = BASE_COLORS[terrainKey] || BASE_COLORS[tile.base];
-
   // Position offset within the hex (flip dx when mirrored)
   const ox = sx + (mirror ? -layout.dx : layout.dx) * HEX_SIZE;
   const oy = sy + layout.dy * HEX_SIZE;
 
-  if (!tintRGB) {
-    // Fallback: no tinting, just draw smaller + positioned (still mirror)
-    mainCtx.save();
-    mainCtx.globalAlpha = 0.8;
-    if (mirror) {
-      mainCtx.translate(ox, oy);
-      mainCtx.scale(-1, 1);
-      mainCtx.drawImage(impImg, -spriteSize/2, -spriteSize/2, spriteSize, spriteSize);
-    } else {
-      mainCtx.drawImage(impImg, ox - spriteSize/2, oy - spriteSize/2, spriteSize, spriteSize);
-    }
-    mainCtx.globalAlpha = 1.0;
-    mainCtx.restore();
-    return;
-  }
-
-  // Composite on offscreen canvas: sprite × terrain colour
-  const { cv, cx } = getImpCanvas();
-  const cSize = cv.width;
-
-  // 1) Clear
-  cx.clearRect(0, 0, cSize, cSize);
-
-  // 2) Draw the improvement sprite (mirror on the offscreen canvas if needed)
-  cx.globalCompositeOperation = 'source-over';
-  if (mirror) {
-    cx.save(); cx.translate(cSize, 0); cx.scale(-1, 1);
-    cx.drawImage(impImg, 0, 0, cSize, cSize); cx.restore();
-  } else {
-    cx.drawImage(impImg, 0, 0, cSize, cSize);
-  }
-
-  // 3) Multiply-blend with terrain colour
-  cx.globalCompositeOperation = 'multiply';
-  const r = Math.round(tintRGB[0] + (255 - tintRGB[0]) * (1 - TINT_STRENGTH));
-  const g = Math.round(tintRGB[1] + (255 - tintRGB[1]) * (1 - TINT_STRENGTH));
-  const b = Math.round(tintRGB[2] + (255 - tintRGB[2]) * (1 - TINT_STRENGTH));
-  cx.fillStyle = `rgb(${r},${g},${b})`;
-  cx.fillRect(0, 0, cSize, cSize);
-
-  // 4) Restore alpha from original sprite (multiply kills transparency)
-  cx.globalCompositeOperation = 'destination-in';
-  if (mirror) {
-    cx.save(); cx.translate(cSize, 0); cx.scale(-1, 1);
-    cx.drawImage(impImg, 0, 0, cSize, cSize); cx.restore();
-  } else {
-    cx.drawImage(impImg, 0, 0, cSize, cSize);
-  }
-  cx.globalCompositeOperation = 'source-over';
-
-  // 5) Draw the tinted result onto the main canvas
+  // Draw the improvement sprite directly onto the main canvas
   mainCtx.save();
-  mainCtx.globalAlpha = 0.82;
-  mainCtx.drawImage(cv, ox - spriteSize/2, oy - spriteSize/2, spriteSize, spriteSize);
-  mainCtx.globalAlpha = 1.0;
+  mainCtx.globalAlpha = 0.85;
+  if (mirror) {
+    mainCtx.translate(ox, oy);
+    mainCtx.scale(-1, 1);
+    mainCtx.drawImage(impImg, -spriteSize / 2, -spriteSize / 2, spriteSize, spriteSize);
+  } else {
+    mainCtx.drawImage(impImg, ox - spriteSize / 2, oy - spriteSize / 2, spriteSize, spriteSize);
+  }
   mainCtx.restore();
 }
 
@@ -228,8 +163,8 @@ function drawRoadConnections(mainCtx, tile, c, r, sx, sy, camOffX, camOffY) {
   let hasConnection = false;
 
   mainCtx.save();
-  mainCtx.strokeStyle = 'rgba(140,115,70,0.55)';
-  mainCtx.lineWidth = HEX_SIZE * 0.14;
+  mainCtx.strokeStyle = 'rgba(160,130,75,0.7)';
+  mainCtx.lineWidth = HEX_SIZE * 0.16;
   mainCtx.lineCap = 'round';
 
   for (const n of neighbors) {
@@ -252,9 +187,9 @@ function drawRoadConnections(mainCtx, tile, c, r, sx, sy, camOffX, camOffY) {
   }
 
   if (!hasConnection) {
-    mainCtx.fillStyle = 'rgba(140,115,70,0.4)';
+    mainCtx.fillStyle = 'rgba(160,130,75,0.55)';
     mainCtx.beginPath();
-    mainCtx.arc(sx, sy, HEX_SIZE * 0.12, 0, Math.PI * 2);
+    mainCtx.arc(sx, sy, HEX_SIZE * 0.15, 0, Math.PI * 2);
     mainCtx.fill();
   }
 
