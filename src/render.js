@@ -1,4 +1,4 @@
-import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS } from './constants.js';
+import { HEX_SIZE, SQRT3, MAP_COLS, MAP_ROWS, BASE_TERRAIN, TERRAIN_FEATURES, RESOURCES, UNIT_TYPES, FACTIONS, NATURAL_WONDERS, TILE_IMPROVEMENTS, UNIT_SPRITE_MAP, ZOOM_MIN, ZOOM_MAX, CITY_DEFENSE, BARBARIAN_UNITS, BUILDINGS, WONDERS, WALL_HP, DISTRICTS, BASE_COLORS } from './constants.js';
 import { game, canvas, ctx, miniCanvas, miniCtx, canvasW, canvasH, setCanvasSize, gameZoom, setGameZoom, hoveredHex, LOCKED_DPR, tilesLoaded, TERRAIN_TILE_IMAGES, IMPROVEMENT_IMAGES, SETTLEMENT_IMAGES, unitAtlas, NEW_UNIT_SPRITES, animRunning, deathMarkers } from './state.js';
 import { hexToPixel, pixelToHex, drawHex, getHexNeighbors, hexDistance } from './hex.js';
 import { valueNoise, fbmNoise, rgbStr, adjustBrightness, hexToRgba, getTerrainTileImage } from './utils.js';
@@ -110,6 +110,157 @@ function drawCapitalStar(cx, sx, sy, color) {
   cx.restore();
 }
 
+// ============================================
+// TERRAIN-AWARE IMPROVEMENT RENDERING
+// ============================================
+
+// Offscreen canvas for terrain-tinted improvement compositing
+let _impCanvas = null;
+let _impCtx = null;
+function getImpCanvas() {
+  if (!_impCanvas) {
+    _impCanvas = document.createElement('canvas');
+    _impCanvas.width = 128;
+    _impCanvas.height = 128;
+    _impCtx = _impCanvas.getContext('2d');
+  }
+  return { cv: _impCanvas, cx: _impCtx };
+}
+
+// Per-improvement layout: how big relative to hex, and vertical offset
+// Positive dy = lower in hex. Scale is fraction of HEX_SIZE*2
+const IMP_LAYOUT = {
+  farm:          { scale: 0.72, dy:  0.18, dx: 0 },
+  irrigation:    { scale: 0.70, dy:  0.15, dx: 0 },
+  pasture:       { scale: 0.68, dy:  0.12, dx: 0 },
+  camp:          { scale: 0.62, dy:  0.05, dx: 0 },
+  fishing_boats: { scale: 0.70, dy:  0.20, dx: 0 },
+  mine:          { scale: 0.65, dy: -0.15, dx: 0 },
+  quarry:        { scale: 0.65, dy: -0.12, dx: 0.05 },
+  lumber_mill:   { scale: 0.70, dy:  0.00, dx: 0 },
+};
+
+// Tint strength per terrain — how much the terrain colour shifts the sprite
+const TINT_STRENGTH = 0.35;
+
+// Simple deterministic hash from tile coordinates — stable per tile, no flicker
+function tileHash(col, row) {
+  return ((col * 7919) + (row * 104729)) & 0xFFFF;
+}
+
+// Draw a terrain-tinted, contextually-positioned improvement sprite
+function drawTintedImprovement(mainCtx, impImg, tile, sx, sy, col, row) {
+  const layout = IMP_LAYOUT[tile.improvement] || { scale: 0.65, dy: 0, dx: 0 };
+  const spriteSize = HEX_SIZE * 2 * layout.scale;
+
+  // Deterministic mirror based on tile position (~50% of tiles get flipped)
+  const mirror = (tileHash(col, row) % 2) === 0;
+
+  // Get terrain base colour for tinting
+  const terrainKey = tile.feature || tile.base;
+  const tintRGB = BASE_COLORS[terrainKey] || BASE_COLORS[tile.base];
+
+  // Position offset within the hex (flip dx when mirrored)
+  const ox = sx + (mirror ? -layout.dx : layout.dx) * HEX_SIZE;
+  const oy = sy + layout.dy * HEX_SIZE;
+
+  if (!tintRGB) {
+    // Fallback: no tinting, just draw smaller + positioned (still mirror)
+    mainCtx.save();
+    mainCtx.globalAlpha = 0.8;
+    if (mirror) {
+      mainCtx.translate(ox, oy);
+      mainCtx.scale(-1, 1);
+      mainCtx.drawImage(impImg, -spriteSize/2, -spriteSize/2, spriteSize, spriteSize);
+    } else {
+      mainCtx.drawImage(impImg, ox - spriteSize/2, oy - spriteSize/2, spriteSize, spriteSize);
+    }
+    mainCtx.globalAlpha = 1.0;
+    mainCtx.restore();
+    return;
+  }
+
+  // Composite on offscreen canvas: sprite × terrain colour
+  const { cv, cx } = getImpCanvas();
+  const cSize = cv.width;
+
+  // 1) Clear
+  cx.clearRect(0, 0, cSize, cSize);
+
+  // 2) Draw the improvement sprite (mirror on the offscreen canvas if needed)
+  cx.globalCompositeOperation = 'source-over';
+  if (mirror) {
+    cx.save(); cx.translate(cSize, 0); cx.scale(-1, 1);
+    cx.drawImage(impImg, 0, 0, cSize, cSize); cx.restore();
+  } else {
+    cx.drawImage(impImg, 0, 0, cSize, cSize);
+  }
+
+  // 3) Multiply-blend with terrain colour
+  cx.globalCompositeOperation = 'multiply';
+  const r = Math.round(tintRGB[0] + (255 - tintRGB[0]) * (1 - TINT_STRENGTH));
+  const g = Math.round(tintRGB[1] + (255 - tintRGB[1]) * (1 - TINT_STRENGTH));
+  const b = Math.round(tintRGB[2] + (255 - tintRGB[2]) * (1 - TINT_STRENGTH));
+  cx.fillStyle = `rgb(${r},${g},${b})`;
+  cx.fillRect(0, 0, cSize, cSize);
+
+  // 4) Restore alpha from original sprite (multiply kills transparency)
+  cx.globalCompositeOperation = 'destination-in';
+  if (mirror) {
+    cx.save(); cx.translate(cSize, 0); cx.scale(-1, 1);
+    cx.drawImage(impImg, 0, 0, cSize, cSize); cx.restore();
+  } else {
+    cx.drawImage(impImg, 0, 0, cSize, cSize);
+  }
+  cx.globalCompositeOperation = 'source-over';
+
+  // 5) Draw the tinted result onto the main canvas
+  mainCtx.save();
+  mainCtx.globalAlpha = 0.82;
+  mainCtx.drawImage(cv, ox - spriteSize/2, oy - spriteSize/2, spriteSize, spriteSize);
+  mainCtx.globalAlpha = 1.0;
+  mainCtx.restore();
+}
+
+// Draw roads as connecting paths between hex centres
+function drawRoadConnections(mainCtx, tile, c, r, sx, sy, camOffX, camOffY) {
+  const neighbors = getHexNeighbors(c, r);
+  let hasConnection = false;
+
+  mainCtx.save();
+  mainCtx.strokeStyle = 'rgba(140,115,70,0.55)';
+  mainCtx.lineWidth = HEX_SIZE * 0.14;
+  mainCtx.lineCap = 'round';
+
+  for (const n of neighbors) {
+    if (n.row < 0 || n.row >= MAP_ROWS || n.col < 0 || n.col >= MAP_COLS) continue;
+    const nTile = game.map[n.row][n.col];
+    if (!nTile.road) continue;
+
+    hasConnection = true;
+    const nPos = hexToPixel(n.col, n.row);
+    const nx = nPos.x - camOffX;
+    const ny = nPos.y - camOffY;
+
+    const edgeX = (sx + nx) / 2;
+    const edgeY = (sy + ny) / 2;
+
+    mainCtx.beginPath();
+    mainCtx.moveTo(sx, sy);
+    mainCtx.lineTo(edgeX, edgeY);
+    mainCtx.stroke();
+  }
+
+  if (!hasConnection) {
+    mainCtx.fillStyle = 'rgba(140,115,70,0.4)';
+    mainCtx.beginPath();
+    mainCtx.arc(sx, sy, HEX_SIZE * 0.12, 0, Math.PI * 2);
+    mainCtx.fill();
+  }
+
+  mainCtx.restore();
+}
+
 function resizeCanvas() {
   const w = canvas.parentElement.clientWidth;
   const h = canvas.parentElement.clientHeight;
@@ -211,6 +362,7 @@ function computeVisibility() {
 
 function render() {
   if (!game) return;
+  if (!ctx) return;
   // Kick off idle sprite animation loop on first render
   startSpriteAnimLoop();
   // Reset transform unconditionally — prevents accumulated scale from corrupted
@@ -412,89 +564,15 @@ function render() {
       }
 
       // Draw tile improvements as images
+      // Draw roads as connecting paths (render before improvements so they sit beneath)
+      if (tile.road) {
+        drawRoadConnections(ctx, tile, c, r, sx, sy, camX, camY);
+      }
+      // Draw tile improvements — terrain-tinted, partial coverage, randomly mirrored
       if (tile.improvement) {
         const impImg = IMPROVEMENT_IMAGES[tile.improvement];
         if (impImg && impImg.complete && impImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.75;
-          const impS = HEX_SIZE * 2.3;
-          ctx.drawImage(impImg, sx - impS/2, sy - impS/2, impS, impS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      // Draw fortification overlay
-      if (tile.fortification) {
-        const fortImg = IMPROVEMENT_IMAGES['fortification'];
-        if (fortImg && fortImg.complete && fortImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.75;
-          const fortS = HEX_SIZE * 2.3;
-          ctx.drawImage(fortImg, sx - fortS/2, sy - fortS/2, fortS, fortS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      // Draw district sprites (rendered on top of terrain, below units)
-      if (tile.district) {
-        const distImg = IMPROVEMENT_IMAGES['district_' + tile.district];
-        if (distImg && distImg.complete && distImg.naturalWidth > 0) {
-          ctx.save();
-          // Clip to hex shape
-          ctx.beginPath();
-          for (let i = 0; i < 6; i++) {
-            const angle = Math.PI / 180 * (60 * i - 30);
-            const hx = sx + HEX_SIZE * Math.cos(angle);
-            const hy = sy + HEX_SIZE * Math.sin(angle);
-            if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
-          }
-          ctx.closePath();
-          ctx.clip();
-          ctx.globalAlpha = 0.85;
-          const distS = HEX_SIZE * 2.3;
-
-          // Harbour: rotate sprite to face adjacent water
-          let distRotation = 0;
-          if (tile.district === 'harbor') {
-            const nbs = getHexNeighbors(c, r);
-            // Average the direction vectors toward all adjacent water tiles
-            let wx = 0, wy = 0, waterCount = 0;
-            for (const nb of nbs) {
-              const nt = game.map[nb.row] && game.map[nb.row][nb.col];
-              if (nt && (nt.base === 'ocean' || nt.base === 'coast' || nt.base === 'lake')) {
-                const { x: nbx, y: nby } = hexToPixel(nb.col, nb.row);
-                wx += nbx - sx; wy += nby - sy;
-                waterCount++;
-              }
-            }
-            if (waterCount > 0) {
-              // Sprite default faces south (π/2 rad = down).
-              // Rotate so the dock side points toward water.
-              const waterAngle = Math.atan2(wy, wx);
-              distRotation = waterAngle - Math.PI / 2; // offset from default south-facing
-            }
-          }
-
-          if (distRotation !== 0) {
-            ctx.translate(sx, sy);
-            ctx.rotate(distRotation);
-            ctx.drawImage(distImg, -distS/2, -distS/2, distS, distS);
-          } else {
-            ctx.drawImage(distImg, sx - distS/2, sy - distS/2, distS, distS);
-          }
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
-        }
-      }
-      if (tile.road) {
-        const roadImg = IMPROVEMENT_IMAGES['road'];
-        if (roadImg && roadImg.complete && roadImg.naturalWidth > 0) {
-          ctx.save();
-          ctx.globalAlpha = 0.5;
-          const rS = HEX_SIZE * 2.2;
-          ctx.drawImage(roadImg, sx - rS/2, sy - rS/2, rS, rS);
-          ctx.globalAlpha = 1.0;
-          ctx.restore();
+          drawTintedImprovement(ctx, impImg, tile, sx, sy, c, r);
         }
       }
       // Show improvement in progress (circular progress indicator)
