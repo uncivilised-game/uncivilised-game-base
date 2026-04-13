@@ -406,6 +406,63 @@ function render() {
   // ZOC overlay: show enemy ZOC hexes when a player unit is selected
   const zocHexes = game.selectedUnitId ? getEnemyZOCHexes('player') : null;
 
+  // Pre-compute territory ownership for the viewport (+ 2-tile buffer for border lookups).
+  // This avoids recomputing ownership 7× per hex (once for the hex + once per neighbour)
+  // which was causing severe GC pressure and frame drops on mid/late-game maps.
+  const _tBuf = 2;
+  const _tR0 = Math.max(0, startRow - _tBuf);
+  const _tR1 = Math.min(MAP_ROWS, endRow + _tBuf);
+  const _tC0 = Math.max(0, startCol - _tBuf);
+  const _tC1 = Math.min(MAP_COLS, endCol + _tBuf);
+  // _tOwner is keyed by r*MAP_COLS+c; value is { owner, color } or undefined (unclaimed)
+  const _tOwner = new Array(MAP_ROWS * MAP_COLS); // sparse — only territory hexes are set
+  // Pre-build per-faction city lists once (avoids allCities array creation in inner loop)
+  const _factionCityLists = []; // [{ fid, color, cities[] }]
+  for (const [fid, fc] of Object.entries(game.factionCities)) {
+    if (!fc.color) continue;
+    _factionCityLists.push({ fid, color: fc.color, cities: [fc, ...(game.aiFactionCities?.[fid] || [])] });
+  }
+  const _expansionOnlyLists = []; // factions with expansion cities but no capital
+  if (game.aiFactionCities) {
+    for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
+      if (!game.factionCities[fid]) _expansionOnlyLists.push({ fid, cities });
+    }
+  }
+  for (let r = _tR0; r < _tR1; r++) {
+    for (let c = _tC0; c < _tC1; c++) {
+      let bestClaim = 0, hexOwner = null, hexColor = null;
+      for (const city of (game.cities || [])) {
+        const d = hexDistance(c, r, city.col, city.row);
+        const br = city.borderRadius || 2;
+        if (d <= br) {
+          const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
+          if (claim > bestClaim) { bestClaim = claim; hexOwner = 'player'; hexColor = 'player'; }
+        }
+      }
+      for (const { fid, color, cities } of _factionCityLists) {
+        for (const city of cities) {
+          const d = hexDistance(c, r, city.col, city.row);
+          const br = city.borderRadius || 2;
+          if (d <= br) {
+            const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
+            if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = color; }
+          }
+        }
+      }
+      for (const { fid, cities } of _expansionOnlyLists) {
+        for (const city of cities) {
+          const d = hexDistance(c, r, city.col, city.row);
+          const br = city.borderRadius || 1;
+          if (d <= br) {
+            const claim = (br - d + 1);
+            if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = city.color || '#888888'; }
+          }
+        }
+      }
+      if (hexOwner) _tOwner[r * MAP_COLS + c] = { owner: hexOwner, color: hexColor };
+    }
+  }
+
   // Draw hex tiles
   for (let r = startRow; r < endRow; r++) {
     for (let c = startCol; c < endCol; c++) {
@@ -544,106 +601,26 @@ function render() {
         ctx.textBaseline = 'alphabetic';
       }
 
-      // Unified territory rendering — each hex belongs to exactly one owner
+      // Territory rendering — uses pre-computed ownership cache
       {
-        // Find the exclusive owner of this hex (closest city by culture strength)
-        let hexOwner = null, hexColor = null, bestClaim = 0;
-        // Player cities
-        for (const city of game.cities) {
-          const d = hexDistance(c, r, city.col, city.row);
-          const br = city.borderRadius || 2;
-          if (d <= br) {
-            const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
-            if (claim > bestClaim) { bestClaim = claim; hexOwner = 'player'; hexColor = 'rgba(201,168,76,'; }
-          }
-        }
-        // Faction cities (capital + expansion)
-        for (const [fid, fc] of Object.entries(game.factionCities)) {
-          if (!fc.color) continue;
-          const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
-          for (const city of allCities) {
-            const d = hexDistance(c, r, city.col, city.row);
-            const br = city.borderRadius || 2;
-            if (d <= br) {
-              const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
-              if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = fc.color; }
-            }
-          }
-        }
-        // Also check expansion cities of factions without a capital
-        if (game.aiFactionCities) {
-          for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
-            if (game.factionCities[fid]) continue; // already checked above
-            for (const city of cities) {
-              const d = hexDistance(c, r, city.col, city.row);
-              const br = city.borderRadius || 1;
-              if (d <= br) {
-                const claim = (br - d + 1);
-                if (claim > bestClaim) { bestClaim = claim; hexOwner = fid; hexColor = city.color || '#888'; }
-              }
-            }
-          }
-        }
-
-        if (hexOwner) {
+        const tEntry = _tOwner[r * MAP_COLS + c];
+        if (tEntry) {
+          const { owner: hexOwner, color: hexColor } = tEntry;
           // Territory fill
           drawHex(ctx, sx, sy, HEX_SIZE - 1);
-          if (hexOwner === 'player') {
-            ctx.fillStyle = 'rgba(201,168,76,0.06)';
-          } else {
-            ctx.fillStyle = hexToRgba(hexColor, 0.05);
-          }
+          ctx.fillStyle = hexOwner === 'player' ? 'rgba(201,168,76,0.06)' : hexToRgba(hexColor, 0.05);
           ctx.fill();
 
-          // Border edges — draw where neighbor has a different owner
+          // Border edges — draw where neighbour has a different owner (cache lookup, no recompute)
           const nbs = getHexNeighbors(c, r);
           for (const nb of nbs) {
-            // Compute neighbor's owner using same logic
-            let nbOwner = null, nbBest = 0;
-            for (const city of game.cities) {
-              const d = hexDistance(nb.col, nb.row, city.col, city.row);
-              const br = city.borderRadius || 2;
-              if (d <= br) {
-                const claim = (br - d + 1) + (city.cultureAccum || 0) * 0.01;
-                if (claim > nbBest) { nbBest = claim; nbOwner = 'player'; }
-              }
-            }
-            for (const [fid, fc] of Object.entries(game.factionCities)) {
-              if (!fc.color) continue;
-              const allCities = [fc, ...(game.aiFactionCities?.[fid] || [])];
-              for (const city of allCities) {
-                const d = hexDistance(nb.col, nb.row, city.col, city.row);
-                const br = city.borderRadius || 2;
-                if (d <= br) {
-                  const claim = (br - d + 1) + ((city.cultureAccum || 0) * 0.01);
-                  if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
-                }
-              }
-            }
-            if (game.aiFactionCities) {
-              for (const [fid, cities] of Object.entries(game.aiFactionCities)) {
-                if (game.factionCities[fid]) continue;
-                for (const city of cities) {
-                  const d = hexDistance(nb.col, nb.row, city.col, city.row);
-                  const br = city.borderRadius || 1;
-                  if (d <= br) {
-                    const claim = (br - d + 1);
-                    if (claim > nbBest) { nbBest = claim; nbOwner = fid; }
-                  }
-                }
-              }
-            }
-
-            // Draw border if neighbor is different owner (or unclaimed)
+            const nbEntry = _tOwner[nb.row * MAP_COLS + nb.col];
+            const nbOwner = nbEntry ? nbEntry.owner : null;
             if (nbOwner !== hexOwner) {
               const nbPos = hexToPixel(nb.col, nb.row);
               const edx = (nbPos.x - (sx + camX)) * 0.48;
               const edy = (nbPos.y - (sy + camY)) * 0.48;
-              if (hexOwner === 'player') {
-                ctx.strokeStyle = 'rgba(201,168,76,0.6)';
-              } else {
-                ctx.strokeStyle = hexToRgba(hexColor, 0.6);
-              }
+              ctx.strokeStyle = hexOwner === 'player' ? 'rgba(201,168,76,0.6)' : hexToRgba(hexColor, 0.6);
               ctx.lineWidth = 2.5;
               ctx.beginPath();
               ctx.moveTo(sx + edx - edy * 0.5, sy + edy + edx * 0.5);
@@ -1196,8 +1173,8 @@ function render() {
     // Unit vertical offset — shift down to avoid overlapping city icons
     let uy = sy + 12;
 
-    // Stacking offset: if a civilian shares a tile with a military unit, offset the civilian
-    const isCiv = ut.class === 'civilian';
+    // Stacking offset: if a non-combat unit shares a tile with a military unit, offset the non-combat unit
+    const isCiv = ut.class === 'civilian' || ut.class === 'great_person';
     const stackPartner = game.units.find(u => u.id !== unit.id && u.col === unit.col && u.row === unit.row && u.owner === unit.owner);
     if (stackPartner && isCiv) {
       sx += 12;
