@@ -30,7 +30,7 @@ import { addEvent, logAction, showToast, showCompletionNotification, generateFac
 import { showGreatPersonNotification, useGreatPerson, showPantheonPicker } from './buildings.js';
 import { updateUI, updateEnvoyUI, showLeaderboard, showUsernamePrompt, initUsernameUI, submitToLeaderboard, fetchCurrentCompetition, checkSessionLimit, registerActiveGame, incrementSession, sbFetch } from './leaderboard.js';
 import { migrateTiles, restoreMods, autoSave, loadGame } from './save-load.js';
-import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction } from './minor-factions.js';
+import { MINOR_FACTION_TYPES, generateMinorFactions, interactWithMinorFaction, interactWithBarbarianCamp } from './minor-factions.js';
 import { updateRankingsHUD, toggleRankingsDropdown, renderRankingsDropdown } from './rankings.js';
 import { toggleFeedbackChat, sendFeedback, startAnimLoop } from './feedback.js';
 import { revealAround, discoverVisibleFactions, discoverFaction, scanForFirstContact, triggerFirstContactGreeting } from './discovery.js';
@@ -80,6 +80,7 @@ window.cancelImprovement = cancelImprovement;
 window.recruitUnit = recruitUnit;
 window.setTechGoal = setTechGoal;
 window.interactWithMinorFaction = interactWithMinorFaction;
+window.interactWithBarbarianCamp = interactWithBarbarianCamp;
 window.selectUnit = selectUnit;
 window.panCameraTo = panCameraTo;
 window.handleHexClick = handleHexClick;

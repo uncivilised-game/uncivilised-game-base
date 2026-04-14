@@ -40,7 +40,7 @@ function showSelectionPanel(unit) {
     return;
   }
   const panel = document.getElementById('selection-panel');
-  const ut = UNIT_TYPES[unit.type];
+  const ut = UNIT_TYPES[unit.type] || { icon: '❓', class: 'civilian', name: unit.type, combat: 0, rangedCombat: 0, range: 0, movePoints: 2, desc: '', cost: 0 };
   const tile = game.map[unit.row][unit.col];
   const isPlayer = unit.owner === 'player';
 
@@ -94,6 +94,11 @@ function showSelectionPanel(unit) {
 
     // Action buttons
     html += `<div class="sel-actions">`;
+    // Great Person activation button
+    const gpDef = GREAT_PEOPLE_TYPES.find(g => g.type === unit.type);
+    if (gpDef) {
+      html += `<button class="sel-btn" style="border-color:#ffd700;background:rgba(255,215,0,0.1)" onclick="activateGreatPersonFromUnit(${unit.id})"><span>${gpDef.icon} Activate — ${gpDef.effect}</span></button>`;
+    }
     // Cancel waypoint journey
     if (unit.waypoint) {
       html += `<button class="sel-btn" style="border-color:#c9a84c" onclick="unitAction('cancelWaypoint')"><span>\u{1F6A9} Cancel Journey</span></button>`;
@@ -165,6 +170,17 @@ function showSelectionPanel(unit) {
               html += `<div style="color:#ff6666;font-size:11px;padding:6px;margin-top:4px;border:1px solid rgba(220,60,60,0.3);border-radius:4px;text-align:center">\u2694 ${fc.name} adjacent \u2014 attack next turn</div>`;
             }
           }
+        }
+      }
+    }
+    // Attack Barbarian Camp button — available if combat unit is adjacent to a barbarian camp
+    if (ut.combat > 0 && game.barbarianCamps) {
+      const adjNeighbors = getHexNeighbors(unit.col, unit.row);
+      for (const nb of adjNeighbors) {
+        const bc = game.barbarianCamps.find(c => c.col === nb.col && c.row === nb.row && !c.destroyed);
+        if (bc) {
+          html += `<button class="sel-btn" style="border-color:#d9534f;background:rgba(217,83,79,0.1)" onclick="interactWithBarbarianCamp('${bc.id}')"><span>\u2694\uFE0F Attack Barbarian Camp</span></button>`;
+          break;
         }
       }
     }
@@ -1924,6 +1940,19 @@ export {
   showGiftUnitPanel,
   giftUnit,
   switchBuildCity
+};
+
+window.activateGreatPersonFromUnit = function(unitId) {
+  const unit = game.units.find(u => u.id === unitId);
+  if (!unit || unit.owner !== 'player') return;
+  const gpDef = GREAT_PEOPLE_TYPES.find(g => g.type === unit.type);
+  if (!gpDef) return;
+  game.generalActiveTurns = 10;
+  game.units = game.units.filter(u => u.id !== unitId);
+  deselectUnit();
+  addEvent(`${gpDef.icon} ${gpDef.name} activated! All units gain +5 combat for 10 turns.`, 'combat');
+  showToast('General Activated', '+5 combat strength to all units for 10 turns.');
+  render();
 };
 
 window.unitAction = function(action) {

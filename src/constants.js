@@ -66,7 +66,7 @@ export let UNIT_TYPES = {
   ballista:  { name: 'Ballista', cost: 50, combat: 10, rangedCombat: 30, range: 2, movePoints: 1, icon: '\u{1F3AF}', class: 'siege', desc: 'Siege engine, +50% vs cities' },
   galley:    { name: 'Galley', cost: 35, combat: 25, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{26F5}', class: 'naval', desc: 'Coastal patrol vessel' },
   phalanx:   { name: 'Phalanx', cost: 40, combat: 30, rangedCombat: 0, range: 0, movePoints: 2, icon: '\u{1F6E1}', class: 'anti-cav', desc: 'Heavy infantry, +15 vs cavalry' },
-  great_general: { name: 'Great General', cost: 0, combat: 0, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{2694}', class: 'great_person', desc: 'Legendary commander. Attach military units to form an army that moves and fights together.' },
+  great_general: { name: 'Great General', cost: 0, combat: 5, rangedCombat: 0, range: 0, movePoints: 3, icon: '\u{2694}', class: 'civilian', desc: 'Inspires nearby units. Can activate for +5 combat to all units for 10 turns.' },
 };
 
 // ============================================
