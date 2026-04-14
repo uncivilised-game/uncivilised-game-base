@@ -254,7 +254,7 @@ describe('releaseGeneralArmy()', () => {
   });
 
   test('should release army units when Great General is killed in combat', () => {
-    const attacker = makeUnit({ id: 1, col: 5, row: 6, type: 'warrior', owner: 'faction_a', hp: 100 });
+    const attacker = makeUnit({ id: 1, col: 5, row: 6, type: 'warrior', owner: 'faction_a', hp: 100, combat: 40 });
     const general = makeGeneral({
       col: 5, row: 5, owner: 'player', hp: 1,
       army: [{ id: 10, type: 'warrior', hp: 100, xp: 0, combat: 20, promotions: [], level: 1 }],

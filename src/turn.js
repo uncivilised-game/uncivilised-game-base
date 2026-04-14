@@ -318,6 +318,14 @@ function endTurn() {
   const intelBanner = document.getElementById('intel-banner');
   if (intelBanner) intelBanner.style.display = 'none';
 
+  // Decrement Great General activation bonus counter
+  if (game.generalActiveTurns > 0) {
+    game.generalActiveTurns--;
+    if (game.generalActiveTurns === 0) {
+      addEvent('\u2694 Great General bonus expired.', 'combat');
+    }
+  }
+
   const events = [];
 
   // --- Reset player unit move points and process waypoints ---
