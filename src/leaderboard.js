@@ -19,8 +19,8 @@ async function fetchCurrentCompetition() {
     const res = await sbFetch('competitions?status=eq.active&starts_at=lte.' + now + '&ends_at=gte.' + now + '&order=starts_at.desc&limit=1');
     const data = await res.json();
     if (data.length > 0) { setCurrentCompetition(data[0]); return data[0]; }
-    // If no active competition for right now, get the next upcoming one
-    const upcoming = await sbFetch('competitions?status=eq.active&order=starts_at.asc&limit=1');
+    // If no active competition for right now, get the next upcoming one (must start in the future)
+    const upcoming = await sbFetch('competitions?status=eq.active&starts_at=gte.' + now + '&order=starts_at.asc&limit=1');
     const upData = await upcoming.json();
     if (upData.length > 0) { setCurrentCompetition(upData[0]); return upData[0]; }
   } catch (e) {}
@@ -156,7 +156,7 @@ function showLeaderboard(tab) {
     if (currentCompetition) {
       query += '&competition_id=eq.' + currentCompetition.id;
     } else {
-      // No active competition — fall back to entries from the last 7 days
+      // No active competition â fall back to entries from the last 7 days
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       query += '&created_at=gte.' + weekAgo;
     }
@@ -259,7 +259,7 @@ function showUsernamePrompt() {
         feedback.innerHTML = '<span style="color:#d9534f">' + (data.error || 'Could not claim username') + '</span>';
       }
     } catch (err) {
-      // API unavailable — save locally
+      // API unavailable â save locally
       safeStorage.setItem('uncivilised_username', name);
       feedback.innerHTML = '<span style="color:#5cb85c">\u2713 Username saved locally: <strong>' + name + '</strong></span>';
       initUsernameUI();
@@ -371,7 +371,7 @@ function updateUI() {
       hapEl.id = 'stat-happiness';
       hapEl.className = 'stat';
       hapEl.style.cssText = 'margin-left:8px;font-size:12px;cursor:pointer';
-      hapEl.title = 'Happiness — click for Victory panel (V)';
+      hapEl.title = 'Happiness â click for Victory panel (V)';
       hapEl.addEventListener('click', () => toggleVictoryPanel());
       statsBar.appendChild(hapEl);
     }
@@ -386,7 +386,7 @@ function updateUI() {
     const colorMap = { ECSTATIC: '#40e040', HAPPY: '#60c060', CONTENT: '#c0c060', DISPLEASED: '#c0a040', UNHAPPY: '#c06040', REVOLT_RISK: '#e02020' };
     hapEl.textContent = (emojiMap[worst] || '\u{1F610}') + ' ' + worst;
     hapEl.style.color = colorMap[worst] || '#c0c060';
-    hapEl.title = 'City Amenities — click for Victory panel (V)';
+    hapEl.title = 'City Amenities â click for Victory panel (V)';
   }
   // Show trade routes in top bar
   let tradeEl = document.getElementById('stat-trade');
