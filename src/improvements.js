@@ -27,8 +27,13 @@ export function getAvailableImprovements(col, row) {
     // Check if already built (except roads can coexist)
     if (id !== 'road' && tile.improvement === id) continue;
     if (id === 'road' && tile.road) continue;
-    // Check valid terrain
-    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) continue;
+    // Check valid terrain — but allow override when the tile has a specific
+    // resource the improvement explicitly supports (e.g. mine on any terrain
+    // when the tile has gold_ore/copper/iron/gems/obsidian/jade).
+    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) {
+      const resourceOverride = imp.alsoValidOnResource && tile.resource && imp.alsoValidOnResource.includes(tile.resource);
+      if (!resourceOverride) continue;
+    }
     // Check valid feature
     if (imp.validFeature && !imp.validFeature.includes(tile.feature)) continue;
     // Check river requirement
