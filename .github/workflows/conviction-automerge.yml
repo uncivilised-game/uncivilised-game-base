@@ -11,6 +11,9 @@ on:
   workflow_run:
     workflows: ["PR Code Review", "Tests"]
     types: [completed]
+  # Re-check when auto-merge label is added (via /merge command)
+  pull_request:
+    types: [labeled]
 
 concurrency:
   group: conviction-automerge
@@ -18,7 +21,7 @@ concurrency:
 
 jobs:
   auto-merge:
-    # Only run for conviction PRs (fix/* branches targeting devel)
+    # Run for conviction PRs (fix/* branches) or PRs with auto-merge label
     if: >-
       (github.event_name == 'pull_request_review' &&
        github.event.review.state == 'approved' &&
@@ -27,7 +30,10 @@ jobs:
        github.event.check_suite.conclusion == 'success') ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
-       contains(fromJSON('["pull_request","issue_comment"]'), github.event.workflow_run.event))
+       contains(fromJSON('["pull_request","issue_comment"]'), github.event.workflow_run.event)) ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'auto-merge')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,6 +57,9 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request_review" ]; then
             # Get the PR number from the review event
+            echo "prs=[$PR_NUMBER]" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            # Get the PR number from the labeled event
             echo "prs=[$PR_NUMBER]" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "workflow_run" ]; then
             # Reject workflow runs from forks
@@ -104,8 +113,9 @@ jobs:
             BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
             BASE=$(echo "$PR_JSON" | jq -r '.baseRefName')
             STATE=$(echo "$PR_JSON" | jq -r '.state')
+            HAS_AUTO_MERGE_LABEL=$(echo "$PR_JSON" | jq '[.labels[].name] | any(. == "auto-merge")')
 
-            # Must be open, target devel, and be a fix/* branch (conviction PR)
+            # Must be open and target devel
             if [ "$STATE" != "OPEN" ]; then
               echo "  PR #${PR_NUM} is not open, skipping"
               continue
@@ -114,16 +124,18 @@ jobs:
               echo "  PR #${PR_NUM} does not target devel (targets $BASE), skipping"
               continue
             fi
-            if ! echo "$BRANCH" | grep -qE '^fix/'; then
-              echo "  PR #${PR_NUM} is not a conviction PR (branch: $BRANCH), skipping"
+
+            # Must be a conviction PR (fix/* branch) or have auto-merge label
+            if ! echo "$BRANCH" | grep -qE '^fix/' && [ "$HAS_AUTO_MERGE_LABEL" != "true" ]; then
+              echo "  PR #${PR_NUM} is not a conviction PR and has no auto-merge label (branch: $BRANCH), skipping"
               continue
             fi
 
-            # Reject fork PRs — only same-repo branches are eligible for auto-merge
+            # Reject fork PRs without auto-merge label — only admin-approved forks are eligible
             HEAD_OWNER=$(echo "$PR_JSON" | jq -r '.headRepositoryOwner.login // empty')
             REPO_OWNER=$(echo "$GITHUB_REPO" | cut -d/ -f1)
-            if [ -n "$HEAD_OWNER" ] && [ "$HEAD_OWNER" != "$REPO_OWNER" ]; then
-              echo "  PR #${PR_NUM} is from a fork ($HEAD_OWNER), skipping"
+            if [ -n "$HEAD_OWNER" ] && [ "$HEAD_OWNER" != "$REPO_OWNER" ] && [ "$HAS_AUTO_MERGE_LABEL" != "true" ]; then
+              echo "  PR #${PR_NUM} is from a fork ($HEAD_OWNER) without auto-merge label, skipping"
               continue
             fi
 
