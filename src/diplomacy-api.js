@@ -136,6 +136,23 @@ export function isDiplomacyLoaded() { return _pluginLoaded; }
 
 // Wrapper exports — these delegate to _plugin so that late registration works
 export function getRelationLabel(...args) { return _plugin.getRelationLabel(...args); }
+
+// War-aware relation label: when the player is at war with the faction, the
+// displayed label should be "At War" regardless of the underlying relationship
+// score. Base-game UI should call this instead of getRelationLabel() whenever
+// it has a factionId available.
+export function getWarAwareRelationLabel(factionId, value) {
+  if (factionId && factionId !== 'player') {
+    const wars = (game && game.aiWars) || [];
+    const atWar = wars.some(w =>
+      (w.attacker === 'player' && w.defender === factionId) ||
+      (w.attacker === factionId && w.defender === 'player')
+    );
+    if (atWar) return { text: 'At War', cls: 'relation-at-war' };
+  }
+  const rel = (value !== undefined) ? value : ((game && game.relationships && game.relationships[factionId]) || 0);
+  return getRelationLabel(rel);
+}
 export function establishTradeRoute(...args) {
   const result = _plugin.establishTradeRoute(...args);
   // Trigger currency eureka when a trade route is established

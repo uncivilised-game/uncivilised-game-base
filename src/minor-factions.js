@@ -214,12 +214,31 @@ function interactWithBarbarianCamp(campId) {
   if (convertReqs.length > 0) html += `<br><small style="color:#d9534f">Requires: ${convertReqs.join(', ')}</small>`;
   html += `</button>`;
 
-  // 6. Bribe to Attack — redirect barbarians to attack a specific opponent
-  const knownFactions = Object.keys(game.factionCities || {}).filter(fid => game.metFactions && game.metFactions[fid]);
+  // 6. Bribe to Attack — redirect barbarians at a specific opponent
+  // Only list factions that actually have cities or units within raiding range
+  // of THIS camp (10 hexes). Raiders can't strike at opponents halfway across
+  // the map, so don't offer those as targets.
+  const RAID_RANGE = 10;
+  const inRaidRange = (fid) => {
+    const fc = game.factionCities && game.factionCities[fid];
+    if (fc && hexDistance(fc.col, fc.row, bc.col, bc.row) <= RAID_RANGE) return true;
+    const exCities = (game.aiFactionCities && game.aiFactionCities[fid]) || [];
+    for (const c of exCities) {
+      if (hexDistance(c.col, c.row, bc.col, bc.row) <= RAID_RANGE) return true;
+    }
+    const units = (game.units || []).filter(u => u.owner === fid);
+    for (const u of units) {
+      if (hexDistance(u.col, u.row, bc.col, bc.row) <= RAID_RANGE) return true;
+    }
+    return false;
+  };
+  const knownFactions = Object.keys(game.factionCities || {})
+    .filter(fid => game.metFactions && game.metFactions[fid])
+    .filter(inRaidRange);
   if (knownFactions.length > 0 && !bc.pacified) {
     const bribeCost = 40 + Math.floor(bc.strength * 2);
     const currentTarget = bc.bribeTarget || null;
-    html += `<p style="color:#d9534f;margin-top:8px;font-size:11px;font-weight:600">Direct Raids Against:</p>`;
+    html += `<p style="color:#d9534f;margin-top:8px;font-size:11px;font-weight:600">Direct Raids Against (within ${RAID_RANGE} hexes):</p>`;
     for (const fid of knownFactions) {
       const fn = FACTIONS[fid] ? FACTIONS[fid].name : fid;
       const fc = FACTIONS[fid] ? FACTIONS[fid].color : '#888';
@@ -229,14 +248,32 @@ function interactWithBarbarianCamp(campId) {
     }
   }
 
-  // 7. Raid / Attack — direct combat or instant destroy if unit is on camp
-  const unitOnCamp = game.units.find(u => u.owner === 'player' && u.col === bc.col && u.row === bc.row && UNIT_TYPES[u.type]?.combat > 0);
+  // 7. Raid / Attack — previously "Destroy Camp" (instant) only appeared when
+  // a unit was sat ON the camp, while "Attack Camp" (combat) only appeared
+  // when adjacent. Make both options equally available: the combat-attack
+  // option works from on-tile or adjacent, and the instant-destroy option
+  // requires a unit standing on the camp.
+  const unitOnCamp = game.units.find(u =>
+    u.owner === 'player' &&
+    u.col === bc.col && u.row === bc.row &&
+    UNIT_TYPES[u.type]?.combat > 0
+  );
+  const unitInRange = unitOnCamp || game.units.find(u =>
+    u.owner === 'player' &&
+    UNIT_TYPES[u.type]?.combat > 0 &&
+    hexDistance(u.col, u.row, bc.col, bc.row) === 1
+  );
+  if (unitInRange) {
+    html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','attack')">`;
+    html += `\u{2694}\u{FE0F} Attack Camp — Engage in combat</button>`;
+  }
   if (unitOnCamp) {
     html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','destroy_camp')">`;
     html += `\u{1F525} Destroy Camp — Raze and loot (+100g)</button>`;
-  } else {
-    html += `<button class="minor-btn minor-btn-danger" onclick="barbCampAction('${campId}','attack')">`;
-    html += `\u{1F525} Attack Camp — Destroy and loot (need adjacent unit)</button>`;
+  }
+  if (!unitInRange) {
+    html += `<button class="minor-btn minor-btn-danger" disabled style="opacity:0.5">`;
+    html += `\u{1F525} Attack Camp — Need a combat unit on or adjacent to the camp</button>`;
   }
 
   html += '</div>';
@@ -404,7 +441,15 @@ window.barbCampAction = function(campId, action) {
       break;
     }
     case 'destroy_camp': {
-      // Instant destroy — unit is standing on the camp
+      // Instant destroy — requires a combat unit standing ON the camp
+      const unitOnCamp = game.units.find(u =>
+        u.owner === 'player' && u.col === bc.col && u.row === bc.row &&
+        UNIT_TYPES[u.type]?.combat > 0
+      );
+      if (!unitOnCamp) {
+        addEvent('You need a combat unit standing on the camp to raze it.', 'combat');
+        return;
+      }
       bc.destroyed = true;
       const lootGold = 100;
       game.gold += lootGold;
