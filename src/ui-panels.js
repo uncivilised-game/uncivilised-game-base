@@ -132,31 +132,31 @@ function showSelectionPanel(unit) {
       if (canPillage) {
         html += `<button class="sel-btn" style="border-color:#d9534f" onclick="unitAction('pillage')"><span>\u{1F525} Pillage</span><span class="sel-key">P</span></button>`;
       }
-      // Attack City button — show if adjacent to an enemy city
-      if (ut.combat > 0) {
-        const attackRange = computeAttackRange();
-        if (attackRange) {
-          for (const [key, tid] of attackRange.entries()) {
-            if (typeof tid === 'string' && (tid.startsWith('city_') || tid.startsWith('expcity_'))) {
-              const [tc, tr] = key.split(',').map(Number);
-              let cityName = '';
-              if (tid.startsWith('city_')) {
-                const fid = tid.replace('city_', '');
-                cityName = game.factionCities[fid] ? game.factionCities[fid].name : fid;
-              } else {
-                const parts = tid.split('_');
-                const fid = parts[1], ci = parseInt(parts[2]);
-                const ecs = game.aiFactionCities[fid];
-                cityName = (ecs && ecs[ci]) ? ecs[ci].name : fid;
-              }
-              html += '<button class="sel-btn" style="border-color:#d9534f;background:rgba(217,83,79,0.1)" onclick="handleHexClick(' + tc + ',' + tr + ')"><span>\u2694\uFE0F Attack ' + cityName + '</span></button>';
-              break;
+      html += `<button class="sel-btn" onclick="unitAction('sleep')"><span>Sleep</span><span class="sel-key">Z</span></button>`;
+      html += `<button class="sel-btn" onclick="unitAction('alert')"><span>Alert</span><span class="sel-key">A</span></button>`;
+    }
+    // Attack City button — show if adjacent to an enemy city (even with 0 move points)
+    if (ut.combat > 0 && !unit.hasAttackedThisTurn) {
+      const attackRange = computeAttackRange();
+      if (attackRange) {
+        for (const [key, tid] of attackRange.entries()) {
+          if (typeof tid === 'string' && (tid.startsWith('city_') || tid.startsWith('expcity_'))) {
+            const [tc, tr] = key.split(',').map(Number);
+            let cityName = '';
+            if (tid.startsWith('city_')) {
+              const fid = tid.replace('city_', '');
+              cityName = game.factionCities[fid] ? game.factionCities[fid].name : fid;
+            } else {
+              const parts = tid.split('_');
+              const fid = parts[1], ci = parseInt(parts[2]);
+              const ecs = game.aiFactionCities[fid];
+              cityName = (ecs && ecs[ci]) ? ecs[ci].name : fid;
             }
+            html += '<button class="sel-btn" style="border-color:#d9534f;background:rgba(217,83,79,0.1)" onclick="handleHexClick(' + tc + ',' + tr + ')"><span>\u2694\uFE0F Attack ' + cityName + '</span></button>';
+            break;
           }
         }
       }
-      html += `<button class="sel-btn" onclick="unitAction('sleep')"><span>Sleep</span><span class="sel-key">Z</span></button>`;
-      html += `<button class="sel-btn" onclick="unitAction('alert')"><span>Alert</span><span class="sel-key">A</span></button>`;
     }
     // Show adjacent enemy city attack button
     if (ut.combat > 0) {
@@ -164,7 +164,7 @@ function showSelectionPanel(unit) {
       for (const nb of adjNeighbors) {
         for (const [fid, fc] of Object.entries(game.factionCities)) {
           if (fc.col === nb.col && fc.row === nb.row) {
-            if (unit.moveLeft > 0 || !unit.hasAttackedThisTurn) {
+            if (!unit.hasAttackedThisTurn) {
               html += `<button class="sel-btn" style="border-color:#e03030;color:#ff4444;background:rgba(220,40,40,0.15);font-weight:bold" onclick="handleHexClick(${nb.col},${nb.row})"><span>\u2694 Attack ${fc.name}</span></button>`;
             } else {
               html += `<div style="color:#ff6666;font-size:11px;padding:6px;margin-top:4px;border:1px solid rgba(220,60,60,0.3);border-radius:4px;text-align:center">\u2694 ${fc.name} adjacent \u2014 attack next turn</div>`;
