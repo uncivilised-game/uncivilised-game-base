@@ -1009,7 +1009,8 @@ DIPLOMACY DEPTH RULES:
 - You have family members you can name: create realistic names fitting your culture
 - React emotionally to betrayals, broken promises, and surprise attacks
 - Consider the balance of power: if the player is much stronger, be more accommodating; if weaker, be bolder
-- Only include an action tag when you genuinely want to propose something. Casual conversation needs no action tag."""
+- Only include an action tag when you genuinely want to propose something. Casual conversation needs no action tag.
+- MULTIPLE COMMITMENTS: if the player asks you to do SEVERAL things and you agree to all of them (e.g. "let's form an alliance AND attack shadow_kael together"), emit ONE action tag for EACH commitment — do NOT merge them or drop one. Example: '[ACTION: {{"type": "offer_alliance", "duration": 15}}] [ACTION: {{"type": "wage_war_on", "target_faction": "shadow_kael", "duration": 15}}]'. Every commitment you make in words MUST have a matching action tag, otherwise the game will not carry it out."""
 
     # Build conversation messages — cap each history entry to 500 chars
     # to prevent token-stuffing attacks via bloated conversation_history
@@ -1045,16 +1046,17 @@ DIPLOMACY DEPTH RULES:
         )
         reply = response.content[0].text
 
-        # Parse action from response — robust extraction
-        action = None
-        action_match = re.search(r'\[ACTION:\s*(\{.*?\})\s*\]', reply, re.DOTALL)
-        if action_match:
+        # Parse actions from response — support MULTIPLE [ACTION: ...] tags so the AI
+        # can commit to several things at once (e.g., offer_alliance + wage_war_on
+        # when the player asks for an alliance AND a joint attack on a common enemy).
+        actions = []
+        for m in re.finditer(r'\[ACTION:\s*(\{.*?\})\s*\]', reply, re.DOTALL):
             try:
-                action = json.loads(action_match.group(1))
-                reply = reply[:action_match.start()].strip()
+                actions.append(json.loads(m.group(1)))
             except json.JSONDecodeError:
-                action = None
-        # Also strip partial ACTION tags that didn't fully close
+                pass
+        # Strip all ACTION tags from the reply text (complete and partial)
+        reply = re.sub(r'\[ACTION:\s*\{.*?\}\s*\]', '', reply, flags=re.DOTALL).strip()
         if '[ACTION:' in reply:
             reply = reply[:reply.index('[ACTION:')].strip()
 
@@ -1063,18 +1065,39 @@ DIPLOMACY DEPTH RULES:
         # made a mistake (it should use 'wage_war_on' to attack a third party, or
         # 'surprise_attack' for a treacherous betrayal). Sanitize to 'none' to
         # prevent erroneously breaking the alliance.
-        if action and action.get('type') == 'declare_war':
-            active_alliances = (msg.game_state or {}).get('alliances', {})
-            if active_alliances.get(msg.character_id):
-                action = {'type': 'none'}
+        active_alliances = (msg.game_state or {}).get('alliances', {})
+        for i, act in enumerate(actions):
+            if act.get('type') == 'declare_war' and active_alliances.get(msg.character_id):
+                actions[i] = {'type': 'none'}
 
         # Fallback: if the player offered gold and the AI emitted an agreement
         # without gold_cost, inject the amount from the player's message
         AGREEMENT_TYPES = {'mutual_defense', 'offer_alliance', 'open_borders', 'non_aggression', 'ceasefire', 'tech_share', 'offer_peace'}
-        if action and action.get('type') in AGREEMENT_TYPES and not action.get('gold_cost'):
-            gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
-            if gold_match:
-                action['gold_cost'] = int(gold_match.group(1))
+        gold_match = re.search(r'(\d+)\s*gold', msg.message, re.IGNORECASE)
+        for act in actions:
+            if act.get('type') in AGREEMENT_TYPES and not act.get('gold_cost') and gold_match:
+                act['gold_cost'] = int(gold_match.group(1))
+
+        # Select the PRIMARY action for backward compatibility. When the AI commits
+        # to multiple things (e.g., alliance + joint attack on a third party), prefer
+        # the concrete war/commitment action so the most consequential promise is the
+        # one that gets executed by frontends that only read `action` (singular).
+        PRIMARY_PRIORITY = [
+            'wage_war_on', 'surprise_attack', 'declare_war', 'make_peace_with',
+            'gift_city', 'demand_city', 'defend_city', 'attack_target',
+            'tribute_payment', 'game_mod',
+            'offer_alliance', 'mutual_defense', 'non_aggression', 'ceasefire',
+            'open_borders', 'tech_share', 'joint_research', 'offer_peace',
+            'marriage_offer', 'trade_deal', 'resource_trade', 'offer_trade',
+            'demand_tribute', 'accept_tribute', 'send_gift', 'threaten',
+            'embargo', 'vassalage', 'introduce', 'share_intel',
+            'respect_borders', 'no_settle_near',
+        ]
+        def _priority(act):
+            t = act.get('type', '') if isinstance(act, dict) else ''
+            return PRIMARY_PRIORITY.index(t) if t in PRIMARY_PRIORITY else len(PRIMARY_PRIORITY)
+        sorted_actions = sorted(actions, key=_priority) if actions else []
+        action = sorted_actions[0] if sorted_actions else None
 
         # Log diplomacy interaction to Supabase (visitor_id already extracted above)
         _log_diplomacy_interaction(
@@ -1089,6 +1112,7 @@ DIPLOMACY DEPTH RULES:
         return {
             "reply": reply,
             "action": action,
+            "actions": sorted_actions,
             "character": profile["name"],
             "character_type": profile["type"],
         }

@@ -702,6 +702,7 @@ a:hover { text-decoration: underline; }
 .relation-friendly { background: rgba(106,171,92,0.2); color: #6aab5c; }
 .relation-neutral { background: rgba(138,133,120,0.2); color: #8a8578; }
 .relation-hostile { background: rgba(196,92,74,0.2); color: #c45c4a; }
+.relation-at-war { background: rgba(217,83,79,0.3); color: #ff6655; font-weight: bold; }
 .relation-allied { background: rgba(91,141,217,0.2); color: #5b8dd9; }
 
 /* ---- Chat Panel ---- */
