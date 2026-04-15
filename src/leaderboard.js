@@ -19,8 +19,8 @@ async function fetchCurrentCompetition() {
     const res = await sbFetch('competitions?status=eq.active&starts_at=lte.' + now + '&ends_at=gte.' + now + '&order=starts_at.desc&limit=1');
     const data = await res.json();
     if (data.length > 0) { setCurrentCompetition(data[0]); return data[0]; }
-    // If no active competition for right now, get the next upcoming one
-    const upcoming = await sbFetch('competitions?status=eq.active&order=starts_at.asc&limit=1');
+    // If no active competition for right now, get the next upcoming one (must start in the future)
+    const upcoming = await sbFetch('competitions?status=eq.active&starts_at=gte.' + now + '&order=starts_at.asc&limit=1');
     const upData = await upcoming.json();
     if (upData.length > 0) { setCurrentCompetition(upData[0]); return upData[0]; }
   } catch (e) {}

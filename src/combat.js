@@ -21,8 +21,8 @@ function resolveCombat(attacker, defender) {
   const aType = UNIT_TYPES[attacker.type];
   const dType = UNIT_TYPES[defender.type] || { name: 'City', combat: 15, rangedCombat: 0, range: 0, movePoints: 0, icon: '\u{1F3F0}', class: 'city', desc: 'Fortified city' };
 
-  // Civilian capture — attacker takes ownership
-  if (dType.class === 'civilian') {
+  // Civilian capture — attacker takes ownership (only for units that cannot fight back)
+  if (dType.class === 'civilian' && dType.combat <= 0) {
     const prevOwner = defender.owner;
     defender.owner = attacker.owner;
     defender.moveLeft = 0;
@@ -105,6 +105,10 @@ function resolveCombat(attacker, defender) {
   // Mod combat bonuses (from diplomatic agreements)
   if (attacker.owner === 'player') atkPower += getModCombatBonus(attacker);
   if (defender.owner === 'player') defPower += getModCombatBonus(defender);
+
+  // Great General activation bonus (+5 combat for all player units while active)
+  if (attacker.owner === 'player' && game.generalActiveTurns > 0) atkPower += 5;
+  if (defender.owner === 'player' && game.generalActiveTurns > 0) defPower += 5;
 
   // Promotion bonuses
   for (const pid of (attacker.promotions || [])) {
@@ -1285,7 +1289,7 @@ function processZOCCaptures() {
     const unit = game.units[i];
     const ut = UNIT_TYPES[unit.type];
     if (!ut || !ZOC_EXEMPT_CLASSES.includes(ut.class)) continue; // only non-combat units
-    if (ut.class === 'great_person') continue; // great persons are immune to ZOC capture
+    if (ut.class === 'great_person' || (ut.class === 'civilian' && ut.combat > 0)) continue; // great persons and combat-capable civilians are immune to ZOC capture
 
     if (!isInEnemyZOC(unit.col, unit.row, unit.owner)) continue;
 
