@@ -23,7 +23,10 @@ export const CITY_DEFENSE = {
   RANGED_STRIKE_STRENGTH: 12,
   HP_HEAL_PER_TURN: 5,
   HP_HEAL_NOT_ATTACKED: 10,
-  CAPTURE_MELEE_ONLY: true,
+  // Any unit — melee or ranged — can capture a city by reducing its HP to 0.
+  // When a ranged unit delivers the killing blow, it is teleported into the
+  // captured city (see captureFactionCity / captureExpansionCity in combat.js).
+  CAPTURE_MELEE_ONLY: false,
 };
 
 export const WALL_HP = {

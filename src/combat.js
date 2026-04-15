@@ -494,13 +494,16 @@ function executeExpansionCityAttack(attacker, factionId, cityIdx, tactic) {
   }
 
   if (ec.hp <= 0) {
-    // Ranged units cannot capture — only reduce to 1 HP
+    // Ranged-only-restriction (legacy): when CAPTURE_MELEE_ONLY is true, ranged
+    // units can't take the city — HP caps at 1 and you must finish with melee.
+    // Currently disabled so both melee and ranged units can capture.
     if (CITY_DEFENSE.CAPTURE_MELEE_ONLY && aType.rangedCombat > 0) {
       ec.hp = 1;
       addEvent(ec.name + ' defenses broken! Send in melee to capture.', 'combat');
       showModBanner('\u{2694}', ec.name + ': 1 HP — melee unit needed to capture!', factionName);
     } else {
-      // Capture expansion city
+      // Capture expansion city — teleport attacker into the city (covers the
+      // ranged case where the attacker was several tiles away)
       attacker.col = ec.col;
       attacker.row = ec.row;
       captureExpansionCity(factionId, cityIdx);
@@ -682,13 +685,16 @@ function executeCityAttack(attacker, factionId, tactic) {
 
   // Check if city falls
   if (fc.hp <= 0) {
-    // Ranged units cannot capture — only reduce to 1 HP
+    // Ranged-only-restriction (legacy): when CAPTURE_MELEE_ONLY is true, ranged
+    // units can't take the city — HP caps at 1 and you must finish with melee.
+    // Currently disabled so both melee and ranged units can capture.
     if (CITY_DEFENSE.CAPTURE_MELEE_ONLY && aType.rangedCombat > 0) {
       fc.hp = 1;
       addEvent(fc.name + ' defenses broken! Send in melee to capture.', 'combat');
       showModBanner('\u{2694}', fc.name + ': 1 HP \u2014 melee unit needed to capture!', factionName);
     } else {
-      // City captured! Move attacker onto city if melee
+      // City captured! Teleport attacker into the city (covers the ranged case
+      // where the attacker was several tiles away from the city when it fell).
       attacker.col = fc.col;
       attacker.row = fc.row;
       captureFactionCity(factionId);
