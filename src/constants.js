@@ -459,7 +459,7 @@ export const TILE_IMPROVEMENTS = {
   fishing_boats:{ name: 'Fishing Boats',icon: '🎣', turns: 2, requires: 'sailing',   validOn: ['coast','ocean'], yields: { food: 2, gold: 1 }, requiresResource: ['fish'], desc: '+2 Food, +1 Gold (on Fish)' },
 
   // Production & Mining
-  mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], yields: { prod: 2 }, desc: '+2 Production' },
+  mine:        { name: 'Mine',         icon: '⛏️', turns: 4, requires: 'mining',      validOn: ['hills'], alsoValidOnResource: ['iron','copper','gold_ore','gems','obsidian','jade'], yields: { prod: 2 }, desc: '+2 Production (hills, or on any mineable resource tile)' },
   quarry:      { name: 'Quarry',       icon: '🪨', turns: 4, requires: 'masonry',     validOn: ['hills','plains'], yields: { prod: 1, gold: 1 }, requiresResource: ['stone'], desc: '+1 Prod, +1 Gold (on Stone)' },
   lumber_mill: { name: 'Lumber Mill',  icon: '🪓', turns: 3, requires: 'construction', validFeature: ['woods','rainforest'], yields: { prod: 2 }, desc: '+2 Production (in forest, requires Construction)' },
 

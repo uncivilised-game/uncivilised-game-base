@@ -1663,7 +1663,10 @@ function tryAIImprove(worker, priority) {
     if (!imp) continue;
     if (impId !== 'road' && tile.improvement === impId) continue;
     if (impId === 'road' && tile.road) continue;
-    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) continue;
+    if (imp.validOn && !imp.validOn.includes(tile.base) && !(imp.validOn.includes('hills') && tile.feature === 'hills')) {
+      const resourceOverride = imp.alsoValidOnResource && tile.resource && imp.alsoValidOnResource.includes(tile.resource);
+      if (!resourceOverride) continue;
+    }
     if (imp.validFeature && !imp.validFeature.includes(tile.feature)) continue;
     if (imp.requiresRiver && !tile.hasRiver) continue;
     if (imp.requiresResource && (!tile.resource || !imp.requiresResource.includes(tile.resource))) continue;
