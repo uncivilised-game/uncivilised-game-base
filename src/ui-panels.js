@@ -20,7 +20,8 @@ import { isTilePassable, getTileMoveCost } from './map.js';
 import { openChat, establishTradeRoute, cancelTradeRoute, renderDiplomacyPanel } from './diplomacy-api.js';
 import { useGreatPerson } from './buildings.js';
 import { hexToRgba } from './utils.js';
-import { attachToArmy, detachFromArmy, coordinatedAttack, getGeneralCapacity } from './units.js';
+import { attachToArmy, detachFromArmy, coordinatedAttack, getGeneralCapacity, generalHeal, generalPillage } from './units.js';
+import { getTileOwner } from './units.js';
 import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
 
 function showSelectionPanel(unit) {
@@ -353,6 +354,29 @@ function showGeneralPanel(unit) {
       const et = UNIT_TYPES[enemy.type];
       const fName = FACTIONS[enemy.owner]?.name || enemy.owner;
       html += `<button class="sel-btn" style="border-color:#e03030;color:#ff4444;background:rgba(220,40,40,0.15);font-weight:bold" onclick="window.coordinatedAttack(${unit.id},${enemy.col},${enemy.row})"><span>\u{2694} Coordinated Attack: ${et.name} (${fName})</span></button>`;
+    }
+  }
+
+  // Heal — always available when the general has moves and someone needs healing
+  const generalHp = unit.hp !== undefined ? unit.hp : 100;
+  const anyArmyInjured = army.some(u => (u.hp || 100) < 100);
+  if (unit.moveLeft > 0 && (generalHp < 100 || anyArmyInjured)) {
+    html += `<button class="sel-btn" style="border-color:#6aab5c;color:#8fd87f" onclick="window.generalHeal(${unit.id})"><span>\u2764\uFE0F Rest & Heal (+25 HP, ends turn)</span></button>`;
+  }
+
+  // Pillage — when standing on a tile that isn't player-owned
+  if (unit.moveLeft > 0) {
+    const pillageTile = game.map[unit.row]?.[unit.col];
+    const pillageTileOwner = getTileOwner(unit.col, unit.row);
+    const canPillage = pillageTile && pillageTileOwner !== 'player' &&
+      (pillageTile.improvement || pillageTile.road || pillageTileOwner !== null);
+    if (canPillage) {
+      const label = pillageTile.improvement
+        ? `Pillage ${pillageTile.improvement} (+40 HP, +15g)`
+        : pillageTile.road
+          ? 'Pillage road (+20 HP, +5g)'
+          : 'Scorch earth (+15 HP)';
+      html += `<button class="sel-btn" style="border-color:#c45c4a;color:#ff8866" onclick="window.generalPillage(${unit.id})"><span>\uD83D\uDD25 ${label}</span></button>`;
     }
   }
 

@@ -1086,10 +1086,23 @@ function moveArmyTo(general, col, row, callback) {
  */
 function coordinatedAttack(generalId, targetCol, targetRow) {
   const general = game.units.find(u => u.id === generalId);
-  if (!general || !general.army || general.army.length === 0) return false;
+  if (!general) { addEvent('Coordinated attack failed: general not found.', 'combat'); return false; }
+  if (!general.army || general.army.length === 0) {
+    addEvent('Coordinated attack failed: no units in the army.', 'combat');
+    return false;
+  }
+  if (general.hasAttackedThisTurn) {
+    addEvent('Coordinated attack failed: general has already attacked this turn.', 'combat');
+    return false;
+  }
 
-  const target = game.units.find(u => u.col === targetCol && u.row === targetRow && u.owner !== general.owner);
-  if (!target) return false;
+  // Prefer combat units at the target tile over civilians — if a worker and a
+  // warrior share a tile, attacking should hit the warrior.
+  const targetsHere = game.units.filter(u =>
+    u.col === targetCol && u.row === targetRow && u.owner !== general.owner
+  );
+  const target = targetsHere.find(u => UNIT_TYPES[u.type]?.combat > 0) || targetsHere[0];
+  if (!target) { addEvent('Coordinated attack failed: no enemy on that tile.', 'combat'); return false; }
 
   // Check general is adjacent to target
   const dist = hexDistance(general.col, general.row, targetCol, targetRow);
@@ -1161,6 +1174,88 @@ function coordinatedAttack(generalId, targetCol, targetRow) {
   return true;
 }
 
+/**
+ * Great General: spend the turn to heal the general and all attached army
+ * units. Flat 25 HP heal, consumes all remaining movement.
+ */
+function generalHeal(generalId) {
+  const general = game.units.find(u => u.id === generalId && u.type === 'great_general');
+  if (!general || general.owner !== 'player') return false;
+  if (general.moveLeft <= 0) {
+    addEvent('General cannot heal — no movement points remaining.', 'combat');
+    return false;
+  }
+  const HEAL_AMOUNT = 25;
+  const oldHp = general.hp !== undefined ? general.hp : 100;
+  if (general.hp === undefined) general.hp = 100;
+  general.hp = Math.min(100, general.hp + HEAL_AMOUNT);
+  let armyHealed = 0;
+  if (general.army) {
+    for (const u of general.army) {
+      const before = u.hp || 0;
+      u.hp = Math.min(100, before + HEAL_AMOUNT);
+      if (u.hp > before) armyHealed++;
+    }
+  }
+  general.moveLeft = 0;
+  const delta = general.hp - oldHp;
+  addEvent(`\u2695\uFE0F Great General rests and recovers — general +${delta} HP, ${armyHealed} army unit(s) healed.`, 'combat');
+  return true;
+}
+
+/**
+ * Great General: pillage the tile the general is standing on to heal. The
+ * tile must not be in player territory. Pillaging an improvement yields the
+ * most HP and some gold; pillaging a road yields less; scorching raw land
+ * still restores some HP.
+ */
+function generalPillage(generalId) {
+  const general = game.units.find(u => u.id === generalId && u.type === 'great_general');
+  if (!general || general.owner !== 'player') return false;
+  if (general.moveLeft <= 0) {
+    addEvent('General cannot pillage — no movement points remaining.', 'combat');
+    return false;
+  }
+  const tile = game.map[general.row]?.[general.col];
+  if (!tile) return false;
+  const tileOwner = getTileOwner(general.col, general.row);
+  if (tileOwner === 'player') {
+    addEvent('Cannot pillage your own territory.', 'combat');
+    return false;
+  }
+
+  let healAmount = 0;
+  let goldAmount = 0;
+  let msg = '';
+  if (tile.improvement) {
+    const imp = TILE_IMPROVEMENTS[tile.improvement];
+    msg = `Great General pillaged ${imp?.name || 'improvement'}`;
+    tile.improvement = null;
+    tile.improvementProgress = 0;
+    healAmount = 40; goldAmount = 15;
+  } else if (tile.road) {
+    msg = 'Great General pillaged a road';
+    tile.road = false;
+    healAmount = 20; goldAmount = 5;
+  } else {
+    msg = 'Great General scorched the land';
+    healAmount = 15; goldAmount = 0;
+  }
+
+  if (general.hp === undefined) general.hp = 100;
+  const oldHp = general.hp;
+  general.hp = Math.min(100, general.hp + healAmount);
+  if (general.army) {
+    for (const u of general.army) {
+      u.hp = Math.min(100, (u.hp || 0) + healAmount);
+    }
+  }
+  if (goldAmount > 0) game.gold = (game.gold || 0) + goldAmount;
+  general.moveLeft = 0;
+  addEvent(`\uD83D\uDD25 ${msg} (+${general.hp - oldHp} HP${goldAmount ? `, +${goldAmount} gold` : ''}).`, 'combat');
+  return true;
+}
+
 export {
   createUnit,
   placeFactionCities,
@@ -1186,4 +1281,6 @@ export {
   detachFromArmy,
   releaseGeneralArmy,
   coordinatedAttack,
+  generalHeal,
+  generalPillage,
 };
