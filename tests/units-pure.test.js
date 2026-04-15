@@ -173,6 +173,25 @@ describe('computeAttackRange() one-attack-per-turn', () => {
     const range = computeAttackRange();
     expect(range).toBeNull();
   });
+
+  test('should allow melee unit to attack adjacent faction city with 0 move points remaining', () => {
+    const warrior = makeUnit({ id: 1, col: 5, row: 5, owner: 'player', type: 'warrior', moveLeft: 0, hasAttackedThisTurn: false });
+    state.units = [warrior];
+    state.selectedUnitId = 1;
+    state.factionCities = { faction_a: { name: 'Rome', col: 6, row: 5, hp: 100, borderRadius: 2 } };
+    const range = computeAttackRange();
+    expect(range).not.toBeNull();
+    expect(range.get('6,5')).toBe('city_faction_a');
+  });
+
+  test('should not allow melee unit to attack adjacent faction city when already attacked this turn', () => {
+    const warrior = makeUnit({ id: 1, col: 5, row: 5, owner: 'player', type: 'warrior', moveLeft: 0, hasAttackedThisTurn: true });
+    state.units = [warrior];
+    state.selectedUnitId = 1;
+    state.factionCities = { faction_a: { name: 'Rome', col: 6, row: 5, hp: 100, borderRadius: 2 } };
+    const range = computeAttackRange();
+    expect(range).toBeNull();
+  });
 });
 
 describe('canFoundCityAt()', () => {

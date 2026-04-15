@@ -386,7 +386,7 @@ function computeAttackRange() {
         }
       }
     }
-  } else if (unit.moveLeft > 0 && !unit.hasAttackedThisTurn) {
+  } else if (!unit.hasAttackedThisTurn) {
     const neighbors = getHexNeighbors(unit.col, unit.row);
     for (const nb of neighbors) {
       const nbKey = `${nb.col},${nb.row}`;
