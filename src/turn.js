@@ -18,6 +18,7 @@ import { getUnitAt, processZOCCaptures, barbarianRazeAICity, resolveCombat, isAt
 import { decayReputation, detectContradictions, updateReputation, ensureReputationState } from './reputation.js';
 import { createUnit, selectUnit, autoSelectNext, isTerritoryBlocked, getTileOwner } from './units.js';
 import { autoSave } from './save-load.js';
+import { notifyAIWarDeclaration, processPendingWarAlerts } from './war-notifications.js';
 import { clampCamera } from './input.js';
 import { processAIDiplomacy, resetTurnActions, processAITradeIncome } from './ai-diplomacy.js';
 import { calculateCityHousing, getHousingGrowthModifier } from './housing.js';
@@ -469,6 +470,11 @@ function endTurn() {
     processAIDiplomacy();
     processAITradeIncome();
   } catch (e) { console.error('Error in AI diplomacy:', e); }
+
+  // --- Blocking war notifications (must run before player regains control) ---
+  try {
+    processPendingWarAlerts();
+  } catch (e) { console.error('Error processing war alerts:', e); }
 
   // --- Eject any units trespassing after diplomacy changes (peace, expired borders) ---
   // NOTE: A second, final ejection pass runs later (after AI unit spawning)
@@ -1819,6 +1825,7 @@ function processAIMilitaryTurns() {
         const aName = FACTIONS[commit.factionId]?.name || commit.factionId;
         const bName = FACTIONS[commit.target]?.name || commit.target;
         addEvent(`${aName} has declared war on ${bName}!`, 'diplomacy');
+        notifyAIWarDeclaration(commit.factionId, commit.target, `Commitment fulfilled: ${aName} declared war on ${bName}`);
       }
     }
   }

@@ -7,7 +7,7 @@ import { getTileYields, getTileName, getTileMoveCost, isResourceRevealed, crosse
 import { computeMoveRange, computeRiverCrossings, computeAttackRange, getEnemyZOCHexes } from './units.js';
 import { getUnitAt, getCityAt } from './combat.js';
 import { getWaypointPath } from './improvements.js';
-import { getRelationLabel } from './diplomacy-api.js';
+import { getRelationLabel, getWarAwareRelationLabel } from './diplomacy-api.js';
 import { MINOR_FACTION_TYPES } from './minor-factions.js';
 import { drawResourceIcon } from './resource-icons.js';
 
@@ -1490,8 +1490,8 @@ function drawHoverTooltip(ctx, hexScreenX, hexScreenY, col, row, camX, camY) {
         lines.push({ text: cityHere.owner === 'barbarian' ? 'Barbarian Camp' : (met ? faction.name : 'Unknown Civilization'), color: '#aab0a8' });
         if (met) {
           const rel = game.relationships[cityHere.owner] || 0;
-          const relLabel = getRelationLabel(rel);
-          lines.push({ text: `${relLabel.text} (${rel > 0 ? '+' : ''}${rel})`, color: relLabel.cls === 'relation-hostile' ? '#d9534f' : relLabel.cls === 'relation-friendly' ? '#6aab5c' : relLabel.cls === 'relation-allied' ? '#c9a84c' : '#aab0a8' });
+          const relLabel = getWarAwareRelationLabel(cityHere.owner, rel);
+          lines.push({ text: `${relLabel.text} (${rel > 0 ? '+' : ''}${rel})`, color: (relLabel.cls === 'relation-hostile' || relLabel.cls === 'relation-at-war') ? '#d9534f' : relLabel.cls === 'relation-friendly' ? '#6aab5c' : relLabel.cls === 'relation-allied' ? '#c9a84c' : '#aab0a8' });
         }
       }
     }

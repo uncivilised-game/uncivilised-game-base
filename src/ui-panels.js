@@ -6,7 +6,7 @@ import { getTileYields, getTileName, isResourceRevealed, hasResourceAccess } fro
 import { render } from './render.js';
 import { addEvent, logAction, showToast, showCompletionNotification } from './events.js';
 import { selectUnit, deselectUnit, applyPromotion, upgradeUnit, selectNextUnit, moveUnitTo } from './units.js';
-import { getRelationLabel } from './diplomacy-api.js';
+import { getRelationLabel, getWarAwareRelationLabel } from './diplomacy-api.js';
 import { getModCombatBonus } from './diplomacy-api.js';
 import { isAtWarWith, declareSurpriseWar, confirmAndDeclareWar } from './combat.js';
 import { showWorkerActions, showSettlerActions } from './improvements.js';
@@ -197,7 +197,7 @@ function showSelectionPanel(unit) {
     const fName = faction ? faction.name : unit.owner;
     const fColor = faction ? faction.color : '#888';
     const rel = game.relationships[unit.owner] || 0;
-    const relLabel = getRelationLabel(rel);
+    const relLabel = getWarAwareRelationLabel(unit.owner, rel);
 
     html += `<div class="sel-header">
       <div class="sel-icon" style="background:${hexToRgba(fColor, 0.2)};border-color:${fColor}">${ut.icon}</div>
@@ -454,7 +454,7 @@ function showCityPanel(cityData) {
     const fName = faction ? faction.name : cityData.owner;
     const fColor = faction ? faction.color : '#888';
     const rel = game.relationships[cityData.owner] || 0;
-    const relLabel = getRelationLabel(rel);
+    const relLabel = getWarAwareRelationLabel(cityData.owner, rel);
 
     title = `\u{1F3F0} ${cityData.name}`;
     body = `<p style="color:${fColor}">${fName}</p>`;

@@ -10,6 +10,7 @@ import { game } from './state.js';
 import { addEvent, logAction, showToast, showDiploToast } from './events.js';
 import { hexDistance } from './hex.js';
 import { hasResourceAccess } from './map.js';
+import { notifyAIWarDeclaration, queueAIWarOnPlayer } from './war-notifications.js';
 
 // ============================================
 // VISIBILITY LEVELS
@@ -220,6 +221,9 @@ function declareWar(a, b) {
   addEvent(msg, 'diplomacy');
   showDiploToast('War Declared', msg);
   logAction('diplomacy', msg, { type: 'ai_war', attacker: a, defender: b });
+
+  // If the war involves the player or a player ally, queue a blocking alert
+  notifyAIWarDeclaration(a, b, `${factionA.name} declared war on ${factionB.name}`);
 
   // Break any existing alliance or trade between them
   removeAlliance(a, b);
@@ -1057,6 +1061,7 @@ function checkMilitaryBorderPressure(factionIds) {
         game.relationships[fid] = Math.min(-50, (game.relationships[fid] || 0) - 30);
         addEvent(`${fName} has declared a pre-emptive war against you!`, 'combat');
         showDiploToast('War!', `${fName} launches a pre-emptive strike! Your border aggression pushed them too far.`);
+        queueAIWarOnPlayer(fid, `Pre-emptive war over border aggression`);
       }
     }
   }
