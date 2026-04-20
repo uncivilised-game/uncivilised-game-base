@@ -1348,7 +1348,7 @@ function renderMiniMap() {
   miniCtx.fillStyle = '#0a0c0b';
   miniCtx.fillRect(0, 0, mw, mh);
 
-  const scaleX = mw / MAP_COLS;
+  const scaleX = mw / (MAP_COLS + 0.5);
   const scaleY = mh / MAP_ROWS;
 
   for (let r = 0; r < MAP_ROWS; r++) {
@@ -1360,12 +1360,13 @@ function renderMiniMap() {
       let color = bt.baseColor;
       if (tile.feature === 'mountain') color = '#5a5a5e';
       if (tile.feature === 'woods' || tile.feature === 'rainforest') color = '#2a5a2a';
-      // Dim explored-but-not-visible tiles on minimap
+      // Dim minimap tiles hidden by fog-of-war
       const vis = game.visibleTiles && game.visibleTiles[r] && game.visibleTiles[r][c];
       if (!vis) {
         const cr = parseInt(color.slice(1,3),16), cg = parseInt(color.slice(3,5),16), cb = parseInt(color.slice(5,7),16);
         color = 'rgb(' + Math.floor(cr*0.5) + ',' + Math.floor(cg*0.5) + ',' + Math.floor(cb*0.5) + ')';
       }
+      if (r % 2 === 1) c += 0.5; // shift odd rows right by half a square
       miniCtx.fillStyle = color;
       miniCtx.fillRect(c * scaleX, r * scaleY, scaleX + 0.5, scaleY + 0.5);
     }
