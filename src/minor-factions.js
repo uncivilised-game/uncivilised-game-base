@@ -391,6 +391,7 @@ window.barbCampAction = function(campId, action) {
         rebellionSuppressed: isRebelCamp,
         ...CITY_WALL_DEFAULTS,
       });
+      game.map[bc.row][bc.col].road = true;
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
       if (isRebelCamp) {
@@ -600,6 +601,7 @@ window.minorAction = function(mfId, action) {
         population: 500, buildings: [], isCapital: false, founded: game.turn,
         ...CITY_WALL_DEFAULTS,
       });
+      game.map[mf.row][mf.col].road = true;
       game.goldPerTurn += 2;
       game.sciencePerTurn += 1;
       addEvent(`\u{1F3F0} Barbarian camp converted to settlement "${cityName}"! The former raiders join your civilization.`, 'diplomacy');

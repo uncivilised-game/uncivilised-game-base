@@ -543,6 +543,7 @@ function captureExpansionCity(factionId, cityIdx) {
     capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
+  game.map[ec.row][ec.col].road = true;
 
   // Remove garrison units
   game.units = game.units.filter(u => !(u.col === ec.col && u.row === ec.row && u.owner === factionId));
@@ -755,6 +756,7 @@ function captureFactionCity(factionId) {
     capturedTurn: game.turn,
     ...CITY_WALL_DEFAULTS,
   });
+  game.map[fc.row][fc.col].road = true;
 
   // Remove capital from faction cities
   delete game.factionCities[factionId];
