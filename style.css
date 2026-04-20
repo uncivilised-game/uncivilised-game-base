@@ -401,6 +401,70 @@ a:hover { text-decoration: underline; }
   text-align: center;
 }
 
+/* ---- Game Briefing Overlay ---- */
+.briefing-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+.briefing-panel {
+  background: linear-gradient(170deg, #1a1c1b 0%, #131613 100%);
+  border: 1px solid rgba(201,168,76,0.25);
+  border-radius: 14px;
+  padding: 40px 36px 32px;
+  width: 90%;
+  max-width: 520px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 60px rgba(201,168,76,0.06);
+  animation: briefingSlideIn 0.4s ease;
+}
+@keyframes briefingSlideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.briefing-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.briefing-icon { width: 36px; height: 36px; flex-shrink: 0; }
+.briefing-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  color: var(--color-gold);
+  margin: 0;
+  letter-spacing: 0.03em;
+}
+.briefing-body {
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+.briefing-body p { margin: 0 0 14px; }
+.briefing-body p:last-child { margin-bottom: 0; }
+.briefing-body strong { color: var(--color-gold); font-weight: 600; }
+.briefing-warning {
+  color: var(--color-text-muted);
+  font-style: italic;
+  border-top: 1px solid rgba(201,168,76,0.12);
+  padding-top: 14px;
+  margin-top: 18px !important;
+}
+.briefing-btn {
+  display: block;
+  width: 100%;
+  margin-top: 28px;
+  font-size: 16px;
+  padding: 12px 0;
+  letter-spacing: 0.04em;
+}
+
 /* ---- Footer ---- */
 .title-footer {
   position: absolute;

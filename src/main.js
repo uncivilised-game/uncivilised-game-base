@@ -351,6 +351,23 @@ async function startNewGame() {
     }
   }
 
+  showGameBriefing(playerName);
+}
+
+function showGameBriefing(playerName) {
+  const briefing = document.getElementById('game-briefing');
+  if (!briefing) { launchGame(playerName); return; }
+  briefing.style.display = 'flex';
+  const btn = document.getElementById('btn-briefing-begin');
+  const fresh = btn.cloneNode(true);
+  btn.parentNode.replaceChild(fresh, btn);
+  fresh.addEventListener('click', () => {
+    briefing.style.display = 'none';
+    launchGame(playerName);
+  });
+}
+
+async function launchGame(playerName) {
   setNextUnitId(1);
   setGame(createInitialState());
 
