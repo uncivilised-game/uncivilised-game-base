@@ -260,9 +260,6 @@ function computeMoveRange() {
   const queue = [{ col: unit.col, row: unit.row, move: unit.moveLeft }];
   visited.set(`${unit.col},${unit.row}`, unit.moveLeft);
 
-  // ZOC: check if unit starts in enemy ZOC
-  const unitStartsInZOC = isInEnemyZOC(unit.col, unit.row, unit.owner);
-
   while (queue.length > 0) {
     const cur = queue.shift();
     if (cur.move <= 0) continue; // No movement left to expand from
@@ -272,15 +269,10 @@ function computeMoveRange() {
       const cost = getTileMoveCost(tile);
       if (cost >= 99) continue;
       // Civ-style movement rules:
-      // - Flat terrain (cost 1): deduct 1 MP, keep moving
-      // - Rough terrain (cost 2+: hills, woods, marsh, rainforest):
-      //   uses ALL remaining movement points (can always enter with 1+ MP)
-      // - Roads halve cost (0.5), always allow continued movement
       // - River crossing: uses ALL remaining MP (unless road bridge on both sides)
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
-      const isRoughTerrain = cost >= 2;
-      let remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = isRiverCross ? 0 : Math.max(0, cur.move - cost);
 
       // Zone of Control: entering an enemy ZOC hex ends movement
       const nbInZOC = isInEnemyZOC(nb.col, nb.row, unit.owner);
@@ -335,8 +327,7 @@ function computeRiverCrossings() {
       if (cost >= 99) continue;
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
-      const isRoughTerrain = cost >= 2;
-      const remaining = (isRoughTerrain || isRiverCross) ? 0 : (cur.move - cost);
+      const remaining = isRiverCross ? 0 : Math.max(0, cur.move - cost);
       const key = `${nb.col},${nb.row}`;
       if (visited.has(key) && visited.get(key) >= remaining) continue;
       if (isHexBlockedForUnit(unit, nb.col, nb.row)) continue;
@@ -439,7 +430,8 @@ function moveUnitTo(unit, targetCol, targetRow, onComplete) {
   if (!moveRange.has(key)) { if (onComplete) onComplete(false); return false; }
 
   const remaining = moveRange.get(key);
-  const sightRange = unit.type === 'scout' ? 4 : 3;
+  const ut = UNIT_TYPES[unit.type];
+  const sightRange = ut.class === 'recon' ? 4 : 3;
 
   // Reconstruct path for animated movement
   const path = reconstructMovePath(unit.col, unit.row, targetCol, targetRow, unit);
@@ -538,8 +530,7 @@ function reconstructMovePath(fromCol, fromRow, toCol, toRow, unit) {
       // River crossing uses all remaining MP (unless road bridge)
       const isRiverCross = crossesRiver(cur.col, cur.row, nb.col, nb.row)
                         && !roadBridgesRiver(cur.col, cur.row, nb.col, nb.row);
-      const isRough = cost >= 2;
-      let remaining = (isRough || isRiverCross) ? 0 : (cur.move - cost);
+      let remaining = isRiverCross ? 0 : Math.max(0, cur.move - cost);
 
       // ZOC: entering enemy ZOC ends movement
       if (isInEnemyZOC(nb.col, nb.row, unit.owner)) {
@@ -586,7 +577,8 @@ function deselectUnit() {
 // ---- Clear barbarian camp when a military unit steps on it ----
 function checkAndClearBarbarianCamp(unit, col, row) {
   if (unit.owner !== 'player') return;
-  if (unit.type === 'worker' || unit.type === 'settler') return; // Civilians can't clear camps
+  const ut = UNIT_TYPES[unit.type];
+  if (ut.class === 'civilian') return; // Civilians can't clear camps
 
   // Don't auto-clear camps — let the player interact via the negotiation panel.
   // Camps are destroyed via the "Attack" / "Destroy" button in the interaction UI.
