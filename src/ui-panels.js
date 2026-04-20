@@ -1563,6 +1563,8 @@ function renderCivicsPanel() {
         + '<div class="item-cost" style="color:#ffd700;font-size:11px">Use</div>';
       btn.addEventListener('click', ((gpEntry, gpDef) => () => {
         useGreatPerson(gpEntry, gpDef);
+        renderBuildPanel();
+        renderResearchPanel();
         renderCivicsPanel();
       })(gpe, gpdef));
       container.appendChild(btn);

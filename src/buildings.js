@@ -25,10 +25,13 @@ export function useGreatPerson(gpEntry, gpDef) {
           addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + tdata.name + '!', 'science');
           game.currentResearch = null;
           game.researchProgress = 0;
+          showCompletionNotification('research', tdata.name, tdata.desc);
+          showToast('\u{1F4DA} Research Complete', tdata.name + ' discovered by ' + gpDef.name + '!');
         }
       } else {
         game.science += 50;
         addEvent(gpDef.icon + ' ' + gpDef.name + ' granted +50 Science', 'science');
+        showToast('\u{1F52C} Science Bonus', gpDef.name + ' granted +50 Science!');
       }
       break;
     case 'instant_production':
@@ -47,6 +50,29 @@ export function useGreatPerson(gpEntry, gpDef) {
           addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + bd.name + '!', 'gold');
           game.currentBuild = null;
           game.buildProgress = 0;
+          showCompletionNotification('building', bd.name, bd.desc);
+          showToast('\u{1F3D7} Building Complete', bd.name + ' constructed by ' + gpDef.name + '!');
+        }
+      } else if (game.currentUnitBuild) {
+        const ut = UNIT_TYPES[game.currentUnitBuild];
+        if (ut) {
+          const city = game.cities[0];
+          if (city) {
+            const neighbors = getHexNeighbors(city.col, city.row);
+            for (const nb of neighbors) {
+              const tile = game.map[nb.row][nb.col];
+              if (!isTilePassable(tile)) continue;
+              if (getUnitAt(nb.col, nb.row)) continue;
+              const newUnit = createUnit(game.currentUnitBuild, nb.col, nb.row, 'player');
+              game.units.push(newUnit);
+              game.military += Math.floor(ut.combat / 4);
+              addEvent(gpDef.icon + ' ' + gpDef.name + ' completed ' + ut.name + '!', 'gold');
+              showToast('\u{2694} Unit Recruited', ut.name + ' recruited by ' + gpDef.name + '!');
+              break;
+            }
+          }
+          game.currentUnitBuild = null;
+          game.unitBuildProgress = 0;
         }
       } else if (game.currentWonderBuild) {
         // Check if wonder was already scooped
