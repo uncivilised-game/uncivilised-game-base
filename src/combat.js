@@ -151,6 +151,15 @@ function resolveCombat(attacker, defender) {
     // Gold reward for kill
     game.gold += Math.floor(dType.cost / 3);
 
+    // Notify player when their unit is killed
+    if (defender.owner === 'player') {
+      const killerName = attacker.owner === 'barbarian' || (attacker.owner && attacker.owner.startsWith('barbarian'))
+        ? 'Barbarians'
+        : (FACTIONS[attacker.owner]?.name || 'Enemy');
+      addEvent(`${dType.name} lost in combat against ${killerName}!`, 'combat');
+      showToast('Unit Lost', `Your ${dType.name} was destroyed by ${killerName}.`);
+    }
+
     // --- Eureka/Inspiration triggers on kill ---
     if (attacker.owner === 'player') {
       // Any kill triggers military_tradition inspiration
@@ -173,6 +182,15 @@ function resolveCombat(attacker, defender) {
     game.units = game.units.filter(u => u.id !== attacker.id);
     markVisibilityDirty();
     result.attackerDied = true;
+
+    // Notify player when their unit is killed
+    if (attacker.owner === 'player') {
+      const killerName = defender.owner === 'barbarian' || (defender.owner && defender.owner.startsWith('barbarian'))
+        ? 'Barbarians'
+        : (FACTIONS[defender.owner]?.name || 'Enemy');
+      addEvent(`${aType.name} lost in combat against ${killerName}!`, 'combat');
+      showToast('Unit Lost', `Your ${aType.name} was destroyed by ${killerName}.`);
+    }
   }
 
   // Melee: if defender dies and melee attacker survives, move to defender's tile
