@@ -1,5 +1,6 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { getTileYields, crossesRiver, roadBridgesRiver, isResourceRevealed, getHexDirection } from '../src/map.js';
+import { registerDiplomacyPlugin } from '../src/diplomacy-api.js';
 import { getHexNeighbors } from '../src/hex.js';
 import { setupGameState, makeTile } from './fixtures.js';
 
@@ -76,6 +77,23 @@ describe('getTileYields()', () => {
   test('should return zeros for unknown terrain', () => {
     const yields = getTileYields(makeTile({ base: 'nonexistent' }));
     expect(yields).toEqual({ food: 0, prod: 0, gold: 0 });
+  });
+
+  test('should pass factionId to getModYieldBonus so bonuses are faction-specific', () => {
+    const state = setupGameState();
+    state.yieldBonuses = [{ factionId: 'player' }];
+    const tile = makeTile({ base: 'grassland' });
+    const mockGetModYieldBonus = vi.fn(() => ({ food: 0, prod: 0, gold: 0 }));
+    registerDiplomacyPlugin({ getModYieldBonus: mockGetModYieldBonus });
+
+    getTileYields(tile, 'player');
+    expect(mockGetModYieldBonus).toHaveBeenCalledWith(tile, 'player');
+
+    getTileYields(tile, 'faction_a');
+    expect(mockGetModYieldBonus).toHaveBeenCalledWith(tile, 'faction_a');
+
+    // Restore no-op plugin
+    registerDiplomacyPlugin({ getModYieldBonus: () => ({ food: 0, prod: 0, gold: 0 }) });
   });
 });
 
