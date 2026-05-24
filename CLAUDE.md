@@ -49,7 +49,7 @@ esbuild resolves these via the `alias` config in `esbuild.config.mjs`.
 ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitignored). Key modules:
 
 | Module | Purpose |
-|--------|---------|
+|--------|----------|
 | `src/main.js` | Entry point, wires modules, exposes window globals |
 | `src/state.js` | Shared mutable state (game, canvas, camera, drag) |
 | `src/constants.js` | Game data: terrain, units, buildings, techs, factions |
@@ -140,8 +140,12 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
 | `scripts/release-vote.py` | Manages release vote issues: creates changelog, tallies reactions, creates devel→main PR |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
+| `scripts/feedback-digest.py` | Daily morning email digest of player feedback, categorised and prioritised |
+| `scripts/feedback-digest.html` | HTML email template for the feedback digest |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
+
+**Feedback digest:** Runs daily at 8am UTC via GitHub Actions. Queries the last 24 hours of feedback from Supabase, groups by category (bugs, features, gameplay) and priority, generates an executive summary via Claude, and emails the digest via Resend. Supports `DRY_RUN`, custom `HOURS` window, and manual dispatch. Requires `DIGEST_EMAIL` secret for the recipient address.
 
 ## Database (Supabase)
 
@@ -187,6 +191,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-automerge.yml` — auto-merges conviction PRs (`fix/*` → `devel`) after all CI checks pass and at least one approving review. Triggered by `pull_request_review` and `check_suite` events.
 - `.github/workflows/release-vote.yml` — weekly (Monday 12pm UTC) + manual. Creates a "Release Vote" GitHub issue listing changes on `devel` since `main`. Players vote with reactions (thumbs up/down). At 3 net upvotes, a `devel` → `main` PR is created automatically. Runs `scripts/release-vote.py`.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
+- `.github/workflows/feedback-digest.yml` — daily at 8am UTC + manual. Emails a categorised, prioritised summary of the last 24 hours of player feedback. Inputs: `hours`, `dry_run`. Requires `DIGEST_EMAIL` secret. Runs `scripts/feedback-digest.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
