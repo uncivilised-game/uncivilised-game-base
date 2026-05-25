@@ -1,51 +1,63 @@
 #!/usr/bin/env python3
 """
-Feedback Digest — daily summary of player feedback, categorised and prioritised.
+Feedback Digest — daily email summarising player feedback.
 
-Posts a GitHub issue each morning with:
-- New feedback from the last 24 hours grouped by category and priority
-- Overall stats (total feedback, open issues, top themes)
+Queries Supabase for feedback received in the last 24 hours (or since
+SINCE_HOURS), groups by category and priority, and sends a digest email
+via Resend.
 
-Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN
+Runs on a daily cron (GitHub Actions) or manually.
+
+Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY
+Optional: DIGEST_EMAIL (default: repo owner), SINCE_HOURS (default: 24),
+          DRY_RUN=true
 """
 
 import os
 import sys
 import json
 import time
+import html
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 
 # ── Config ──────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
-GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "uncivilised-game/uncivilised-game-base")
+RESEND_API_KEY = os.environ["RESEND_API_KEY"]
 
-LOOKBACK_HOURS = int(os.environ.get("LOOKBACK_HOURS", "24"))
+DIGEST_EMAIL = os.environ.get("DIGEST_EMAIL", "jamie247@gmail.com")
+SINCE_HOURS = int(os.environ.get("SINCE_HOURS", "24"))
+DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
 
-CATEGORY_EMOJI = {
-    "bug_report": "\U0001f41b",
-    "feature_request": "\U0001f4a1",
-    "gameplay_feedback": "\U0001f3ae",
-    "question": "\u2753",
-    "other": "\U0001f4ac",
-}
+FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
 
-CATEGORY_LABEL = {
+CATEGORY_LABELS = {
     "bug_report": "Bug Reports",
     "feature_request": "Feature Requests",
     "gameplay_feedback": "Gameplay Feedback",
     "question": "Questions",
     "other": "Other",
 }
-
+CATEGORY_EMOJI = {
+    "bug_report": "&#128027;",
+    "feature_request": "&#128161;",
+    "gameplay_feedback": "&#127918;",
+    "question": "&#10067;",
+    "other": "&#128172;",
+}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-PRIORITY_EMOJI = {"critical": "\U0001f534", "high": "\U0001f7e0", "medium": "\U0001f7e1", "low": "\U0001f7e2"}
+PRIORITY_COLORS = {
+    "critical": "#dc2626",
+    "high": "#ea580c",
+    "medium": "#ca8a04",
+    "low": "#6b7280",
+}
 
 
-# ── HTTP helpers ────────────────────────────────────────────────────
+# ── HTTP helpers (same pattern as other scripts) ───────────────────
 def _req(method, url, data=None, headers=None, retries=2):
     headers = headers or {}
     body = json.dumps(data).encode() if data is not None else None
@@ -54,7 +66,7 @@ def _req(method, url, data=None, headers=None, retries=2):
     for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method=method)
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
@@ -77,192 +89,210 @@ def sb_get(path, params=""):
     })
 
 
-def gh_api(method, endpoint, data=None):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/{endpoint}"
-    return _req(method, url, data=data, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
+def send_email(to, subject, html_body):
+    return _req("POST", "https://api.resend.com/emails", data={
+        "from": FROM_EMAIL,
+        "to": [to],
+        "subject": subject,
+        "html": html_body,
+    }, headers={
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json",
     })
 
 
-# ── Fetch feedback ─────────────────────────────────────────────────
-def fetch_recent_feedback(since):
-    """Fetch all feedback created since the given datetime."""
-    iso = since.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+# ── Fetch recent feedback ─────────────────────────────────────────
+def fetch_feedback(since_iso):
     params = (
-        f"select=id,player_name,message,category,priority,ai_summary,status,github_issue_number,created_at"
-        f"&created_at=gte.{iso}"
+        f"created_at=gte.{since_iso}"
+        f"&select=id,player_name,visitor_id,message,category,priority,ai_summary,status,github_issue_number,created_at"
         f"&order=created_at.desc"
     )
     return sb_get("feedback", params)
 
 
-def fetch_pending_feedback():
-    """Fetch feedback still in pending status (below conviction threshold)."""
-    params = (
-        f"select=id,player_name,message,category,priority,ai_summary,created_at"
-        f"&status=eq.pending"
-        f"&order=created_at.desc"
-    )
-    return sb_get("feedback", params)
-
-
-def fetch_overall_stats():
-    """Fetch summary counts by category and status."""
-    params = "select=category,status,priority"
-    return sb_get("feedback", params)
-
-
-# ── Build digest ───────────────────────────────────────────────────
-def group_by_category(feedback):
-    """Group feedback items by category, sorted by priority within each group."""
-    groups = {}
-    for item in feedback:
-        cat = item.get("category") or "other"
-        groups.setdefault(cat, []).append(item)
-    # Sort each group by priority
-    for cat in groups:
-        groups[cat].sort(key=lambda x: PRIORITY_ORDER.get(x.get("priority", "medium"), 2))
-    return groups
-
-
-def build_digest(recent, pending, all_feedback):
-    """Build the markdown digest body."""
+# ── Build digest ──────────────────────────────────────────────────
+def build_digest(feedback, since_dt):
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=LOOKBACK_HOURS)
+    period = f"{since_dt.strftime('%b %d %H:%M')} – {now.strftime('%b %d %H:%M')} UTC"
 
-    lines = []
+    # Group by category
+    by_category = defaultdict(list)
+    for fb in feedback:
+        by_category[fb.get("category", "other")].append(fb)
 
-    # ── Header stats ───────────────────────────────────────────────
-    total_all_time = len(all_feedback)
-    total_new = len([f for f in all_feedback if f["status"] == "new"])
-    total_pending = len([f for f in all_feedback if f["status"] == "pending"])
-    total_processed = len([f for f in all_feedback if f["status"] == "processed"])
+    # Priority counts
+    priority_counts = defaultdict(int)
+    for fb in feedback:
+        priority_counts[fb.get("priority", "low")] += 1
 
-    lines.append(f"**Period:** last {LOOKBACK_HOURS} hours (since {since.strftime('%Y-%m-%d %H:%M UTC')})")
-    lines.append(f"**New feedback received:** {len(recent)}")
-    lines.append("")
-    lines.append(f"> **All-time totals** — {total_all_time} total | {total_new} new | {total_pending} pending | {total_processed} processed")
-    lines.append("")
-
-    if not recent:
-        lines.append("No new feedback in this period. :tada:")
-        return "\n".join(lines)
-
-    # ── Priority summary ──────────────────────────────────────────
-    priority_counts = {}
-    for item in recent:
-        p = item.get("priority", "medium")
-        priority_counts[p] = priority_counts.get(p, 0) + 1
-
-    priority_parts = []
-    for p in ["critical", "high", "medium", "low"]:
-        if priority_counts.get(p):
-            priority_parts.append(f"{PRIORITY_EMOJI.get(p, '')} {p}: {priority_counts[p]}")
-    if priority_parts:
-        lines.append("### Priority Breakdown")
-        lines.append(" | ".join(priority_parts))
-        lines.append("")
-
-    # ── Feedback by category ──────────────────────────────────────
-    groups = group_by_category(recent)
-
-    # Order categories: bugs first, then features, gameplay, questions, other
-    cat_order = ["bug_report", "feature_request", "gameplay_feedback", "question", "other"]
-    for cat in cat_order:
-        items = groups.get(cat)
-        if not items:
-            continue
-
-        emoji = CATEGORY_EMOJI.get(cat, "")
-        label = CATEGORY_LABEL.get(cat, cat)
-        lines.append(f"### {emoji} {label} ({len(items)})")
-        lines.append("")
-
-        for item in items:
-            priority = item.get("priority", "medium")
-            p_emoji = PRIORITY_EMOJI.get(priority, "")
-            summary = item.get("ai_summary") or item.get("message", "")[:100]
-            player = item.get("player_name") or "anonymous"
-            issue_num = item.get("github_issue_number")
-
-            issue_ref = f" → #{issue_num}" if issue_num else ""
-            lines.append(f"- {p_emoji} **[{priority}]** {summary} — *{player}*{issue_ref}")
-
-        lines.append("")
-
-    # ── Pending feedback (awaiting more signal) ───────────────────
-    if pending:
-        lines.append(f"### \u23f3 Pending Feedback ({len(pending)} items awaiting conviction threshold)")
-        lines.append("")
-        pending_by_cat = group_by_category(pending)
-        for cat in cat_order:
-            items = pending_by_cat.get(cat)
-            if not items:
-                continue
-            label = CATEGORY_LABEL.get(cat, cat)
-            lines.append(f"**{label}:** {len(items)} pending")
-        lines.append("")
-
-    # ── Unique reporters ──────────────────────────────────────────
+    # Unique reporters
     reporters = set()
-    for item in recent:
-        name = item.get("player_name")
-        if name:
-            reporters.add(name)
+    for fb in feedback:
+        name = fb.get("player_name") or fb.get("visitor_id", "anonymous")
+        reporters.add(name)
 
-    if reporters:
-        lines.append(f"### \U0001f465 Unique Reporters ({len(reporters)})")
-        lines.append(", ".join(sorted(reporters)))
-        lines.append("")
+    # Linked to issues
+    linked = sum(1 for fb in feedback if fb.get("github_issue_number"))
 
-    return "\n".join(lines)
+    # ── HTML ──
+    sections = []
+
+    # Summary banner
+    sections.append(f"""
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+        <h2 style="margin:0 0 12px;color:#1e293b;font-size:20px;">Feedback Digest</h2>
+        <p style="margin:0 0 8px;color:#64748b;font-size:14px;">{period}</p>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <div><span style="font-size:28px;font-weight:bold;color:#1e293b;">{len(feedback)}</span>
+                <span style="color:#64748b;font-size:13px;"> total</span></div>
+            <div><span style="font-size:28px;font-weight:bold;color:#1e293b;">{len(reporters)}</span>
+                <span style="color:#64748b;font-size:13px;"> reporters</span></div>
+            <div><span style="font-size:28px;font-weight:bold;color:#1e293b;">{linked}</span>
+                <span style="color:#64748b;font-size:13px;"> linked to issues</span></div>
+        </div>
+    </div>
+    """)
+
+    # Priority breakdown
+    if any(priority_counts.values()):
+        pills = []
+        for p in ["critical", "high", "medium", "low"]:
+            count = priority_counts.get(p, 0)
+            if count:
+                color = PRIORITY_COLORS[p]
+                pills.append(
+                    f'<span style="display:inline-block;background:{color};color:#fff;'
+                    f'border-radius:12px;padding:2px 10px;font-size:12px;margin-right:6px;">'
+                    f'{p}: {count}</span>'
+                )
+        sections.append(f"""
+        <div style="margin-bottom:20px;">
+            <strong style="color:#475569;font-size:13px;">By priority:</strong>
+            <div style="margin-top:6px;">{"".join(pills)}</div>
+        </div>
+        """)
+
+    # Category sections (ordered by count)
+    ordered_cats = sorted(by_category.keys(), key=lambda c: len(by_category[c]), reverse=True)
+
+    for cat in ordered_cats:
+        items = by_category[cat]
+        label = CATEGORY_LABELS.get(cat, cat)
+        emoji = CATEGORY_EMOJI.get(cat, "")
+        # Sort items by priority
+        items.sort(key=lambda fb: PRIORITY_ORDER.get(fb.get("priority", "low"), 3))
+
+        rows = []
+        for fb in items:
+            pri = fb.get("priority", "low")
+            pri_color = PRIORITY_COLORS.get(pri, "#6b7280")
+            summary = html.escape(fb.get("ai_summary") or fb.get("message", "")[:120])
+            player = html.escape(fb.get("player_name") or "anonymous")
+            created = fb.get("created_at", "")[:16].replace("T", " ")
+            issue_link = ""
+            if fb.get("github_issue_number"):
+                issue_num = fb["github_issue_number"]
+                issue_link = (
+                    f' <a href="https://github.com/uncivilised-game/uncivilised-game-base/issues/{issue_num}"'
+                    f' style="color:#2563eb;text-decoration:none;font-size:12px;">#{issue_num}</a>'
+                )
+            status_badge = ""
+            if fb.get("status") == "processed":
+                status_badge = ' <span style="color:#16a34a;font-size:11px;">&#10003; triaged</span>'
+            elif fb.get("status") == "pending":
+                status_badge = ' <span style="color:#ca8a04;font-size:11px;">pending</span>'
+
+            rows.append(f"""
+            <tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:8px 12px;vertical-align:top;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{pri_color};margin-right:6px;vertical-align:middle;"></span>
+                    <span style="font-size:12px;color:{pri_color};">{pri}</span>
+                </td>
+                <td style="padding:8px 12px;vertical-align:top;">
+                    <div style="font-size:14px;color:#1e293b;">{summary}{issue_link}{status_badge}</div>
+                    <div style="font-size:12px;color:#94a3b8;margin-top:2px;">{player} &middot; {created}</div>
+                </td>
+            </tr>
+            """)
+
+        sections.append(f"""
+        <div style="margin-bottom:28px;">
+            <h3 style="margin:0 0 8px;color:#334155;font-size:16px;">{emoji} {label} ({len(items)})</h3>
+            <table style="width:100%;border-collapse:collapse;">
+                {"".join(rows)}
+            </table>
+        </div>
+        """)
+
+    # Wrap in full email
+    body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:640px;margin:0 auto;padding:20px;color:#1e293b;">
+        {"".join(sections)}
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;">
+        <p style="font-size:12px;color:#94a3b8;text-align:center;">
+            Uncivilized Feedback Digest &middot; Auto-generated by GitHub Actions
+        </p>
+    </body>
+    </html>
+    """
+    return body
 
 
-# ── Main ───────────────────────────────────────────────────────────
-def main():
+def build_empty_digest(since_dt):
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=LOOKBACK_HOURS)
+    period = f"{since_dt.strftime('%b %d %H:%M')} – {now.strftime('%b %d %H:%M')} UTC"
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:640px;margin:0 auto;padding:20px;color:#1e293b;">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;text-align:center;">
+            <h2 style="margin:0 0 8px;color:#1e293b;">Feedback Digest</h2>
+            <p style="color:#64748b;font-size:14px;">{period}</p>
+            <p style="color:#94a3b8;font-size:16px;margin-top:16px;">No new feedback in this period. &#127881;</p>
+        </div>
+    </body>
+    </html>
+    """
 
-    print(f"Fetching feedback from last {LOOKBACK_HOURS} hours...")
-    recent = fetch_recent_feedback(since)
-    print(f"  → {len(recent)} new items")
 
-    pending = fetch_pending_feedback()
-    print(f"  → {len(pending)} pending items")
+# ── Main ──────────────────────────────────────────────────────────
+def main():
+    since_dt = datetime.now(timezone.utc) - timedelta(hours=SINCE_HOURS)
+    since_iso = since_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
-    all_feedback = fetch_overall_stats()
-    print(f"  → {len(all_feedback)} total items all-time")
+    print(f"Fetching feedback since {since_iso} ...")
+    feedback = fetch_feedback(since_iso)
+    print(f"Found {len(feedback)} feedback items")
 
-    body = build_digest(recent, pending, all_feedback)
+    if feedback:
+        subject = f"Feedback Digest: {len(feedback)} items — {datetime.now(timezone.utc).strftime('%b %d')}"
+        body = build_digest(feedback, since_dt)
+    else:
+        subject = f"Feedback Digest: All quiet — {datetime.now(timezone.utc).strftime('%b %d')}"
+        body = build_empty_digest(since_dt)
 
-    date_str = now.strftime("%Y-%m-%d")
-    title = f"Feedback Digest — {date_str}"
+    if DRY_RUN:
+        print(f"\n[DRY RUN] Would send to: {DIGEST_EMAIL}")
+        print(f"Subject: {subject}")
+        print(f"Items: {len(feedback)}")
+        if feedback:
+            by_cat = defaultdict(int)
+            by_pri = defaultdict(int)
+            for fb in feedback:
+                by_cat[fb.get("category", "other")] += 1
+                by_pri[fb.get("priority", "low")] += 1
+            print(f"Categories: {dict(by_cat)}")
+            print(f"Priorities: {dict(by_pri)}")
+        return
 
-    # Check if a digest for today already exists
-    existing = gh_api("GET", f"issues?labels=feedback-digest&state=open&per_page=5")
-    for issue in existing:
-        if date_str in issue.get("title", ""):
-            print(f"Digest for {date_str} already exists (#{issue['number']}), updating...")
-            gh_api("PATCH", f"issues/{issue['number']}", {"body": body})
-            print(f"Updated: {issue['html_url']}")
-            return
-
-    # Create new issue
-    issue = gh_api("POST", "issues", {
-        "title": title,
-        "body": body,
-        "labels": ["feedback-digest"],
-    })
-    print(f"Created: {issue.get('html_url', issue)}")
-
-    # Close yesterday's digest
-    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    for issue in existing:
-        if yesterday in issue.get("title", ""):
-            gh_api("PATCH", f"issues/{issue['number']}", {"state": "closed"})
-            print(f"Closed yesterday's digest #{issue['number']}")
+    print(f"Sending digest to {DIGEST_EMAIL} ...")
+    result = send_email(DIGEST_EMAIL, subject, body)
+    print(f"Sent: {result.get('id', 'ok')}")
 
 
 if __name__ == "__main__":

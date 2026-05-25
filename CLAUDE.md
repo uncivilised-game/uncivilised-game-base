@@ -49,7 +49,7 @@ esbuild resolves these via the `alias` config in `esbuild.config.mjs`.
 ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitignored). Key modules:
 
 | Module | Purpose |
-|--------|---------|
+|--------|--------|
 | `src/main.js` | Entry point, wires modules, exposes window globals |
 | `src/state.js` | Shared mutable state (game, canvas, camera, drag) |
 | `src/constants.js` | Game data: terrain, units, buildings, techs, factions |
@@ -89,6 +89,7 @@ ES modules under `src/`, bundled by esbuild into `game.js` (IIFE format, gitigno
 - **Always run `npm test` before committing, pushing, or creating a PR.** Tests must pass. If tests fail, fix the issue before proceeding.
 - Tests live in `tests/` with fixtures in `tests/fixtures.js` and browser global stubs in `tests/setup.js`
 - Test naming: use `test()` (not `it()`), add `()` after function names in `describe()`, use dummy faction names (`faction_a`, `faction_b`) not real ones
+- When fixing bugs or changing game logic, add a test that covers the fix when practical. Pure UI changes, render tweaks, and trivial one-liners don't need tests.
 
 ## Backend (Python FastAPI)
 
@@ -97,7 +98,7 @@ Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel pr
 ### Core Endpoints (both server.py and api/index.py)
 
 | Endpoint | Method | Purpose |
-|----------|--------|---------|
+|----------|--------|--------|
 | `/api/chat` | POST | AI diplomacy (requires diplomacy plugin + ANTHROPIC_API_KEY) |
 | `/api/characters` | GET | List available AI leaders |
 | `/api/save` | POST | Save game state (keyed by visitor_id) |
@@ -117,7 +118,7 @@ Two near-identical copies: `server.py` (local dev) and `api/index.py` (Vercel pr
 ### Production-Only Endpoints (api/index.py)
 
 | Endpoint | Method | Purpose |
-|----------|--------|---------|
+|----------|--------|--------|
 | `/api/signup` | POST | Player registration with email verification |
 | `/api/signin` | POST | Player authentication |
 | `/api/verify-token/:token` | GET | Email/token verification |
@@ -131,16 +132,19 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 ## Scripts
 
 | Script | Purpose |
-|--------|---------|
+|--------|--------|
 | `scripts/conviction-triage.py` | Auto-triages new GitHub issues with conviction scoring |
 | `scripts/conviction-close.py` | Nightly auto-close of conviction issues resolved by merged PRs |
 | `scripts/newsletter.py` | Sends newsletter emails to active players via Resend API |
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
+| `scripts/release-vote.py` | Manages release vote issues: creates changelog, tallies reactions, creates devel→main PR |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
-| `scripts/feedback-digest.py` | Daily feedback summary posted as a GitHub issue |
+| `scripts/feedback-digest.py` | Daily email digest of player feedback, categorised by type and prioritised |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
+
+**Feedback digest:** Runs daily at 8am UTC via `feedback-digest.yml`. Queries last 24h of feedback from Supabase, groups by category (bugs, features, gameplay, questions), sorts by priority, and sends an HTML email via Resend. Supports `DRY_RUN`, `SINCE_HOURS`, and `DIGEST_EMAIL` overrides via workflow dispatch.
 
 ## Database (Supabase)
 
@@ -179,11 +183,14 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-triage.yml` — auto-triages new issues with conviction scoring.
 - `.github/workflows/conviction-implement.yml` — comment `/fix` on a conviction-labeled issue to have Claude Code implement it and open a PR. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/conviction-autofix.yml` — runs twice daily (10am/10pm UTC), automatically implements top critical/high priority conviction issues. Uses `autofix-in-progress` and `autofix-attempted` labels to prevent overlap. Max 2 issues per run.
-- `.github/workflows/conviction-close.yml` — nightly (6am UTC) scan that auto-closes conviction issues resolved by merged PRs. Uses direct PR cross-referencing + Claude semantic matching. Supports `dry_run` input via manual dispatch.
+- `.github/workflows/conviction-close.yml` — runs every 6 hours to auto-close conviction issues resolved by merged PRs. Uses a two-phase approach: first marks issues as `pending-close` with a 24-hour grace period, then closes on the next run if no one objects. Skips issues with active autofix work (`autofix-in-progress` label or open `fix/N` PRs). Uses direct PR cross-referencing + Claude semantic matching (with strict false-positive guards). Supports `dry_run` input via manual dispatch.
 - `.github/workflows/pr-preview.yml` — comment `/deploy` on any PR to get a Vercel preview deployment URL posted back as a comment. Restricted to repo owners, members, and collaborators.
 - `.github/workflows/pr-assist.yml` — comment `@claude <request>` on any PR to have Claude Code make further changes, fix issues, or answer questions. Works on both PR comments and review comments. Restricted to repo owners, members, and collaborators.
+- `.github/workflows/pr-review.yml` — comment `/review` on any PR for Claude Code review. Auto-triggers on conviction PRs (`fix/*` branches targeting `devel`). Submits GitHub APPROVE or REQUEST_CHANGES reviews to gate auto-merge.
+- `.github/workflows/conviction-automerge.yml` — auto-merges conviction PRs (`fix/*` → `devel`) after all CI checks pass and at least one approving review. Triggered by `pull_request_review` and `check_suite` events.
+- `.github/workflows/release-vote.yml` — weekly (Monday 12pm UTC) + manual. Creates a "Release Vote" GitHub issue listing changes on `devel` since `main`. Players vote with reactions (thumbs up/down). At 3 net upvotes, a `devel` → `main` PR is created automatically. Runs `scripts/release-vote.py`.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
-- `.github/workflows/feedback-digest.yml` — daily (8am UTC) feedback summary posted as a GitHub issue. Groups by category and priority, shows pending items and reporter stats. Supports manual trigger with configurable lookback window.
+- `.github/workflows/feedback-digest.yml` — daily at 8am UTC + manual. Sends categorised/prioritised feedback digest email via Resend. Inputs: `since_hours`, `dry_run`, `digest_email`. Runs `scripts/feedback-digest.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
