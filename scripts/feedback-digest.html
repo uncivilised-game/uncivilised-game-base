@@ -1,0 +1,70 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0d0f0e;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d0f0e;padding:40px 20px"><tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%">
+
+<!-- HEADER -->
+<tr><td style="padding:0 0 10px">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td style="text-align:left;vertical-align:middle">
+      <svg viewBox="0 0 400 60" width="260" height="39" aria-label="Uncivilised" style="display:block">
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#c9a84c"/>
+            <stop offset="100%" stop-color="#8b6914"/>
+          </linearGradient>
+        </defs>
+        <text x="0" y="44" font-family="Cormorant Garamond, Georgia, serif" font-weight="700" font-size="48" fill="url(#lg)">UNCIVILISED</text>
+        <line x1="0" y1="54" x2="360" y2="54" stroke="#c9a84c" stroke-width="0.5" opacity="0.6"/>
+      </svg>
+    </td>
+    <td style="text-align:right;vertical-align:middle;color:#666;font-size:12px;letter-spacing:0.5px">FEEDBACK DIGEST</td>
+  </tr></table>
+</td></tr>
+
+<!-- thin gold line -->
+<tr><td style="padding:0 0 20px"><div style="height:1px;background:linear-gradient(to right,#c9a84c50,transparent)"></div></td></tr>
+
+<!-- PERIOD & TOTAL -->
+<tr><td style="padding:0 0 20px">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td style="color:#888;font-size:13px">{{period}}</td>
+    <td style="text-align:right;color:#c9a84c;font-size:13px;font-weight:600">{{total}} items</td>
+  </tr></table>
+</td></tr>
+
+<!-- PRIORITY STATS -->
+<tr><td style="padding:0 0 20px">
+  <table cellpadding="0" cellspacing="0" style="background:#111310;border:1px solid #222220;border-radius:8px;width:100%"><tr>
+    {{stats_row}}
+  </tr></table>
+</td></tr>
+
+<!-- AI ANALYSIS -->
+<tr><td style="padding:0 0 24px">
+  <div style="background:#151715;border:1px solid #222220;border-left:3px solid #c9a84c;border-radius:0 8px 8px 0;padding:16px 20px">
+    <div style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding-bottom:8px">AI Analysis</div>
+    <div style="color:#d0c8b8;font-size:14px;line-height:22px">{{analysis}}</div>
+  </div>
+</td></tr>
+
+<!-- CATEGORY SECTIONS -->
+<tr><td>
+  <table width="100%" cellpadding="0" cellspacing="0">
+    {{category_sections}}
+  </table>
+</td></tr>
+
+<!-- FOOTER -->
+<tr><td style="padding:30px 0 0">
+  <div style="height:1px;background:linear-gradient(to right,#c9a84c30,transparent);margin-bottom:16px"></div>
+  <div style="color:#555;font-size:11px;line-height:18px;text-align:center">
+    Uncivilized Feedback Digest &middot; <a href="https://uncivilized.fun" style="color:#c9a84c;text-decoration:none">uncivilized.fun</a>
+  </div>
+</td></tr>
+
+</table>
+</td></tr></table>
+</body></html>

@@ -1,0 +1,42 @@
+name: Feedback Digest
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9 AM UTC
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Lookback window in hours (default 24)'
+        required: false
+        default: '24'
+      dry_run:
+        description: 'Dry run — print digest without sending email'
+        required: false
+        default: 'false'
+      digest_email:
+        description: 'Override recipient email (default: jamie247@gmail.com)'
+        required: false
+        default: ''
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Send feedback digest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          HOURS: ${{ inputs.hours || '24' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          DIGEST_EMAIL: ${{ inputs.digest_email || 'jamie247@gmail.com' }}
+        run: python scripts/feedback-digest.py
