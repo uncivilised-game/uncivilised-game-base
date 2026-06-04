@@ -139,12 +139,10 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
 | `scripts/release-vote.py` | Manages release vote issues: creates changelog, tallies reactions, creates devel→main PR |
+| `scripts/feedback-digest.py` | Daily feedback digest: queries Supabase, synthesises themes via Claude, creates GitHub issue |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
-| `scripts/feedback-digest.py` | Daily email digest of player feedback, categorised by type and prioritised |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
-
-**Feedback digest:** Runs daily at 8am UTC via `feedback-digest.yml`. Queries last 24h of feedback from Supabase, groups by category (bugs, features, gameplay, questions), sorts by priority, and sends an HTML email via Resend. Supports `DRY_RUN`, `SINCE_HOURS`, and `DIGEST_EMAIL` overrides via workflow dispatch.
 
 ## Database (Supabase)
 
@@ -190,7 +188,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-automerge.yml` — auto-merges conviction PRs (`fix/*` → `devel`) after all CI checks pass and at least one approving review. Triggered by `pull_request_review` and `check_suite` events.
 - `.github/workflows/release-vote.yml` — weekly (Monday 12pm UTC) + manual. Creates a "Release Vote" GitHub issue listing changes on `devel` since `main`. Players vote with reactions (thumbs up/down). At 3 net upvotes, a `devel` → `main` PR is created automatically. Runs `scripts/release-vote.py`.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
-- `.github/workflows/feedback-digest.yml` — daily at 8am UTC + manual. Sends categorised/prioritised feedback digest email via Resend. Inputs: `since_hours`, `dry_run`, `digest_email`. Runs `scripts/feedback-digest.py`.
+- `.github/workflows/feedback-digest.yml` — daily (8am UTC) + manual. Creates a GitHub Issue summarising the last 24h of player feedback, categorised and prioritised with Claude-synthesised themes. Inputs: `digest_hours`, `dry_run`. Runs `scripts/feedback-digest.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
