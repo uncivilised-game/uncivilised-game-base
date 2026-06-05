@@ -1,47 +1,46 @@
 #!/usr/bin/env python3
 """
-Feedback Digest — daily summary of player feedback, categorised and prioritised.
+Feedback Digest — daily summary of in-game player feedback.
 
-Queries Supabase for feedback from the last 24 hours (or custom window),
-groups by category and priority, uses Claude to synthesise themes,
-and creates a GitHub Issue as the daily digest.
+Queries the last 24 hours of feedback from Supabase, groups by category
+and priority, and sends a formatted digest email via Resend.
 
-Runs on a schedule (GitHub Actions) or manually.
-Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY, GITHUB_TOKEN
-Optional: DIGEST_HOURS=24, DRY_RUN=true
+Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, DIGEST_EMAIL
+Optional: DRY_RUN=true, HOURS=48 (lookback window, default 24)
 """
 
+import json
 import os
 import sys
-import json
 import time
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone, timedelta
-from collections import Counter
+import urllib.request
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 # ── Config ──────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "uncivilised-game/uncivilised-game-base")
-
-DIGEST_HOURS = int(os.environ.get("DIGEST_HOURS", "24"))
+RESEND_API_KEY = os.environ["RESEND_API_KEY"]
+DIGEST_EMAIL = os.environ["DIGEST_EMAIL"]
 DRY_RUN = os.environ.get("DRY_RUN", "false").lower() == "true"
+HOURS = int(os.environ.get("HOURS", "24"))
 
-CATEGORY_EMOJI = {
-    "bug_report": "🐛",
-    "feature_request": "✨",
-    "gameplay_feedback": "🎮",
-    "question": "❓",
-    "other": "💬",
-}
+FROM_EMAIL = "Uncivilized <hello@uncivilized.fun>"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+CATEGORY_LABELS = {
+    "bug_report": "Bug Reports",
+    "feature_request": "Feature Requests",
+    "gameplay_feedback": "Gameplay Feedback",
+    "question": "Questions",
+    "other": "Other",
+}
+CATEGORY_ORDER = list(CATEGORY_LABELS.keys())
 
 
-# ── HTTP helpers (no deps) ──────────────────────────────────────────
+# ── HTTP helpers ────────────────────────────────────────────────────
 def _req(method, url, data=None, headers=None, retries=2):
     headers = headers or {}
     body = json.dumps(data).encode() if data is not None else None
@@ -50,7 +49,7 @@ def _req(method, url, data=None, headers=None, retries=2):
     for attempt in range(retries + 1):
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method=method)
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
@@ -73,182 +72,203 @@ def sb_get(path, params=""):
     })
 
 
-def gh_post(path, data):
-    return _req("POST", f"https://api.github.com{path}", data=data, headers={
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    })
-
-
-# ── Claude synthesis ────────────────────────────────────────────────
-def synthesise_digest(feedback_items):
-    """Use Claude to synthesise themes and highlights from the day's feedback."""
-    items_text = "\n".join(
-        f"- [{fb.get('category', 'other')}][{fb.get('priority', 'medium')}] "
-        f"{fb.get('player_name', 'anon')}: \"{fb.get('message', '')[:200]}\""
-        for fb in feedback_items
+# ── Fetch feedback ──────────────────────────────────────────────────
+def fetch_recent_feedback(hours):
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    since_encoded = since.replace("+", "%2B")
+    rows = sb_get(
+        "feedback",
+        f"select=id,visitor_id,player_name,message,category,priority,ai_summary,game_state_snapshot,status,created_at"
+        f"&created_at=gte.{since_encoded}"
+        f"&order=created_at.desc"
     )
+    if isinstance(rows, dict) and "error" in rows:
+        print(f"Supabase error: {rows}", file=sys.stderr)
+        return []
+    return rows or []
 
-    result = _req("POST", "https://api.anthropic.com/v1/messages", data={
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 800,
-        "messages": [{
-            "role": "user",
-            "content": f"""You are summarising player feedback for Uncivilised, a browser 4X strategy game.
 
-Below are {len(feedback_items)} feedback items from the last {DIGEST_HOURS} hours.
+# ── Group and sort ──────────────────────────────────────────────────
+def build_digest(rows):
+    by_category = defaultdict(list)
+    for row in rows:
+        cat = row.get("category") or "other"
+        by_category[cat].append(row)
 
-{items_text}
+    for cat in by_category:
+        by_category[cat].sort(
+            key=lambda r: PRIORITY_ORDER.get(r.get("priority", "medium"), 2)
+        )
 
-Write a concise digest with these sections. Use markdown. Be direct and actionable.
+    priority_counts = defaultdict(int)
+    category_counts = defaultdict(int)
+    for row in rows:
+        priority_counts[row.get("priority") or "unknown"] += 1
+        category_counts[row.get("category") or "other"] += 1
 
-1. **Key Themes** — 2-4 bullet points on the most common or important themes
-2. **Action Items** — 1-3 specific things the dev team should look at today, prioritised by urgency
-3. **Notable Quotes** — 1-2 standout player quotes that capture the sentiment well (include player name)
+    return by_category, priority_counts, category_counts
 
-Keep the entire response under 300 words. No preamble."""
-        }],
-    }, headers={
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
+
+# ── HTML rendering ──────────────────────────────────────────────────
+PRIORITY_COLORS = {
+    "critical": "#e74c3c",
+    "high": "#e67e22",
+    "medium": "#f1c40f",
+    "low": "#95a5a6",
+}
+
+CATEGORY_COLORS = {
+    "bug_report": "#d9534f",
+    "feature_request": "#5b8dd9",
+    "gameplay_feedback": "#c9a84c",
+    "question": "#8a8578",
+    "other": "#555555",
+}
+
+
+def render_priority_badge(priority):
+    color = PRIORITY_COLORS.get(priority, "#888")
+    return f'<span style="display:inline-block;background:{color};color:#fff;font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px">{priority}</span>'
+
+
+def render_category_badge(category):
+    color = CATEGORY_COLORS.get(category, "#888")
+    label = CATEGORY_LABELS.get(category, category)
+    return f'<span style="display:inline-block;background:{color}22;color:{color};font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;border:1px solid {color}44">{label}</span>'
+
+
+def escape(text):
+    if not text:
+        return ""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def render_item_html(row):
+    summary = escape(row.get("ai_summary") or "")
+    message = escape((row.get("message") or "")[:200])
+    priority = row.get("priority") or "medium"
+    player = escape(row.get("player_name") or "Anonymous")
+    created = row.get("created_at", "")[:16].replace("T", " ")
+
+    display_text = summary or message
+    if not display_text:
+        display_text = "(empty)"
+
+    return f"""<tr><td style="padding:8px 12px;border-bottom:1px solid #222220">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        {render_priority_badge(priority)}
+        <span style="color:#8a8578;font-size:12px">{player} &middot; {created} UTC</span>
+      </div>
+      <div style="color:#e8e0d0;font-size:14px;line-height:20px">{display_text}</div>
+    </td></tr>"""
+
+
+def render_email(rows, by_category, priority_counts, category_counts, hours):
+    date_str = datetime.now(timezone.utc).strftime("%B %d, %Y")
+    total = len(rows)
+
+    if total == 0:
+        summary_html = f"""<tr><td style="color:#b8b0a0;font-size:15px;line-height:26px;padding:0 0 24px">
+          No new feedback in the last {hours} hours. All quiet on the frontier.
+        </td></tr>"""
+        sections_html = ""
+    else:
+        stat_pills = []
+        for pri in ["critical", "high", "medium", "low"]:
+            count = priority_counts.get(pri, 0)
+            if count > 0:
+                color = PRIORITY_COLORS[pri]
+                stat_pills.append(
+                    f'<span style="display:inline-block;background:{color}22;color:{color};border:1px solid {color}44;'
+                    f'font-size:13px;font-weight:600;padding:4px 12px;border-radius:4px;margin:0 4px 4px 0">'
+                    f'{count} {pri}</span>'
+                )
+
+        summary_html = f"""<tr><td style="padding:0 0 24px">
+          <div style="color:#e8e0d0;font-size:18px;font-weight:600;margin-bottom:8px">{total} feedback items in the last {hours}h</div>
+          <div>{''.join(stat_pills)}</div>
+        </td></tr>"""
+
+        sections = []
+        for cat in CATEGORY_ORDER:
+            items = by_category.get(cat, [])
+            if not items:
+                continue
+            color = CATEGORY_COLORS.get(cat, "#888")
+            label = CATEGORY_LABELS.get(cat, cat)
+            items_html = "".join(render_item_html(r) for r in items)
+            sections.append(f"""<tr><td style="padding:0 0 20px">
+              <div style="color:{color};font-size:16px;font-weight:600;padding:0 0 8px;border-bottom:2px solid {color}44;margin-bottom:0">
+                {label} ({len(items)})
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#151715;border:1px solid #222220;border-radius:8px;border-top:none">
+                {items_html}
+              </table>
+            </td></tr>""")
+        sections_html = "".join(sections)
+
+    template_path = os.path.join(SCRIPT_DIR, "feedback-digest.html")
+    with open(template_path, "r") as f:
+        template = f.read()
+
+    return template.replace("{{date}}", date_str) \
+                    .replace("{{summary}}", summary_html) \
+                    .replace("{{sections}}", sections_html)
+
+
+# ── Send email ──────────────────────────────────────────────────────
+def send_email(subject, html_body):
+    payload = {
+        "from": FROM_EMAIL,
+        "to": [DIGEST_EMAIL],
+        "subject": subject,
+        "html": html_body,
+    }
+    return _req("POST", "https://api.resend.com/emails", data=payload, headers={
+        "Authorization": f"Bearer {RESEND_API_KEY}",
         "Content-Type": "application/json",
     })
 
-    return result["content"][0]["text"].strip()
 
+# ── Main ────────────────────────────────────────────────────────────
+def main():
+    print(f"Fetching feedback from last {HOURS} hours...")
+    rows = fetch_recent_feedback(HOURS)
+    print(f"Found {len(rows)} feedback items")
 
-# ── Digest formatting ───────────────────────────────────────────────
-def format_digest_body(feedback_items, synthesis, window_start, window_end):
-    """Format the full GitHub Issue body for the digest."""
-    total = len(feedback_items)
-    by_category = Counter(fb.get("category", "other") for fb in feedback_items)
-    by_priority = Counter(fb.get("priority", "medium") for fb in feedback_items)
-    unique_reporters = set(fb.get("player_name", "anon") for fb in feedback_items if fb.get("player_name"))
+    by_category, priority_counts, category_counts = build_digest(rows)
 
-    # Stats bar
-    cat_parts = []
-    for cat in ["bug_report", "feature_request", "gameplay_feedback", "question", "other"]:
-        count = by_category.get(cat, 0)
-        if count > 0:
-            cat_parts.append(f"{CATEGORY_EMOJI.get(cat, '💬')} {cat.replace('_', ' ').title()}: **{count}**")
+    for cat in CATEGORY_ORDER:
+        items = by_category.get(cat, [])
+        if items:
+            label = CATEGORY_LABELS.get(cat, cat)
+            print(f"\n  {label}: {len(items)}")
+            for r in items:
+                pri = r.get("priority", "?")
+                summary = r.get("ai_summary") or (r.get("message") or "")[:80]
+                print(f"    [{pri}] {summary}")
 
-    pri_parts = []
     for pri in ["critical", "high", "medium", "low"]:
-        count = by_priority.get(pri, 0)
-        if count > 0:
-            pri_parts.append(f"{pri}: {count}")
+        count = priority_counts.get(pri, 0)
+        if count:
+            print(f"  {pri}: {count}")
 
-    # Build category sections
-    category_sections = []
-    for cat in ["bug_report", "feature_request", "gameplay_feedback", "question", "other"]:
-        items = [fb for fb in feedback_items if fb.get("category", "other") == cat]
-        if not items:
-            continue
-        items.sort(key=lambda fb: PRIORITY_ORDER.get(fb.get("priority", "medium"), 2))
-        emoji = CATEGORY_EMOJI.get(cat, "💬")
-        label = cat.replace("_", " ").title()
-        lines = []
-        for fb in items:
-            pri = fb.get("priority", "medium")
-            name = fb.get("player_name", "anon")
-            msg = fb.get("message", "")[:150]
-            summary = fb.get("ai_summary", "")
-            display = summary if summary else msg
-            pri_badge = f" `{pri}`" if pri in ("critical", "high") else ""
-            lines.append(f"- **{name}**{pri_badge}: {display}")
-        category_sections.append(f"### {emoji} {label} ({len(items)})\n\n" + "\n".join(lines))
-
-    # Top reporters
-    reporter_counts = Counter(fb.get("player_name", "anon") for fb in feedback_items if fb.get("player_name"))
-    top_reporters = reporter_counts.most_common(5)
-    top_reporters_text = ", ".join(f"{name} ({count})" for name, count in top_reporters) if top_reporters else "—"
-
-    return f"""**{total} feedback items** from {len(unique_reporters)} unique players
-**Period:** {window_start.strftime('%Y-%m-%d %H:%M')} → {window_end.strftime('%Y-%m-%d %H:%M')} UTC
-
-{' · '.join(cat_parts)}
-**Priority breakdown:** {', '.join(pri_parts)}
-
----
-
-## Synthesis
-
-{synthesis}
-
----
-
-## All Feedback by Category
-
-{chr(10).join(category_sections)}
-
----
-
-### Stats
-- **Unique reporters:** {len(unique_reporters)}
-- **Top reporters:** {top_reporters_text}
-
----
-*Auto-generated by feedback digest pipeline.*"""
-
-
-# ── Main pipeline ──────────────────────────────────────────────────
-def run():
-    now = datetime.now(timezone.utc)
-    window_start = now - timedelta(hours=DIGEST_HOURS)
-    date_label = now.strftime("%Y-%m-%d")
-
-    print(f"=== Feedback Digest — {date_label} ===")
-    print(f"Window: last {DIGEST_HOURS}h ({window_start.isoformat()} → {now.isoformat()})")
-
-    # 1. Fetch feedback from the time window
-    iso_start = window_start.isoformat()
-    feedback = sb_get(
-        "feedback",
-        f"created_at=gte.{iso_start}"
-        f"&select=id,message,category,priority,ai_summary,player_name,game_state_snapshot,created_at,status"
-        f"&order=created_at.desc"
-    )
-    print(f"Found {len(feedback)} feedback items in window")
-
-    if not feedback:
-        print("No feedback to digest. Done.")
-        return
-
-    # 2. Synthesise with Claude
-    print("Synthesising themes with Claude...")
-    synthesis = synthesise_digest(feedback)
-    print("Synthesis complete.")
-
-    # 3. Format the digest
-    body = format_digest_body(feedback, synthesis, window_start, now)
-    title = f"Feedback Digest — {date_label}"
-
-    # Count critical/high for labels
-    priorities = [fb.get("priority", "medium") for fb in feedback]
-    labels = ["feedback-digest"]
-    if "critical" in priorities:
-        labels.append("priority:critical")
-    elif "high" in priorities:
-        labels.append("priority:high")
+    date_str = datetime.now(timezone.utc).strftime("%b %d")
+    subject = f"Feedback Digest — {date_str} — {len(rows)} items"
+    html_body = render_email(rows, by_category, priority_counts, category_counts, HOURS)
 
     if DRY_RUN:
-        print(f"\n[DRY RUN] Would create issue: {title}")
-        print(f"Labels: {labels}")
-        print(f"\n{body}")
-        return
-
-    # 4. Create GitHub Issue
-    print(f"Creating digest issue: {title}")
-    issue = gh_post(f"/repos/{GITHUB_REPO}/issues", {
-        "title": title,
-        "body": body,
-        "labels": labels,
-    })
-    print(f"Created issue #{issue['number']}: {issue['html_url']}")
-
-    print(f"\n=== Done. {len(feedback)} items digested. ===")
+        print(f"\n[DRY RUN] Would send to: {DIGEST_EMAIL}")
+        print(f"[DRY RUN] Subject: {subject}")
+        preview_path = os.path.join(SCRIPT_DIR, "feedback-digest-preview.html")
+        with open(preview_path, "w") as f:
+            f.write(html_body)
+        print(f"[DRY RUN] Preview saved to {preview_path}")
+    else:
+        print(f"\nSending digest to {DIGEST_EMAIL}...")
+        result = send_email(subject, html_body)
+        print(f"Sent: {result}")
 
 
 if __name__ == "__main__":
-    run()
+    main()
