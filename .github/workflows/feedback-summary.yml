@@ -1,0 +1,44 @@
+name: Daily Feedback Summary
+
+on:
+  schedule:
+    # Every day at 8am UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Hours to look back (default: 24)'
+        required: false
+        default: '24'
+      dry_run:
+        description: 'Preview without sending (true/false)'
+        required: false
+        default: 'false'
+      test_email:
+        description: 'Send to this address instead of the default recipient'
+        required: false
+        default: ''
+
+jobs:
+  summarise:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Send feedback summary
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          HOURS: ${{ github.event.inputs.hours || '24' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          TEST_EMAIL: ${{ github.event.inputs.test_email || '' }}
+        run: python scripts/feedback-summary.py
