@@ -139,6 +139,7 @@ Note: `/api/chat` and `/api/characters` are diplomacy endpoints that still live 
 | `scripts/newsletter.html` | Reusable newsletter HTML template (dynamic placeholders) |
 | `scripts/newsletter-launch.html` | Open-source launch announcement template (baked-in content) |
 | `scripts/release-vote.py` | Manages release vote issues: creates changelog, tallies reactions, creates devel→main PR |
+| `scripts/feedback-digest.py` | Daily morning email summarising player feedback, categorised and prioritised |
 | `scripts/newsletter.sql` | SQL migration for feedback `thanked_at` and player `email_opt_out` columns |
 
 **Newsletter system:** Supports two templates (`TEMPLATE=newsletter` or `TEMPLATE=launch`), test-send to a single address (`TEST_EMAIL=...`), dry-run mode, and per-player HMAC-signed unsubscribe links. Only sends to active players (not waitlisted).
@@ -187,6 +188,7 @@ Deployed on Vercel (`uncivilised-game-v2` project). Vercel auto-deploys are disa
 - `.github/workflows/conviction-automerge.yml` — auto-merges conviction PRs (`fix/*` → `devel`) after all CI checks pass and at least one approving review. Triggered by `pull_request_review` and `check_suite` events.
 - `.github/workflows/release-vote.yml` — weekly (Monday 12pm UTC) + manual. Creates a "Release Vote" GitHub issue listing changes on `devel` since `main`. Players vote with reactions (thumbs up/down). At 3 net upvotes, a `devel` → `main` PR is created automatically. Runs `scripts/release-vote.py`.
 - `.github/workflows/newsletter.yml` — manual-only workflow to send emails to active players. Inputs: `template` (newsletter/launch), `message`, `subject`, `dry_run`, `test_email`. Runs `scripts/newsletter.py`.
+- `.github/workflows/feedback-digest.yml` — daily at 7am UTC + manual. Queries last 24h of player feedback from Supabase, categorises and prioritises it, generates a Claude summary, and emails the digest. Inputs: `lookback_hours`, `dry_run`, `digest_email`. Runs `scripts/feedback-digest.py`.
 
 **Important:** `main` is production. Always work on `devel` or feature branches. If you're about to commit to `main` directly or create a PR targeting `main`, confirm with the user first — they likely want to target `devel` instead.
 
