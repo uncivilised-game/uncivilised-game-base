@@ -2,25 +2,28 @@ name: Feedback Digest
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Every day at 8am UTC
+    # Every morning at 8am UTC
+    - cron: '0 8 * * *'
   workflow_dispatch:
     inputs:
       hours:
-        description: 'Hours of feedback to include (default: 24)'
+        description: 'Lookback window in hours (default 24)'
         required: false
         default: '24'
       dry_run:
-        description: 'Preview without sending (true/false)'
+        description: 'Preview digest without sending email (true/false)'
         required: false
         default: 'false'
       digest_email:
-        description: 'Override recipient email address'
+        description: 'Recipient email (defaults to DIGEST_EMAIL secret)'
         required: false
         default: ''
 
 jobs:
   digest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,13 +33,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Send feedback digest
+      - name: Run feedback digest
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DIGEST_EMAIL: ${{ github.event.inputs.digest_email || secrets.DIGEST_EMAIL || 'jamie247@gmail.com' }}
           HOURS: ${{ github.event.inputs.hours || '24' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          DIGEST_EMAIL: ${{ github.event.inputs.digest_email || 'jamie247@gmail.com' }}
         run: python scripts/feedback-digest.py
